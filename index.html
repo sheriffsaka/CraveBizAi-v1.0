@@ -1,0 +1,157 @@
+
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <link rel="icon" type="image/svg+icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Crect width='100' height='100' rx='20' fill='%231e3a8a'/%3E%3Ctext x='50' y='55' font-family='sans-serif' font-weight='900' font-size='14' text-anchor='middle' fill='white'%3ECraveBiZ%3C/text%3E%3C/svg%3E" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    
+    <!-- Primary SEO -->
+    <title>CraveBiZ AI - Intelligent Invoice & Receipt Vault for SMEs</title>
+    <meta name="title" content="CraveBiZ AI - Intelligent Invoice & Receipt Vault for SMEs" />
+    <meta name="description" content="CraveBiZ AI is the intelligent financial vault for modern businesses. Create professional invoices, automate receipts, manage clients, and get AI-powered financial insights. Secure, fast, and designed for SMEs." />
+    <meta name="keywords" content="invoice generator, AI invoicing, business receipts, SME finance, billing software, automated receipting, recurring invoices, financial analytics, Nigeria business tools, freelancer invoicing" />
+    <meta name="robots" content="index, follow" />
+    <meta name="language" content="English" />
+    <meta name="author" content="CraveBiZ AI" />
+
+    <!-- Open Graph / Facebook -->
+    <meta property="og:type" content="website" />
+    <meta property="og:url" content="https://cravebiz.ai/" />
+    <meta property="og:title" content="CraveBiZ AI - Intelligent Invoice & Receipt Vault for SMEs" />
+    <meta property="og:description" content="Simplify your business operations with CraveBiZ AI. Generate invoices, track payments, and automate receipts with the power of Artificial Intelligence." />
+    <meta property="og:image" content="https://cravebiz.ai/og-image.jpg" />
+
+    <!-- Twitter -->
+    <meta property="twitter:card" content="summary_large_image" />
+    <meta property="twitter:url" content="https://cravebiz.ai/" />
+    <meta property="twitter:title" content="CraveBiZ AI - Intelligent Invoice & Receipt Vault for SMEs" />
+    <meta property="twitter:description" content="Simplify your business operations with CraveBiZ AI. Generate invoices, track payments, and automate receipts with the power of Artificial Intelligence." />
+    <meta property="twitter:image" content="https://cravebiz.ai/twitter-image.jpg" />
+
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.1/html2pdf.bundle.min.js" integrity="sha512-GsLlZN/3F2ErC5ifS5QtgpiJtWd43JWSuIgh7mbzZ8zBps+dvLusV+eNQATqgA/HdeKFVgA5v3S/cIrLF7QnIg==" crossorigin="anonymous" referrerpolicy="no-referrer"></script>
+    <script>
+      // Shim process.env safely
+      if (typeof window.process === 'undefined') {
+        window.process = { env: { API_KEY: "" } };
+      } else if (typeof window.process.env === 'undefined') {
+        window.process.env = { API_KEY: "" };
+      }
+      
+      tailwind.config = {
+        theme: {
+          extend: {
+            colors: {
+              primary: {
+                '50': '#eff6ff',
+                '100': '#dbeafe',
+                '200': '#bfdbfe',
+                '300': '#93c5fd',
+                '400': '#60a5fa',
+                '500': '#3b82f6',
+                '600': '#2563eb',
+                '700': '#1d4ed8',
+                '800': '#1e40af',
+                '900': '#1e3a8a',
+                '950': '#172554',
+              },
+            }
+          }
+        }
+      }
+    </script>
+    <script>
+      // This is a robust safeguard for the development environment.
+      // It prevents any script from setting 'onbeforeunload', which can
+      // interfere with the environment's refresh and view-change features.
+      setInterval(() => {
+        if (window.onbeforeunload) {
+          window.onbeforeunload = null;
+        }
+      }, 500);
+    </script>
+    <style>
+      @media print {
+        @page {
+          size: A4;
+          margin: 0;
+        }
+        /* Hide everything by default in print */
+        body {
+          background-color: white !important;
+          margin: 0 !important;
+          padding: 0 !important;
+          -webkit-print-color-adjust: exact !important;
+          print-color-adjust: exact !important;
+          color: #000 !important;
+        }
+        /* Explicitly hide navigation and UI elements */
+        aside, header, nav, .print-hidden, .chatbot-button, button {
+          display: none !important;
+        }
+        /* Ensure the main container and its specific invoice content is visible and takes full width */
+        #root, main, .flex-1 {
+          display: block !important;
+          width: 100% !important;
+          height: auto !important;
+          padding: 0 !important;
+          margin: 0 !important;
+          overflow: visible !important;
+        }
+        /* Ensure the plain-invoice-container is centered or takes full width */
+        #plain-invoice-container, #receipt-container, #invoice-container {
+          box-shadow: none !important;
+          border: none !important;
+          width: 100% !important;
+          max-width: 100% !important;
+          margin: 0 !important;
+          padding: 1.5cm !important; /* Standard margins for the document itself */
+          position: absolute;
+          top: 0;
+          left: 0;
+        }
+        
+        /* Force background colors to print */
+        .bg-gray-50 { background-color: #f9fafb !important; }
+        .bg-primary-50 { background-color: #eff6ff !important; }
+        .bg-primary-600 { background-color: #2563eb !important; }
+        .text-white { color: #ffffff !important; }
+        
+        /* Handle page breaks for tables */
+        tr {
+          page-break-inside: avoid !important;
+          break-inside: avoid !important;
+        }
+        table {
+          page-break-inside: auto;
+        }
+        thead {
+          display: table-header-group;
+        }
+      }
+      /* Prevent UI elements from appearing in Word exports */
+      .word-export-hidden {
+        display: none !important;
+      }
+    </style>
+    <script type="importmap">
+    {
+      "imports": {
+        "react/": "https://aistudiocdn.com/react@19.2.0/",
+        "react": "https://aistudiocdn.com/react@19.2.0",
+        "react-dom/": "https://aistudiocdn.com/react-dom@19.2.0/",
+        "react-dom/client": "https://aistudiocdn.com/react-dom@19.2.0/client",
+        "@google/genai": "https://aistudiocdn.com/@google/genai@1.26.0",
+        "@supabase/supabase-js": "https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.1/+esm"
+      }
+    }
+    </script>
+    <script src="https://unpkg.com/recharts@2.12.7/umd/Recharts.min.js" defer></script>
+<link rel="stylesheet" href="/index.css">
+</head>
+  <body>
+    <div id="root"></div>
+    <script type="module" src="/index.tsx"></script>
+  </body>
+</html>
