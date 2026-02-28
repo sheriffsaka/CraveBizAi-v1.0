@@ -53,7 +53,6 @@ export default function App() {
   const [downloadAction, setDownloadAction] = useState<'print' | 'word' | undefined>(undefined);
   const [isChatbotOpen, setIsChatbotOpen] = useState(false);
   const [isUserProfileModalOpen, setIsUserProfileModalOpen] = useState(false);
-  const [isRechartsLoaded, setIsRechartsLoaded] = useState(false);
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
   const [draftRenewal, setDraftRenewal] = useState<Partial<Invoice> | null>(null);
   const isMounted = useRef(true);
@@ -67,11 +66,6 @@ export default function App() {
     'admin-dashboard': 'System Console', 'document-transformer': 'AI Docs Transformer',
     'payment-intelligence': 'Payment Intelligence Board',
   };
-
-  useEffect(() => {
-    const checkRecharts = () => { if ((window as any).Recharts) setIsRechartsLoaded(true); else setTimeout(checkRecharts, 200); };
-    checkRecharts();
-  }, []);
 
   const forceSyncData = async (tenantId: string) => {
     if (!tenantId || !isMounted.current) return;
@@ -269,7 +263,7 @@ export default function App() {
     const { invoices = [], clients = [], services = [], generatedDocs = [] } = tenantData;
 
     switch (activePage) {
-      case 'dashboard': return <Dashboard invoices={invoices} clients={clients} setActivePage={navigateTo} onViewInvoice={(id) => { setSelectedInvoiceId(id); navigateTo('invoice-detail'); }} onEditInvoice={handleEditInvoiceAction} onGenerateRenewal={handleGenerateRenewal} isRechartsLoaded={isRechartsLoaded} />;
+      case 'dashboard': return <Dashboard invoices={invoices} clients={clients} setActivePage={navigateTo} onViewInvoice={(id) => { setSelectedInvoiceId(id); navigateTo('invoice-detail'); }} onEditInvoice={handleEditInvoiceAction} onGenerateRenewal={handleGenerateRenewal} />;
       case 'document-transformer': return <DocumentTransformer company={activeCompany} user={currentUser} generatedDocs={generatedDocs} onSaveDoc={async (doc) => { 
           try {
               await api.saveGeneratedDoc(activeTenantId!, doc); 
@@ -379,7 +373,7 @@ export default function App() {
               setSyncError(stringifyError(e));
           }
       }} />;
-      case 'reports': return <Reports invoices={invoices} clients={clients} services={services} isRechartsLoaded={isRechartsLoaded} />;
+      case 'reports': return <Reports invoices={invoices} clients={clients} services={services} />;
       case 'payment-intelligence': return <PaymentIntelligence invoices={invoices} clients={clients} />;
       case 'admin-dashboard': {
           const allTenantsData: AllTenantsData = {};
@@ -417,10 +411,9 @@ export default function App() {
                     setAllUsers(updatedUsers);
                 } catch (e) { setSyncError(stringifyError(e)); }
             }}
-            isRechartsLoaded={isRechartsLoaded}
           />;
       }
-      default: return <Dashboard invoices={invoices} clients={clients} setActivePage={navigateTo} onViewInvoice={(id) => { setSelectedInvoiceId(id); navigateTo('invoice-detail'); }} onEditInvoice={handleEditInvoiceAction} isRechartsLoaded={isRechartsLoaded} />;
+      default: return <Dashboard invoices={invoices} clients={clients} setActivePage={navigateTo} onViewInvoice={(id) => { setSelectedInvoiceId(id); navigateTo('invoice-detail'); }} onEditInvoice={handleEditInvoiceAction} onGenerateRenewal={handleGenerateRenewal} />;
     }
   };
 

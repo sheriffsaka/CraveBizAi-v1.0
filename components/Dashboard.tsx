@@ -1,5 +1,6 @@
 
 import React, { useMemo } from 'react';
+import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
 import { InvoiceStatus, Invoice, Client } from '../types';
 import StatCard from './StatCard';
 import InvoiceList from './InvoiceList';
@@ -18,24 +19,9 @@ interface DashboardProps {
     onViewInvoice: (invoiceId: string) => void;
     onEditInvoice: (invoiceId: string) => void;
     onGenerateRenewal: (clientId: string, item: any) => Promise<void>;
-    isRechartsLoaded: boolean;
 }
 
-const Dashboard: React.FC<DashboardProps> = ({invoices, clients, setActivePage, onViewInvoice, onEditInvoice, onGenerateRenewal, isRechartsLoaded}) => {
-    // Determine if Recharts is actually available on window
-    const hasRechartsOnWindow = !!(window as any).Recharts;
-
-    // Conditionally load Recharts components
-    const RechartsComponents = useMemo(() => {
-        if ((isRechartsLoaded || hasRechartsOnWindow) && (window as any).Recharts) {
-            const { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } = (window as any).Recharts;
-            return { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer };
-        }
-        return {};
-    }, [isRechartsLoaded, hasRechartsOnWindow]);
-
-    const { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } = RechartsComponents;
-
+const Dashboard: React.FC<DashboardProps> = ({invoices, clients, setActivePage, onViewInvoice, onEditInvoice, onGenerateRenewal}) => {
     // Calculate real revenue data for the chart (last 6 months)
     const calculatedTrendData = useMemo(() => {
         const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
@@ -163,8 +149,7 @@ const Dashboard: React.FC<DashboardProps> = ({invoices, clients, setActivePage, 
                 <div className="absolute top-0 right-0 w-32 h-32 bg-primary-50 rounded-full -mr-16 -mt-16 opacity-50"></div>
                 <h3 className="text-xl font-black text-gray-800 mb-6 uppercase tracking-tighter">Revenue Trajectory</h3>
                 <div style={{ width: '100%', height: 300 }}>
-                    {(isRechartsLoaded || hasRechartsOnWindow) && BarChart ? (
-                        <ResponsiveContainer>
+                    <ResponsiveContainer>
                         <BarChart data={calculatedTrendData} margin={{ top: 5, right: 20, left: -10, bottom: 5 }}>
                             <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f3f4f6" />
                             <XAxis dataKey="name" tick={{fill: '#9ca3af', fontSize: 10, fontWeight: 900}} axisLine={false} tickLine={false} />
@@ -176,13 +161,7 @@ const Dashboard: React.FC<DashboardProps> = ({invoices, clients, setActivePage, 
                             />
                             <Bar dataKey="revenue" fill="#2563eb" radius={[6, 6, 0, 0]} barSize={40} />
                         </BarChart>
-                        </ResponsiveContainer>
-                    ) : (
-                        <div className="flex flex-col items-center justify-center h-full text-gray-400">
-                            <div className="animate-spin rounded-full h-8 w-8 border-t-2 border-primary-600 mb-4"></div>
-                            <p className="text-[10px] font-black uppercase tracking-widest">Rendering Insights...</p>
-                        </div>
-                    )}
+                    </ResponsiveContainer>
                 </div>
             </div>
 

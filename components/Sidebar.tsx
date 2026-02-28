@@ -56,7 +56,7 @@ const Sidebar: React.FC<SidebarProps> = ({ activePage, setActivePage, companyNam
   if (isAdmin) {
     const adminDashboardExists = navItems.some(item => item.id === 'admin-dashboard');
     if (!adminDashboardExists) {
-        navItems.push({ id: 'admin-dashboard', label: 'Admin Dashboard', icon: 'dashboard' }); // Using dashboard icon for admin page
+        navItems.unshift({ id: 'admin-dashboard', label: 'Admin Dashboard', icon: 'dashboard' }); // Using dashboard icon for admin page
     }
   }
 

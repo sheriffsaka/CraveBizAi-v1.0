@@ -1,5 +1,6 @@
 
 import React, { useState, useMemo, useCallback } from 'react';
+import { BarChart, PieChart, Pie, Cell, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, LineChart, Line } from 'recharts';
 import StatCard from './StatCard';
 import { Invoice, Client, Service, InvoiceStatus } from '../types';
 import { generateTextResponse } from '../services/aiGenerationService';
@@ -48,24 +49,11 @@ interface ReportsProps {
     invoices: Invoice[];
     clients: Client[];
     services: Service[];
-    isRechartsLoaded: boolean;
 }
 
 type DateRange = 'all_time' | 'last_30_days' | 'this_quarter' | 'this_year';
 
-const Reports: React.FC<ReportsProps> = ({invoices, clients, services, isRechartsLoaded}) => {
-    const hasRechartsOnWindow = !!(window as any).Recharts;
-
-    const RechartsComponents = useMemo(() => {
-        if ((isRechartsLoaded || hasRechartsOnWindow) && (window as any).Recharts) {
-            const { BarChart, PieChart, Pie, Cell, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, LineChart, Line } = (window as any).Recharts;
-            return { BarChart, PieChart, Pie, Cell, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, LineChart, Line };
-        }
-        return {};
-    }, [isRechartsLoaded, hasRechartsOnWindow]);
-
-    const { BarChart, PieChart, Pie, Cell, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, LineChart, Line } = RechartsComponents;
-
+const Reports: React.FC<ReportsProps> = ({invoices, clients, services}) => {
     const [reportQuery, setReportQuery] = useState('');
     const [aiReportResponse, setAiReportResponse] = useState<string | null>(null);
     const [isLoadingReport, setIsLoadingReport] = useState(false);
@@ -311,36 +299,32 @@ const Reports: React.FC<ReportsProps> = ({invoices, clients, services, isRechart
         <div className="bg-white p-8 rounded-[2.5rem] shadow-2xl border border-gray-100">
           <h3 className="text-xl font-black text-gray-800 mb-6 uppercase tracking-tighter">Temporal Revenue Trend</h3>
           <div style={{ width: '100%', height: 300 }}>
-             {(isRechartsLoaded || hasRechartsOnWindow) && BarChart ? (
-                <ResponsiveContainer>
-                  <BarChart data={trendData}>
-                    <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f3f4f6" />
-                    <XAxis dataKey="name" tick={{fill: '#9ca3af', fontSize: 10, fontWeight: 900}} axisLine={false} tickLine={false} />
-                    <YAxis tickFormatter={(v) => `₦${(v/1000).toFixed(0)}k`} tick={{fill: '#9ca3af', fontSize: 10, fontWeight: 900}} axisLine={false} tickLine={false} />
-                    <Tooltip cursor={{fill: 'rgba(37, 99, 235, 0.05)'}} />
-                    <Bar dataKey="revenue" fill="#2563eb" radius={[4, 4, 0, 0]} />
-                  </BarChart>
-                </ResponsiveContainer>
-             ) : <div className="flex flex-col items-center justify-center h-full text-gray-400 font-black uppercase tracking-widest text-[10px]">Loading Charts...</div>}
+            <ResponsiveContainer>
+              <BarChart data={trendData}>
+                <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f3f4f6" />
+                <XAxis dataKey="name" tick={{fill: '#9ca3af', fontSize: 10, fontWeight: 900}} axisLine={false} tickLine={false} />
+                <YAxis tickFormatter={(v) => `₦${(v/1000).toFixed(0)}k`} tick={{fill: '#9ca3af', fontSize: 10, fontWeight: 900}} axisLine={false} tickLine={false} />
+                <Tooltip cursor={{fill: 'rgba(37, 99, 235, 0.05)'}} />
+                <Bar dataKey="revenue" fill="#2563eb" radius={[4, 4, 0, 0]} />
+              </BarChart>
+            </ResponsiveContainer>
           </div>
         </div>
 
         <div className="bg-white p-8 rounded-[2.5rem] shadow-2xl border border-gray-100">
           <h3 className="text-xl font-black text-gray-800 mb-6 uppercase tracking-tighter">Status Distribution</h3>
            <div style={{ width: '100%', height: 300 }}>
-            {(isRechartsLoaded || hasRechartsOnWindow) && PieChart ? (
-                <ResponsiveContainer>
-                    <PieChart>
-                        <Pie data={invoiceStatusData} cx="50%" cy="50%" outerRadius={80} fill="#8884d8" dataKey="value" nameKey="name" label>
-                            {invoiceStatusData.map((entry) => (
-                                <Cell key={entry.name} fill={COLORS[entry.name as keyof typeof COLORS]} />
-                            ))}
-                        </Pie>
-                        <Tooltip />
-                        <Legend />
-                    </PieChart>
-                </ResponsiveContainer>
-            ) : <div className="flex flex-col items-center justify-center h-full text-gray-400 font-black uppercase tracking-widest text-[10px]">Loading Charts...</div>}
+            <ResponsiveContainer>
+                <PieChart>
+                    <Pie data={invoiceStatusData} cx="50%" cy="50%" outerRadius={80} fill="#8884d8" dataKey="value" nameKey="name" label>
+                        {invoiceStatusData.map((entry) => (
+                            <Cell key={entry.name} fill={COLORS[entry.name as keyof typeof COLORS]} />
+                        ))}
+                    </Pie>
+                    <Tooltip />
+                    <Legend />
+                </PieChart>
+            </ResponsiveContainer>
            </div>
         </div>
       </div>

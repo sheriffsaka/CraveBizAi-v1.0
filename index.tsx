@@ -3,11 +3,6 @@ import React from 'react';
 import ReactDOM from 'react-dom/client';
 import App from './App';
 
-// Recharts UMD script expects React and ReactDOM to be global.
-// We assign them to window here to bridge the ESM imports and the UMD script.
-(window as any).React = React;
-(window as any).ReactDOM = ReactDOM;
-
 const rootElement = document.getElementById('root');
 
 if (!rootElement) {

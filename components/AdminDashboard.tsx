@@ -1,5 +1,6 @@
 
 import React, { useMemo, useState } from 'react';
+import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, LineChart, Line } from 'recharts';
 import { Company, User, AllTenantsData, InvoiceStatus, TenantData } from '../types';
 import StatCard from './StatCard';
 import Icon from './common/Icon';
@@ -14,7 +15,6 @@ interface AdminDashboardProps {
   onUpdateCompany: (companyId: string, details: Partial<Company>) => Promise<void>;
   onDeleteCompany: (companyId: string) => Promise<void>;
   onUpdateUser: (userId: string, details: Partial<User>) => Promise<void>;
-  isRechartsLoaded?: boolean;
 }
 
 const AdminDashboardIcon = ({ d }: { d: string }) => (
@@ -129,7 +129,7 @@ const UsersTable: React.FC<{
   );
 };
 
-const AdminDashboard: React.FC<AdminDashboardProps> = ({ allTenantData, companies, users, onUpdateCompany, onDeleteCompany, onUpdateUser, isRechartsLoaded }) => {
+const AdminDashboard: React.FC<AdminDashboardProps> = ({ allTenantData, companies, users, onUpdateCompany, onDeleteCompany, onUpdateUser }) => {
   const [query, setQuery] = useState('');
   const [response, setResponse] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
@@ -139,8 +139,6 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ allTenantData, companie
   const [isCompanyModalOpen, setIsCompanyModalOpen] = useState(false);
   const [selectedUser, setSelectedUser] = useState<User | null>(null);
   const [isUserModalOpen, setIsUserModalOpen] = useState(false);
-
-  const { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, LineChart, Line } = (window as any).Recharts || {};
 
   const stats = useMemo(() => {
     const tenantValues = Object.values(allTenantData) as TenantData[];
@@ -197,7 +195,7 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ allTenantData, companie
           <div className="bg-white p-8 rounded-[2.5rem] shadow-xl border border-gray-100">
             <h3 className="text-lg font-black mb-6 uppercase tracking-tighter">Revenue Growth</h3>
             <div className="h-64">
-              {isRechartsLoaded && stats.chartData.length > 0 ? (
+              {stats.chartData.length > 0 ? (
                 <ResponsiveContainer width="100%" height="100%">
                   <LineChart data={stats.chartData}>
                     <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f0f0f0" />
@@ -212,7 +210,7 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ allTenantData, companie
                 </ResponsiveContainer>
               ) : (
                 <div className="h-full flex items-center justify-center text-gray-400 italic text-sm">
-                  {isRechartsLoaded ? 'No revenue data yet' : 'Loading charts...'}
+                  No revenue data yet
                 </div>
               )}
             </div>
@@ -221,7 +219,7 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ allTenantData, companie
           <div className="bg-white p-8 rounded-[2.5rem] shadow-xl border border-gray-100">
             <h3 className="text-lg font-black mb-6 uppercase tracking-tighter">Company Distribution</h3>
             <div className="h-64">
-              {isRechartsLoaded && stats.chartData.length > 0 ? (
+              {stats.chartData.length > 0 ? (
                 <ResponsiveContainer width="100%" height="100%">
                   <BarChart data={stats.chartData}>
                     <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f0f0f0" />
@@ -235,7 +233,7 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ allTenantData, companie
                 </ResponsiveContainer>
               ) : (
                 <div className="h-full flex items-center justify-center text-gray-400 italic text-sm">
-                  {isRechartsLoaded ? 'No data yet' : 'Loading charts...'}
+                  No data yet
                 </div>
               )}
             </div>
@@ -343,7 +341,7 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ allTenantData, companie
            <div className="bg-white p-10 rounded-[3rem] shadow-xl border border-gray-100">
               <h3 className="text-xl font-black mb-8 uppercase tracking-tighter">Platform Financial Performance</h3>
               <div className="h-96">
-                {isRechartsLoaded && stats.chartData.length > 0 ? (
+                {stats.chartData.length > 0 ? (
                   <ResponsiveContainer width="100%" height="100%">
                     <BarChart data={stats.chartData}>
                       <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f0f0f0" />
@@ -358,7 +356,7 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ allTenantData, companie
                   </ResponsiveContainer>
                 ) : (
                   <div className="h-full flex items-center justify-center text-gray-400 italic">
-                    {isRechartsLoaded ? 'Insufficient data for financial reporting' : 'Preparing financial vault...'}
+                    Insufficient data for financial reporting
                   </div>
                 )}
               </div>
