@@ -30,7 +30,8 @@ const InvoiceDetail: React.FC<InvoiceDetailProps> = ({ invoice, client, services
 
     const getServiceName = (serviceId: string) => services.find(s => s.id === serviceId)?.name || 'Service Item';
     const subtotal = invoice.items.reduce((sum, item) => sum + item.price * item.quantity, 0);
-    const tax = subtotal * 0.075;
+    const discount = invoice.discount || 0;
+    const tax = (subtotal - discount) * 0.075;
     
     // Payment breakdown logic
     const hasPayment = (invoice.amountPaid || 0) > 0;
@@ -116,10 +117,21 @@ ${company?.name || 'The Team'}`;
               Mark as Paid
           </button>
         )}
+
+        {invoice.status === InvoiceStatus.Paid && (
+          <button 
+              onClick={() => onViewPlainInvoice(invoice.id, 'print')} 
+              disabled={invoice.id === 'preview'} 
+              className="px-6 py-2.5 bg-green-600 text-white rounded-xl font-black uppercase tracking-widest text-xs shadow-lg hover:bg-green-700 transition-all transform hover:-translate-y-0.5 disabled:bg-gray-400 flex items-center gap-2"
+          >
+              <Icon name="file-pdf" className="w-4 h-4" />
+              Generate Receipt
+          </button>
+        )}
         
         <button onClick={() => onViewPlainInvoice(invoice.id, 'print')} className="px-6 py-2.5 bg-gray-900 text-white rounded-xl font-black uppercase tracking-widest text-xs shadow-lg hover:bg-black transition-all transform hover:-translate-y-0.5 flex items-center gap-2">
             <Icon name="file-pdf" className="w-4 h-4" />
-            Export PDF
+            Export {invoice.status === InvoiceStatus.Paid ? 'Receipt' : 'Invoice'} PDF
         </button>
         <button onClick={() => onViewPlainInvoice(invoice.id, 'word')} className="px-6 py-2.5 bg-blue-600 text-white rounded-xl font-black uppercase tracking-widest text-xs shadow-lg hover:bg-blue-700 transition-all transform hover:-translate-y-0.5 flex items-center gap-2">
             <Icon name="download-word" className="w-4 h-4" /> Export Word
@@ -215,6 +227,9 @@ ${company?.name || 'The Team'}`;
         <div className="flex justify-end mb-10">
           <div className="w-80 space-y-3 p-6 bg-gray-50 rounded-2xl border border-gray-100 shadow-sm">
             <div className="flex justify-between text-gray-500 font-bold text-xs uppercase tracking-widest"><span>Gross Value</span><span className="text-gray-900">₦{subtotal.toLocaleString()}</span></div>
+            {discount > 0 && (
+                <div className="flex justify-between text-red-500 font-bold text-xs uppercase tracking-widest"><span>Discount</span><span>- ₦{discount.toLocaleString()}</span></div>
+            )}
             <div className="flex justify-between text-gray-500 font-bold text-xs uppercase tracking-widest"><span>VAT (7.5%)</span><span className="text-gray-900">₦{tax.toLocaleString()}</span></div>
             
             <div className="flex justify-between font-bold text-lg text-gray-800 border-t border-gray-200 pt-3 mt-2">

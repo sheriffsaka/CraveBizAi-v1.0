@@ -46,6 +46,7 @@ const InvoiceForm: React.FC<InvoiceFormProps> = ({ initialInvoice, clients, serv
   const [manualAccountName, setManualAccountName] = useState('');
   const [manualAccountNumber, setManualAccountNumber] = useState('');
   const [paymentTerms, setPaymentTerms] = useState('');
+  const [discount, setDiscount] = useState<number>(0);
   const [isLoadingDescription, setIsLoadingDescription] = useState<boolean[]>([]);
   const [frequency, setFrequency] = useState<InvoiceFrequency>('one-time');
   const [nextRecurrenceDate, setNextRecurrenceDate] = useState<string>('');
@@ -62,6 +63,7 @@ const InvoiceForm: React.FC<InvoiceFormProps> = ({ initialInvoice, clients, serv
       setManualAccountName(initialInvoice.manualAccountName || '');
       setManualAccountNumber(initialInvoice.manualAccountNumber || '');
       setPaymentTerms(initialInvoice.paymentTerms || '');
+      setDiscount(initialInvoice.discount || 0);
       setFrequency(initialInvoice.frequency || 'one-time');
       setNextRecurrenceDate(initialInvoice.nextRecurrenceDate || '');
       setIsLoadingDescription(initialInvoice.items.map(() => false));
@@ -106,6 +108,7 @@ const InvoiceForm: React.FC<InvoiceFormProps> = ({ initialInvoice, clients, serv
         description: '', 
         quantity: 1, 
         price: 0,
+        discount: 0,
         billingCycle: undefined,
         autoRenew: false,
         renewalReminderDaysBefore: 7
@@ -122,15 +125,16 @@ const InvoiceForm: React.FC<InvoiceFormProps> = ({ initialInvoice, clients, serv
       onCancel();
   };
 
-  const subtotal = useMemo(() => items.reduce((s, i) => s + (i.quantity * i.price), 0), [items]);
-  const tax = subtotal * 0.075;
-  const total = subtotal + tax;
+  const subtotal = useMemo(() => items.reduce((s, i) => s + (i.quantity * i.price) - (i.discount || 0), 0), [items]);
+  const tax = (subtotal - discount) * 0.075;
+  const total = (subtotal - discount) + tax;
 
   const getPreviewData = (status: InvoiceStatus): Invoice => ({
     id: initialInvoice?.id || 'preview',
     companyId: company?.id || '',
     invoiceNumber: initialInvoice?.invoiceNumber || `PREVIEW`,
     clientId, issueDate, dueDate, items, total, 
+    discount,
     amountPaid: initialInvoice?.amountPaid || 0, 
     status,
     selectedBankAccountId: selectedBankAccountId === 'manual' ? undefined : selectedBankAccountId,
@@ -256,7 +260,7 @@ const InvoiceForm: React.FC<InvoiceFormProps> = ({ initialInvoice, clients, serv
                         </div>
                         <textarea value={item.description} onChange={e => handleItemChange(index, 'description', e.target.value)} className="w-full p-4 border rounded-2xl text-sm bg-gray-50 text-gray-900 outline-none focus:ring-2 focus:ring-primary-500 font-medium" rows={2}></textarea>
                     </div>
-                    <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+                    <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
                         <div>
                             <label className="block text-[10px] font-black text-gray-400 uppercase mb-1">Qty</label>
                             <input type="number" value={item.quantity} onChange={e => handleItemChange(index, 'quantity', Number(e.target.value))} className="w-full p-3.5 border rounded-2xl bg-gray-50 text-gray-900 font-black" />
@@ -266,8 +270,12 @@ const InvoiceForm: React.FC<InvoiceFormProps> = ({ initialInvoice, clients, serv
                             <input type="number" value={item.price} onChange={e => handleItemChange(index, 'price', Number(e.target.value))} className="w-full p-3.5 border rounded-2xl bg-gray-50 text-gray-900 font-black" />
                         </div>
                         <div>
+                            <label className="block text-[10px] font-black text-gray-400 uppercase mb-1">Discount (₦)</label>
+                            <input type="number" value={item.discount || 0} onChange={e => handleItemChange(index, 'discount', Number(e.target.value))} className="w-full p-3.5 border rounded-2xl bg-gray-50 text-gray-900 font-black" />
+                        </div>
+                        <div>
                             <label className="block text-[10px] font-black text-gray-400 uppercase mb-1">Amount</label>
-                            <div className="w-full p-3.5 bg-gray-100 rounded-2xl font-black text-gray-800">₦{(item.price * item.quantity).toLocaleString()}</div>
+                            <div className="w-full p-3.5 bg-gray-100 rounded-2xl font-black text-gray-800">₦{((item.price * item.quantity) - (item.discount || 0)).toLocaleString()}</div>
                         </div>
                     </div>
 
@@ -343,6 +351,16 @@ const InvoiceForm: React.FC<InvoiceFormProps> = ({ initialInvoice, clients, serv
         <div className="mt-12 flex justify-end">
             <div className="w-80 space-y-4 p-8 bg-gray-50 rounded-[2rem] border border-gray-100">
                 <div className="flex justify-between text-[10px] text-gray-400 font-black uppercase tracking-widest"><span>Subtotal</span><span className="text-gray-900">₦{subtotal.toLocaleString()}</span></div>
+                <div className="flex flex-col gap-2">
+                    <label className="text-[10px] font-black text-gray-400 uppercase tracking-widest">Discount (₦)</label>
+                    <input 
+                        type="number" 
+                        value={discount} 
+                        onChange={e => setDiscount(Number(e.target.value))} 
+                        className="w-full p-2 border rounded-xl bg-white text-gray-900 font-bold outline-none focus:ring-2 focus:ring-primary-500 text-right"
+                        placeholder="0"
+                    />
+                </div>
                 <div className="flex justify-between text-[10px] text-gray-400 font-black uppercase tracking-widest"><span>VAT (7.5%)</span><span className="text-gray-900">₦{tax.toLocaleString()}</span></div>
                 <div className="flex justify-between border-t-2 border-gray-200 pt-5 font-black text-3xl text-primary-600 tracking-tighter"><span>Total Amount</span><span>₦{total.toLocaleString()}</span></div>
                 <p className="text-[9px] font-bold text-gray-400 uppercase tracking-widest mt-4 text-center">Settlement handled via Registry Updates</p>

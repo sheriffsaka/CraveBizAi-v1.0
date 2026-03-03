@@ -65,6 +65,7 @@ export interface InvoiceItem {
   description: string;
   quantity: number;
   price: number;
+  discount?: number;
   billingCycle?: BillingCycle;
   periodStartDate?: string;
   periodEndDate?: string;
@@ -82,6 +83,7 @@ export interface Invoice {
   dueDate: string;
   items: InvoiceItem[];
   total: number;
+  discount?: number;
   amountPaid?: number; // Added for partial payments
   status: InvoiceStatus;
   selectedBankAccountId?: string;

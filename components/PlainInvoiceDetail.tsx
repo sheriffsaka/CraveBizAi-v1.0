@@ -23,8 +23,10 @@ const PlainInvoiceDetail: React.FC<PlainInvoiceDetailProps> = ({ invoice, client
     };
 
     const subtotal = invoice.items.reduce((sum, item) => sum + item.price * item.quantity, 0);
-    const tax = subtotal * 0.075; 
+    const discount = invoice.discount || 0;
+    const tax = (subtotal - discount) * 0.075; 
     const balanceDue = invoice.total - (invoice.amountPaid || 0);
+    const isReceipt = invoice.status === 'Paid';
     
     const selectedBankAccount: BankAccount | undefined = company?.bankAccounts?.find(
         (account) => account.id === invoice.selectedBankAccountId
@@ -40,7 +42,7 @@ const PlainInvoiceDetail: React.FC<PlainInvoiceDetailProps> = ({ invoice, client
 
         const opt = {
             margin: 0, 
-            filename: `Invoice_${invoice.invoiceNumber}.pdf`,
+            filename: `${isReceipt ? 'Receipt' : 'Invoice'}_${invoice.invoiceNumber}.pdf`,
             image: { type: 'jpeg', quality: 0.98 },
             html2canvas: { 
                 scale: 2, 
@@ -123,7 +125,7 @@ const PlainInvoiceDetail: React.FC<PlainInvoiceDetailProps> = ({ invoice, client
                                 <div style="font-size:9pt; color:#2563eb;">${company?.email}</div>
                             </td>
                             <td width="40%" valign="top" align="right">
-                                <div style="font-size:28pt; font-weight:900; color:#1e3a8a; text-transform:uppercase;">INVOICE</div>
+                                <div style="font-size:28pt; font-weight:900; color:#1e3a8a; text-transform:uppercase;">${isReceipt ? 'RECEIPT' : 'INVOICE'}</div>
                                 <div style="font-size:12pt; font-weight:bold; color:#4b5563;"># ${invoice.invoiceNumber}</div>
                                 <div style="margin-top:10px; display:inline-block; border:1px solid #ccc; padding: 4px 12px; font-weight:bold; text-transform:uppercase;">${invoice.status}</div>
                             </td>
@@ -183,6 +185,12 @@ const PlainInvoiceDetail: React.FC<PlainInvoiceDetailProps> = ({ invoice, client
                                         <td align="right" style="padding:8px; font-weight:bold; color:#6b7280;">Subtotal</td>
                                         <td align="right" style="padding:8px; font-weight:bold;">₦${subtotal.toLocaleString()}</td>
                                     </tr>
+                                    ${discount > 0 ? `
+                                    <tr>
+                                        <td align="right" style="padding:8px; font-weight:bold; color:#6b7280;">Discount</td>
+                                        <td align="right" style="padding:8px; font-weight:bold; color:#dc2626;">- ₦${discount.toLocaleString()}</td>
+                                    </tr>
+                                    ` : ''}
                                     <tr>
                                         <td align="right" style="padding:8px; font-weight:bold; color:#6b7280;">VAT (7.5%)</td>
                                         <td align="right" style="padding:8px; font-weight:bold;">₦${tax.toLocaleString()}</td>
@@ -261,7 +269,7 @@ const PlainInvoiceDetail: React.FC<PlainInvoiceDetailProps> = ({ invoice, client
             <Icon name="logout" className="w-4 h-4 mr-2 rotate-180"/> Exit
         </button>
         <div className="space-x-3">
-            <button onClick={handlePdfExport} className="bg-blue-600 text-white px-4 py-2 rounded shadow text-sm font-bold hover:bg-blue-700">Download PDF</button>
+            <button onClick={handlePdfExport} className="bg-blue-600 text-white px-4 py-2 rounded shadow text-sm font-bold hover:bg-blue-700">Download {isReceipt ? 'Receipt' : 'Invoice'} PDF</button>
             <button onClick={downloadAsWord} className="bg-white text-blue-700 px-4 py-2 rounded shadow text-sm font-bold hover:bg-gray-50">Download Word</button>
         </div>
       </div>
@@ -301,7 +309,7 @@ const PlainInvoiceDetail: React.FC<PlainInvoiceDetailProps> = ({ invoice, client
                     </div>
                 </div>
                 <div className="w-1/3 text-right">
-                    <h1 className="text-5xl font-black text-blue-900 uppercase tracking-tighter mb-2">Invoice</h1>
+                    <h1 className="text-5xl font-black text-blue-900 uppercase tracking-tighter mb-2">{isReceipt ? 'Receipt' : 'Invoice'}</h1>
                     <p className="text-base font-bold text-gray-500"># {invoice.invoiceNumber}</p>
                     <div className="mt-2">
                         <span className={`inline-block px-3 py-1 border text-xs font-bold uppercase tracking-wider ${
@@ -374,6 +382,12 @@ const PlainInvoiceDetail: React.FC<PlainInvoiceDetailProps> = ({ invoice, client
                                 <td className="py-2 text-right font-bold text-gray-500">Subtotal</td>
                                 <td className="py-2 text-right font-bold text-gray-900 w-32">₦{subtotal.toLocaleString()}</td>
                             </tr>
+                            {discount > 0 && (
+                                <tr>
+                                    <td className="py-2 text-right font-bold text-gray-500">Discount</td>
+                                    <td className="py-2 text-right font-bold text-red-600"> - ₦{discount.toLocaleString()}</td>
+                                </tr>
+                            )}
                             <tr>
                                 <td className="py-2 text-right font-bold text-gray-500">VAT (7.5%)</td>
                                 <td className="py-2 text-right font-bold text-gray-900">₦{tax.toLocaleString()}</td>
