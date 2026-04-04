@@ -52,6 +52,45 @@ const InvoiceForm: React.FC<InvoiceFormProps> = ({ initialInvoice, clients, serv
   const [nextRecurrenceDate, setNextRecurrenceDate] = useState<string>('');
   const [isPreviewOpen, setIsPreviewOpen] = useState(false);
   
+  // Persistence logic for drafts
+  useEffect(() => {
+    if (!initialInvoice) {
+      const savedDraft = localStorage.getItem('cravebiz_invoice_draft');
+      if (savedDraft) {
+        try {
+          const draft = JSON.parse(savedDraft);
+          if (draft.clientId) setClientId(draft.clientId);
+          if (draft.issueDate) setIssueDate(draft.issueDate);
+          if (draft.dueDate) setDueDate(draft.dueDate);
+          if (draft.items) setItems(draft.items);
+          if (draft.selectedBankAccountId) setSelectedBankAccountId(draft.selectedBankAccountId);
+          if (draft.manualBankName) setManualBankName(draft.manualBankName);
+          if (draft.manualAccountName) setManualAccountName(draft.manualAccountName);
+          if (draft.manualAccountNumber) setManualAccountNumber(draft.manualAccountNumber);
+          if (draft.paymentTerms) setPaymentTerms(draft.paymentTerms);
+          if (draft.discount) setDiscount(draft.discount);
+          if (draft.frequency) setFrequency(draft.frequency);
+          if (draft.nextRecurrenceDate) setNextRecurrenceDate(draft.nextRecurrenceDate);
+        } catch (e) {
+          console.error("Draft recovery failed", e);
+        }
+      }
+    }
+  }, [initialInvoice]);
+
+  useEffect(() => {
+    if (!initialInvoice) {
+      const draft = {
+        clientId, issueDate, dueDate, items, selectedBankAccountId,
+        manualBankName, manualAccountName, manualAccountNumber,
+        paymentTerms, discount, frequency, nextRecurrenceDate
+      };
+      localStorage.setItem('cravebiz_invoice_draft', JSON.stringify(draft));
+    }
+  }, [clientId, issueDate, dueDate, items, selectedBankAccountId, manualBankName, manualAccountName, manualAccountNumber, paymentTerms, discount, frequency, nextRecurrenceDate, initialInvoice]);
+
+  const clearDraft = () => localStorage.removeItem('cravebiz_invoice_draft');
+
   useEffect(() => {
     if (initialInvoice) {
       setClientId(initialInvoice.clientId);
@@ -122,6 +161,7 @@ const InvoiceForm: React.FC<InvoiceFormProps> = ({ initialInvoice, clients, serv
   };
 
   const handleCancel = () => {
+      clearDraft();
       onCancel();
   };
 
@@ -151,6 +191,7 @@ const InvoiceForm: React.FC<InvoiceFormProps> = ({ initialInvoice, clients, serv
       if (items.some(it => !it.serviceId)) { alert("All items must have a service selection."); return; }
       
       const data = getPreviewData(status);
+      clearDraft();
       if (!initialInvoice) {
           const { id, invoiceNumber, ...finalData } = data;
           onSave(finalData as Omit<Invoice, 'id' | 'invoiceNumber'>, status);

@@ -191,6 +191,19 @@ export default function App() {
     finally { if (isMounted.current) setIsDataSyncing(false); }
   }
 
+  const handleDeleteInvoice = async (id: string) => {
+    setIsDataSyncing(true);
+    try {
+        await api.deleteInvoice(id);
+        if (activeTenantId) await forceSyncData(activeTenantId);
+        if (currentUser?.isAdmin) {
+            const allInvs = await api.getAllInvoices();
+            setAllInvoices(allInvs);
+        }
+    } catch (e) { alert(`Delete Error: ${stringifyError(e)}`); } 
+    finally { if (isMounted.current) setIsDataSyncing(false); }
+  };
+
   const handleGenerateRenewal = async (clientId: string, item: any) => {
     try {
         const suggestion = await generateRenewalInvoiceSuggestion(clientId, [item]);
@@ -272,8 +285,8 @@ export default function App() {
               setSyncError(stringifyError(e));
           }
       }} />;
-      case 'invoices': return <InvoiceList invoices={invoices} clients={clients} onViewInvoice={(id) => { setSelectedInvoiceId(id); navigateTo('invoice-detail'); }} onEditInvoice={handleEditInvoiceAction} />;
-      case 'recurring-invoices': return <RecurringInvoiceList invoices={invoices.filter(i => i.isRecurringTemplate)} clients={clients} onViewInvoice={(id) => { setSelectedInvoiceId(id); navigateTo('invoice-detail'); }} onEditInvoice={handleEditInvoiceAction} />;
+      case 'invoices': return <InvoiceList invoices={invoices} clients={clients} onViewInvoice={(id) => { setSelectedInvoiceId(id); navigateTo('invoice-detail'); }} onEditInvoice={handleEditInvoiceAction} onDeleteInvoice={handleDeleteInvoice} />;
+      case 'recurring-invoices': return <RecurringInvoiceList invoices={invoices.filter(i => i.isRecurringTemplate)} clients={clients} onViewInvoice={(id) => { setSelectedInvoiceId(id); navigateTo('invoice-detail'); }} onEditInvoice={handleEditInvoiceAction} onDeleteInvoice={handleDeleteInvoice} />;
       case 'sent-receipts': return <SentReceiptsList invoices={invoices.filter(i => i.isReceiptSent)} clients={clients} onViewInvoice={(id) => { setSelectedInvoiceId(id); navigateTo('invoice-detail'); }} onEditInvoice={handleEditInvoiceAction} />;
       case 'create-invoice': {
           if (!activeCompany) return <div className="text-center py-20 italic">Awaiting synchronization...</div>;

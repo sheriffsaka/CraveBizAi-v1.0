@@ -9,9 +9,10 @@ interface RecurringInvoiceListProps {
   clients: Client[];
   onViewInvoice: (invoiceId: string) => void;
   onEditInvoice?: (invoiceId: string) => void;
+  onDeleteInvoice?: (invoiceId: string) => void;
 }
 
-type SortKey = 'invoiceNumber' | 'clientName' | 'frequency' | 'nextRecurrenceDate' | 'total' | 'status';
+type SortKey = 'invoiceNumber' | 'clientName' | 'frequency' | 'nextRecurrenceDate' | 'total' | 'balance' | 'status';
 type SortDirection = 'asc' | 'desc';
 
 const RecurringInvoicesTable: React.FC<{
@@ -19,10 +20,11 @@ const RecurringInvoicesTable: React.FC<{
   clients: Client[];
   onViewInvoice: (invoiceId: string) => void;
   onEditInvoice?: (invoiceId: string) => void;
+  onDeleteInvoice?: (invoiceId: string) => void;
   sortKey: SortKey;
   sortDirection: SortDirection;
   onSort: (key: SortKey) => void;
-}> = ({ invoices, clients, onViewInvoice, onEditInvoice, sortKey, sortDirection, onSort }) => {
+}> = ({ invoices, clients, onViewInvoice, onEditInvoice, onDeleteInvoice, sortKey, sortDirection, onSort }) => {
   const getClientName = (clientId: string) => {
     return clients.find(c => c.id === clientId)?.companyName || 'Unknown Client';
   };
@@ -30,6 +32,13 @@ const RecurringInvoicesTable: React.FC<{
   const getSortIcon = (key: SortKey) => {
     if (sortKey !== key) return null;
     return sortDirection === 'asc' ? ' ▲' : ' ▼';
+  };
+
+  const handleDelete = (e: React.MouseEvent, id: string, number: string) => {
+    e.stopPropagation();
+    if (onDeleteInvoice && window.confirm(`Are you sure you want to delete template ${number}? This action cannot be undone.`)) {
+      onDeleteInvoice(id);
+    }
   };
 
   return (
@@ -42,34 +51,44 @@ const RecurringInvoicesTable: React.FC<{
             <th scope="col" className="px-6 py-3 cursor-pointer" onClick={() => onSort('frequency')}>Frequency{getSortIcon('frequency')}</th>
             <th scope="col" className="px-6 py-3 cursor-pointer" onClick={() => onSort('nextRecurrenceDate')}>Next Bill Date{getSortIcon('nextRecurrenceDate')}</th>
             <th scope="col" className="px-6 py-3 cursor-pointer" onClick={() => onSort('total')}>Amount{getSortIcon('total')}</th>
+            <th scope="col" className="px-6 py-3 cursor-pointer" onClick={() => onSort('balance')}>Outstanding{getSortIcon('balance')}</th>
             <th scope="col" className="px-6 py-3 cursor-pointer" onClick={() => onSort('status')}>Status{getSortIcon('status')}</th>
             <th scope="col" className="px-6 py-3 text-right">Actions</th>
           </tr>
         </thead>
         <tbody>
-          {invoices.map((invoice) => (
-            <tr key={invoice.id} className="bg-white border-b hover:bg-gray-50 group">
-              <th scope="row" className="px-6 py-4 font-medium text-gray-900 whitespace-nowrap">
-                {invoice.invoiceNumber}
-              </th>
-              <td className="px-6 py-4">{getClientName(invoice.clientId)}</td>
-              <td className="px-6 py-4 capitalize">{invoice.frequency}</td>
-              <td className="px-6 py-4">{invoice.nextRecurrenceDate || 'N/A'}</td>
-              <td className="px-6 py-4 font-medium">₦{invoice.total.toLocaleString()}</td>
-              <td className="px-6 py-4">
-                <InvoiceStatusBadge status={invoice.status} />
-              </td>
-              <td className="px-6 py-4 text-right space-x-3">
-                <button onClick={() => onViewInvoice(invoice.id)} className="font-bold text-primary-600 hover:text-primary-800 transition-colors uppercase text-[10px] tracking-widest">View</button>
-                {onEditInvoice && (
-                    <button onClick={() => onEditInvoice(invoice.id)} className="font-bold text-amber-600 hover:text-amber-800 transition-colors uppercase text-[10px] tracking-widest">Edit</button>
-                )}
-              </td>
-            </tr>
-          ))}
+          {invoices.map((invoice) => {
+            const balance = invoice.total - (invoice.amountPaid || 0);
+            return (
+              <tr key={invoice.id} className="bg-white border-b hover:bg-gray-50 group">
+                <th scope="row" className="px-6 py-4 font-medium text-gray-900 whitespace-nowrap">
+                  {invoice.invoiceNumber}
+                </th>
+                <td className="px-6 py-4">{getClientName(invoice.clientId)}</td>
+                <td className="px-6 py-4 capitalize">{invoice.frequency}</td>
+                <td className="px-6 py-4">{invoice.nextRecurrenceDate || 'N/A'}</td>
+                <td className="px-6 py-4 font-medium">₦{invoice.total.toLocaleString()}</td>
+                <td className={`px-6 py-4 font-bold ${balance > 0 ? 'text-red-600' : 'text-green-600'}`}>
+                  ₦{balance.toLocaleString()}
+                </td>
+                <td className="px-6 py-4">
+                  <InvoiceStatusBadge status={invoice.status} />
+                </td>
+                <td className="px-6 py-4 text-right space-x-3">
+                  <button onClick={() => onViewInvoice(invoice.id)} className="font-bold text-primary-600 hover:text-primary-800 transition-colors uppercase text-[10px] tracking-widest">View</button>
+                  {onEditInvoice && (
+                      <button onClick={() => onEditInvoice(invoice.id)} className="font-bold text-amber-600 hover:text-amber-800 transition-colors uppercase text-[10px] tracking-widest">Edit</button>
+                  )}
+                  {onDeleteInvoice && (
+                      <button onClick={(e) => handleDelete(e, invoice.id, invoice.invoiceNumber)} className="font-bold text-red-600 hover:text-red-800 transition-colors uppercase text-[10px] tracking-widest">Delete</button>
+                  )}
+                </td>
+              </tr>
+            );
+          })}
            {invoices.length === 0 && (
               <tr>
-                  <td colSpan={7} className="text-center py-10 text-gray-500">No recurring invoice templates found.</td>
+                  <td colSpan={8} className="text-center py-10 text-gray-500">No recurring invoice templates found.</td>
               </tr>
           )}
         </tbody>
@@ -79,7 +98,7 @@ const RecurringInvoicesTable: React.FC<{
 };
 
 
-const RecurringInvoiceList: React.FC<RecurringInvoiceListProps> = ({ invoices, clients, onViewInvoice, onEditInvoice }) => {
+const RecurringInvoiceList: React.FC<RecurringInvoiceListProps> = ({ invoices, clients, onViewInvoice, onEditInvoice, onDeleteInvoice }) => {
   const [searchTerm, setSearchTerm] = useState('');
   const [sortKey, setSortKey] = useState<SortKey>('invoiceNumber');
   const [sortDirection, setSortDirection] = useState<SortDirection>('asc');
@@ -122,6 +141,10 @@ const RecurringInvoiceList: React.FC<RecurringInvoiceListProps> = ({ invoices, c
         case 'total':
           valA = a.total;
           valB = b.total;
+          break;
+        case 'balance':
+          valA = a.total - (a.amountPaid || 0);
+          valB = b.total - (b.amountPaid || 0);
           break;
         case 'status':
           valA = a.status;
@@ -189,6 +212,7 @@ const RecurringInvoiceList: React.FC<RecurringInvoiceListProps> = ({ invoices, c
         clients={clients}
         onViewInvoice={onViewInvoice}
         onEditInvoice={onEditInvoice}
+        onDeleteInvoice={onDeleteInvoice}
         sortKey={sortKey}
         sortDirection={sortDirection}
         onSort={handleSort}

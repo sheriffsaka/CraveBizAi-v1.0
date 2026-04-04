@@ -17,6 +17,33 @@ const ServiceFormModal: React.FC<ServiceFormModalProps> = ({ isOpen, onClose, on
     const [price, setPrice] = useState(0);
     const [description, setDescription] = useState('');
 
+    // Persistence logic for drafts
+    useEffect(() => {
+        if (!service && isOpen) {
+            const savedDraft = localStorage.getItem('cravebiz_service_draft');
+            if (savedDraft) {
+                try {
+                    const draft = JSON.parse(savedDraft);
+                    if (draft.name) setName(draft.name);
+                    if (draft.category) setCategory(draft.category);
+                    if (draft.price) setPrice(draft.price);
+                    if (draft.description) setDescription(draft.description);
+                } catch (e) {
+                    console.error("Service draft recovery failed", e);
+                }
+            }
+        }
+    }, [service, isOpen]);
+
+    useEffect(() => {
+        if (!service && isOpen) {
+            const draft = { name, category, price, description };
+            localStorage.setItem('cravebiz_service_draft', JSON.stringify(draft));
+        }
+    }, [name, category, price, description, service, isOpen]);
+
+    const clearDraft = () => localStorage.removeItem('cravebiz_service_draft');
+
     // Populate form fields if a service is being edited
     useEffect(() => {
         if (service) {
@@ -44,6 +71,7 @@ const ServiceFormModal: React.FC<ServiceFormModalProps> = ({ isOpen, onClose, on
         // Adding new service, now correctly including companyId
         onSaveService({ companyId, name, category, price, description });
     }
+    clearDraft();
     onClose(); // Close modal after saving
   };
 

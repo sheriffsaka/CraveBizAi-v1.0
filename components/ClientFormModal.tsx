@@ -16,6 +16,32 @@ const ClientFormModal: React.FC<ClientFormModalProps> = ({ isOpen, onClose, onSa
   const [name, setName] = useState('');
   const [email, setEmail] = useState('');
 
+  // Persistence logic for drafts
+  useEffect(() => {
+    if (!client && isOpen) {
+      const savedDraft = localStorage.getItem('cravebiz_client_draft');
+      if (savedDraft) {
+        try {
+          const draft = JSON.parse(savedDraft);
+          if (draft.companyName) setCompanyName(draft.companyName);
+          if (draft.name) setName(draft.name);
+          if (draft.email) setEmail(draft.email);
+        } catch (e) {
+          console.error("Client draft recovery failed", e);
+        }
+      }
+    }
+  }, [client, isOpen]);
+
+  useEffect(() => {
+    if (!client && isOpen) {
+      const draft = { companyName, name, email };
+      localStorage.setItem('cravebiz_client_draft', JSON.stringify(draft));
+    }
+  }, [companyName, name, email, client, isOpen]);
+
+  const clearDraft = () => localStorage.removeItem('cravebiz_client_draft');
+
   // Populate form fields if a client is being edited
   useEffect(() => {
     if (client) {
@@ -53,6 +79,7 @@ const ClientFormModal: React.FC<ClientFormModalProps> = ({ isOpen, onClose, onSa
       // Adding new client
       onSaveClient(payload);
     }
+    clearDraft();
     onClose(); // Close modal after saving
   };
 

@@ -348,6 +348,14 @@ class CraveBizApi {
     if (error) throw error;
   }
 
+  async deleteInvoice(id: string): Promise<void> {
+    const { error: itemsError } = await supabase.from('invoice_items').delete().eq('invoice_id', id);
+    if (itemsError) console.warn("Line items deletion issue:", itemsError);
+    
+    const { error } = await supabase.from('invoices').delete().eq('id', id);
+    if (error) throw error;
+  }
+
   async fetchClients(companyId: string): Promise<Client[]> {
     const { data, error } = await supabase.from('clients').select('*').eq('company_id', companyId);
     if (error) throw error;
