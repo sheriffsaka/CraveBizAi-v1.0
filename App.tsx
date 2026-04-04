@@ -12,7 +12,6 @@ import CreateInvoice from './components/CreateInvoice';
 import EditInvoice from './components/EditInvoice';
 import InvoiceDetail from './components/InvoiceDetail';
 import AuthPage from './components/AuthPage';
-import ChatbotModal from './components/ChatbotModal';
 import UserProfileModal from './components/UserProfileModal';
 import PlainInvoiceDetail from './components/PlainInvoiceDetail';
 import RecurringInvoiceList from './components/RecurringInvoiceList';
@@ -51,7 +50,6 @@ export default function App() {
   const [tenantData, setTenantData] = useState<TenantData>({ invoices: [], clients: [], services: [], generatedDocs: [] });
   const [selectedInvoiceId, setSelectedInvoiceId] = useState<string | null>(null);
   const [downloadAction, setDownloadAction] = useState<'print' | 'word' | undefined>(undefined);
-  const [isChatbotOpen, setIsChatbotOpen] = useState(false);
   const [isUserProfileModalOpen, setIsUserProfileModalOpen] = useState(false);
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
   const [draftRenewal, setDraftRenewal] = useState<Partial<Invoice> | null>(null);
@@ -449,7 +447,6 @@ export default function App() {
             activeTenantId={activeTenantId || ''} 
             onSwitchTenant={(id) => { setActiveTenantId(id); localStorage.setItem('cravebiz_tenant', id); forceSyncData(id); }} 
             user={currentUser} 
-            toggleChatbot={() => setIsChatbotOpen(true)} 
             onOpenUserProfile={() => setIsUserProfileModalOpen(true)} 
             onLogout={async () => { await supabase.auth.signOut(); }} 
             onToggleMobileMenu={() => setIsMobileMenuOpen(true)} 
@@ -472,7 +469,6 @@ export default function App() {
             {renderContent()}
         </main>
       </div>
-      {isChatbotOpen && <ChatbotModal onClose={() => setIsChatbotOpen(false)} />}
       {isUserProfileModalOpen && currentUser && (
           <UserProfileModal isOpen={isUserProfileModalOpen} onClose={() => setIsUserProfileModalOpen(false)} user={currentUser} onUpdateProfile={()=>{}} />
       )}

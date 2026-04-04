@@ -10,7 +10,6 @@ interface HeaderProps {
     activeTenantId: string;
     onSwitchTenant: (tenantId: string) => void;
     user: User | null;
-    toggleChatbot: () => void;
     onOpenUserProfile: () => void;
     onLogout: () => void;
     onToggleMobileMenu: () => void;
@@ -51,7 +50,7 @@ const UserAvatar: React.FC<{ user: User; onOpenUserProfile: () => void; onLogout
     )
 }
 
-const Header: React.FC<HeaderProps> = ({ pageTitle, onCreateInvoice, user, toggleChatbot, onOpenUserProfile, onLogout, onToggleMobileMenu }) => {
+const Header: React.FC<HeaderProps> = ({ pageTitle, onCreateInvoice, user, onOpenUserProfile, onLogout, onToggleMobileMenu }) => {
     return (
         <header className="flex justify-between items-center p-4 h-20 bg-white border-b shadow-sm relative z-40">
             <div className="flex items-center">
@@ -61,13 +60,6 @@ const Header: React.FC<HeaderProps> = ({ pageTitle, onCreateInvoice, user, toggl
                 <h2 className="text-xl font-bold text-gray-800 tracking-tight">{pageTitle}</h2>
             </div>
             <div className="flex items-center space-x-3">
-                <button 
-                    onClick={toggleChatbot} 
-                    className="p-2.5 bg-primary-50 text-primary-600 rounded-full hover:bg-primary-100 transition-all shadow-sm border border-primary-100"
-                    title="Ask AI Assistant"
-                >
-                    <Icon name="message-square" className="w-5 h-5"/>
-                </button>
                 <button onClick={onCreateInvoice} className="hidden sm:flex px-5 py-2.5 bg-primary-600 text-white rounded-xl hover:bg-primary-700 font-bold shadow-lg shadow-primary-200 transition-all transform hover:-translate-y-0.5 items-center">
                     <span className="mr-2 text-lg leading-none">+</span> New Invoice
                 </button>
