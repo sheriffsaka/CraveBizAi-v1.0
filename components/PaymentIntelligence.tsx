@@ -36,37 +36,54 @@ const PaymentIntelligence: React.FC<PaymentIntelligenceProps> = ({ invoices, cli
       const clientInvoices = invoices.filter(inv => inv.clientId === client.id);
       
       const monthlyStatus = months.map(m => {
-        // Find if any invoice covers this month
-        const coverage = clientInvoices.find(inv => {
-          return inv.items?.some(item => {
+        const monthStart = new Date(m.year, m.month, 1);
+        const monthEnd = new Date(m.year, m.month + 1, 0);
+        const now = new Date();
+
+        // Find all invoices that cover this month
+        const applicableInvoices = clientInvoices.filter(inv => {
+          // 1. Check item periods (most accurate)
+          const hasItemCoverage = inv.items?.some(item => {
             if (!item.periodStartDate || !item.periodEndDate) return false;
             const start = new Date(item.periodStartDate);
             const end = new Date(item.periodEndDate);
-            const monthStart = new Date(m.year, m.month, 1);
-            const monthEnd = new Date(m.year, m.month + 1, 0);
-            
-            // Overlap check
             return start <= monthEnd && end >= monthStart;
           });
+
+          if (hasItemCoverage) return true;
+
+          // 2. Fallback to issueDate if no item periods are defined at all for the invoice
+          const anyItemHasPeriod = inv.items?.some(item => item.periodStartDate && item.periodEndDate);
+          if (!anyItemHasPeriod) {
+            const issueDate = new Date(inv.issueDate);
+            return issueDate.getFullYear() === m.year && issueDate.getMonth() === m.month;
+          }
+
+          return false;
         });
 
         let status: 'paid' | 'unpaid' | 'overdue' | 'none' = 'none';
-        if (coverage) {
-          if (coverage.status === InvoiceStatus.Paid) status = 'paid';
-          else if (coverage.status === InvoiceStatus.Overdue) status = 'overdue';
-          else status = 'unpaid';
+        if (applicableInvoices.length > 0) {
+          const hasOverdue = applicableInvoices.some(inv => 
+            inv.status === InvoiceStatus.Overdue || 
+            (inv.status !== InvoiceStatus.Paid && inv.status !== InvoiceStatus.Draft && new Date(inv.dueDate) < now)
+          );
+          const hasUnpaid = applicableInvoices.some(inv => inv.status !== InvoiceStatus.Paid && inv.status !== InvoiceStatus.Draft);
+          const hasPaid = applicableInvoices.some(inv => inv.status === InvoiceStatus.Paid);
+
+          if (hasOverdue) status = 'overdue';
+          else if (hasUnpaid) status = 'unpaid';
+          else if (hasPaid) status = 'paid';
         }
 
         return { ...m, status };
       });
 
-      const totalPaid = clientInvoices
-        .filter(inv => inv.status === InvoiceStatus.Paid)
-        .reduce((sum, inv) => sum + inv.total, 0);
+      const totalPaid = clientInvoices.reduce((sum, inv) => sum + (inv.amountPaid || 0), 0);
       
       const totalOutstanding = clientInvoices
         .filter(inv => inv.status !== InvoiceStatus.Paid && inv.status !== InvoiceStatus.Draft)
-        .reduce((sum, inv) => sum + (inv.total - (inv.amountPaid || 0)), 0);
+        .reduce((sum, inv) => sum + Math.max(0, inv.total - (inv.amountPaid || 0)), 0);
 
       const isPaidAhead = monthlyStatus.some((m, idx) => {
         const now = new Date();
