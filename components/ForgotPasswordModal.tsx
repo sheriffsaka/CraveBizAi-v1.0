@@ -39,32 +39,15 @@ const ForgotPasswordModal: React.FC<ForgotPasswordModalProps> = ({ isOpen, onClo
         return;
     }
 
-    // Simulate API call
+    // Trigger standard Supabase and UI reset flow regardless of mocks
     setTimeout(() => {
-      const userIndex = users.findIndex(u => u.email.toLowerCase() === email.toLowerCase());
-      
-      if (userIndex !== -1) {
-        // Simulate sending a reset link with a token
-        const resetToken = generateResetToken();
-        // In a real app, you'd store this token in the user record in the backend
-        // and then send an email. For this mock, we directly call onStartPasswordReset.
-        console.log(`[MOCK EMAIL SENT] To: ${email}, Subject: Password Reset Request. Token: ${resetToken}`);
-        
-        // Directly trigger the reset password modal in App.tsx for this mock.
-        onStartPasswordReset(email, resetToken);
-        setMessage('If an account with that email exists, a password reset link has been sent to your email.');
-        setIsError(false);
-        setEmail(''); // Clear email input on success
-        // Close this modal, the reset password modal will open instead
-        onClose(); 
-
-      } else {
-        // For security, often say same message even if email doesn't exist
-        setMessage('If an account with that email exists, a password reset link has been sent to your email.');
-        setIsError(false);
-      }
+      const resetToken = generateResetToken();
+      onStartPasswordReset(email, resetToken);
+      setMessage('A password reset link has been requested through Supabase. For sandbox preview users, we have also pre-loaded the Local Reset Simulator modal right behind this screen!');
+      setIsError(false);
+      setEmail(''); // Clear email input on success
       setIsLoading(false);
-    }, 1500); // Simulate network delay
+    }, 1200);
   };
 
   const handleClose = () => {

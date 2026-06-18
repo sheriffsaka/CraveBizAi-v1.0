@@ -9,7 +9,7 @@ interface ResetPasswordModalProps {
   onClose: () => void;
   email: string;
   token: string; // The simulated reset token
-  onResetPassword: (email: string, newPassword: string, token: string) => boolean;
+  onResetPassword: (email: string, newPassword: string, token: string) => boolean | Promise<boolean>;
 }
 
 const ResetPasswordModal: React.FC<ResetPasswordModalProps> = ({ isOpen, onClose, email, token, onResetPassword }) => {
@@ -22,7 +22,7 @@ const ResetPasswordModal: React.FC<ResetPasswordModalProps> = ({ isOpen, onClose
   const [showConfirmPassword, setShowConfirmPassword] = useState(false);
 
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setMessage(null);
     setIsError(false);
@@ -47,20 +47,24 @@ const ResetPasswordModal: React.FC<ResetPasswordModalProps> = ({ isOpen, onClose
         return;
     }
 
-    setTimeout(() => { // Simulate API call
-      const success = onResetPassword(email, newPassword, token);
+    try {
+      const success = await onResetPassword(email, newPassword, token);
       if (success) {
         setMessage('Your password has been reset successfully!');
         setIsError(false);
         setNewPassword('');
         setConfirmPassword('');
-        onClose(); // Close modal on success
+        setTimeout(() => onClose(), 1500); // Close modal on success
       } else {
         setMessage('Failed to reset password. The reset link might be invalid or expired.');
         setIsError(true);
       }
+    } catch {
+      setMessage('Error updating password.');
+      setIsError(true);
+    } finally {
       setIsLoading(false);
-    }, 1500);
+    }
   };
 
   return (

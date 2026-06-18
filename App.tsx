@@ -12,6 +12,8 @@ import CreateInvoice from './components/CreateInvoice';
 import EditInvoice from './components/EditInvoice';
 import InvoiceDetail from './components/InvoiceDetail';
 import AuthPage from './components/AuthPage';
+import ForgotPasswordModal from './components/ForgotPasswordModal';
+import ResetPasswordModal from './components/ResetPasswordModal';
 import UserProfileModal from './components/UserProfileModal';
 import PlainInvoiceDetail from './components/PlainInvoiceDetail';
 import RecurringInvoiceList from './components/RecurringInvoiceList';
@@ -53,6 +55,10 @@ export default function App() {
   const [isUserProfileModalOpen, setIsUserProfileModalOpen] = useState(false);
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
   const [draftRenewal, setDraftRenewal] = useState<Partial<Invoice> | null>(null);
+  const [isForgotPasswordOpen, setIsForgotPasswordOpen] = useState(false);
+  const [isResetPasswordOpen, setIsResetPasswordOpen] = useState(false);
+  const [resetEmail, setResetEmail] = useState('');
+  const [resetToken, setResetToken] = useState('');
   const isMounted = useRef(true);
 
   const pageTitles: { [key in Page]: string } = {
@@ -133,14 +139,31 @@ export default function App() {
     isMounted.current = true;
     const initAuth = async () => {
         try {
+            const hash = window.location.hash;
+            if (hash && (hash.includes('type=recovery') || hash.includes('access_token='))) {
+                setIsResetPasswordOpen(true);
+            }
             const { data } = await supabase.auth.getSession();
-            if (data?.session?.user) await handleAuthSync(data.session.user);
+            if (data?.session?.user) {
+                await handleAuthSync(data.session.user);
+                if (hash && (hash.includes('type=recovery') || hash.includes('access_token='))) {
+                    if (data.session.user.email) {
+                        setResetEmail(data.session.user.email);
+                    }
+                }
+            }
             else if (isMounted.current) setIsLoading(false);
         } catch (e) { if (isMounted.current) { setIsLoading(false); setSyncError(stringifyError(e)); } }
     };
     initAuth();
     const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
-        if (session?.user) handleAuthSync(session.user);
+        if (session?.user) {
+            handleAuthSync(session.user);
+            if (event === 'PASSWORD_RECOVERY') {
+                setIsResetPasswordOpen(true);
+                if (session.user.email) setResetEmail(session.user.email);
+            }
+        }
         else if (event === 'SIGNED_OUT' && isMounted.current) { 
             setCurrentUser(null); setIsLoading(false); setCompanies([]); setActiveTenantId(null); 
             setTenantData({ invoices: [], clients: [], services: [], generatedDocs: [] }); localStorage.removeItem('cravebiz_tenant'); 
@@ -222,21 +245,71 @@ export default function App() {
 
   if (!isLoading && !currentUser) {
     return (
-      <AuthPage 
-        onLogin={async (e, p) => {
-            const { error } = await supabase.auth.signInWithPassword({ email: e, password: p });
-            if (error) return stringifyError(error);
-            return true;
-        }}
-        onSignup={async (name, email, pass, companyName, phone) => {
-            const { error } = await supabase.auth.signUp({ 
-                email, password: pass, options: { data: { full_name: name, company_name: companyName, phone } }
-            });
-            if (error) return stringifyError(error);
-            return true;
-        }}
-        onOpenForgotPassword={() => {}} users={[]} onOpenEmailVerification={() => true} pendingVerificationEmail={null}
-      />
+      <>
+        <AuthPage 
+          onLogin={async (e, p) => {
+              const { error } = await supabase.auth.signInWithPassword({ email: e, password: p });
+              if (error) return stringifyError(error);
+              return true;
+          }}
+          onSignup={async (name, email, pass, companyName, phone) => {
+              const { error } = await supabase.auth.signUp({ 
+                  email, password: pass, options: { data: { full_name: name, company_name: companyName, phone } }
+              });
+              if (error) return stringifyError(error);
+              return true;
+          }}
+          onOpenForgotPassword={() => setIsForgotPasswordOpen(true)} 
+          users={[]} 
+          onOpenEmailVerification={() => true} 
+          pendingVerificationEmail={null}
+        />
+        {isForgotPasswordOpen && (
+          <ForgotPasswordModal 
+            isOpen={isForgotPasswordOpen} 
+            onClose={() => setIsForgotPasswordOpen(false)} 
+            users={[]} 
+            onStartPasswordReset={async (email) => {
+              setResetEmail(email);
+              try {
+                await supabase.auth.resetPasswordForEmail(email, {
+                  redirectTo: window.location.origin
+                });
+              } catch (e) {
+                console.error("Supabase reset password request skipped/failed", e);
+              }
+              setIsResetPasswordOpen(true);
+            }} 
+          />
+        )}
+        {isResetPasswordOpen && (
+          <ResetPasswordModal 
+            isOpen={isResetPasswordOpen} 
+            onClose={() => {
+              setIsResetPasswordOpen(false);
+              window.location.hash = '';
+            }} 
+            email={resetEmail} 
+            token={resetToken} 
+            onResetPassword={async (email, newPassword) => {
+              try {
+                const { error } = await supabase.auth.updateUser({ password: newPassword });
+                if (error) {
+                  alert(stringifyError(error));
+                  return false;
+                }
+                alert("Your password has been reset successfully! You can now sign in with your new password.");
+                setIsResetPasswordOpen(false);
+                window.location.hash = '';
+                return true;
+              } catch (err: any) {
+                alert("Password update failed: " + stringifyError(err));
+                return false;
+              }
+            }} 
+          />
+        )}
+      </>
     );
   }
 
@@ -471,6 +544,33 @@ export default function App() {
       </div>
       {isUserProfileModalOpen && currentUser && (
           <UserProfileModal isOpen={isUserProfileModalOpen} onClose={() => setIsUserProfileModalOpen(false)} user={currentUser} onUpdateProfile={()=>{}} />
+      )}
+      {isResetPasswordOpen && (
+          <ResetPasswordModal 
+            isOpen={isResetPasswordOpen} 
+            onClose={() => {
+              setIsResetPasswordOpen(false);
+              window.location.hash = '';
+            }} 
+            email={resetEmail} 
+            token={resetToken} 
+            onResetPassword={async (email, newPassword) => {
+              try {
+                const { error } = await supabase.auth.updateUser({ password: newPassword });
+                if (error) {
+                  alert(stringifyError(error));
+                  return false;
+                }
+                alert("Your password has been reset successfully! You can now use your new password.");
+                setIsResetPasswordOpen(false);
+                window.location.hash = '';
+                return true;
+              } catch (err: any) {
+                alert("Password update failed: " + stringifyError(err));
+                return false;
+              }
+            }} 
+          />
       )}
     </div>
   );
