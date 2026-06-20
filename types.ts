@@ -165,3 +165,11 @@ export interface StoredGeneratedDoc extends GeneratedDocument {
   companyId: string;
   createdAt: string;
 }
+
+export interface DocumentReviewResult {
+  score: number;
+  summary: string;
+  risks: string[];
+  suggestions: string[];
+  keyClauses: { name: string; content: string }[];
+}

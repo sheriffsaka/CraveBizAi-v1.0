@@ -1,7 +1,7 @@
 
 import React, { useState, useRef, useEffect } from 'react';
-import { transformDocument, generateDocumentFromPurpose, reviewDocumentContent, DocumentReviewResult } from '../services/aiGenerationService';
-import { GeneratedDocument, DocumentBlock, HeaderBlock, MetadataBlock, TableBlock, SummaryBlock, Company, User, StoredGeneratedDoc } from '../types';
+import { transformDocument, generateDocumentFromPurpose, reviewDocumentContent } from '../services/aiGenerationService';
+import { GeneratedDocument, DocumentBlock, HeaderBlock, MetadataBlock, TableBlock, SummaryBlock, Company, User, StoredGeneratedDoc, DocumentReviewResult } from '../types';
 import EditableBlock from './EditableBlock';
 import Icon from './common/Icon';
 

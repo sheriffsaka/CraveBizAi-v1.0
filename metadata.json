@@ -1,5 +1,6 @@
 {
   "name": "CraveBiZ AI - Intelligent Financial Vault",
   "description": "An intelligent, multi-tenant invoice management platform for freelancers, agencies, and SMEs. Create, send, and manage invoices efficiently with AI-powered assistance.",
-  "requestFramePermissions": []
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
 }
