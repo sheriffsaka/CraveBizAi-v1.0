@@ -1,6 +1,6 @@
 
-import React, { useState, useRef } from 'react';
-import { transformDocument } from '../services/aiGenerationService';
+import React, { useState, useRef, useEffect } from 'react';
+import { transformDocument, generateDocumentFromPurpose, reviewDocumentContent, DocumentReviewResult } from '../services/aiGenerationService';
 import { GeneratedDocument, DocumentBlock, HeaderBlock, MetadataBlock, TableBlock, SummaryBlock, Company, User, StoredGeneratedDoc } from '../types';
 import EditableBlock from './EditableBlock';
 import Icon from './common/Icon';
@@ -12,54 +12,345 @@ interface DocumentTransformerProps {
     onSaveDoc: (doc: GeneratedDocument) => void;
 }
 
+const TEMPLATES = [
+    {
+        title: "Service Agreement",
+        desc: "Build a robust web, software or design agreement.",
+        prompt: "Create a Comprehensive Service Agreement between CraveBiZ and Client EliteTech for Custom Web Development and SEO management. Design phase: $2,500. Development phase: $3,500. Deployment: $1,000. Total of $7,000. Payment due in net 30 days after milestones."
+    },
+    {
+        title: "Non-Disclosure Agreement",
+        desc: "Standard mutual NDA to safeguard proprietary info.",
+        prompt: "Draft a Mutual Non-Disclosure Agreement (NDA) between CraveBiZ and Partner SecureVentures to protect tech architectures, source codes, and API secrets. Term: 5 years from signing. Jurisdiction: Lagos State, Nigeria."
+    },
+    {
+        title: "Consulting Proposal",
+        desc: "Professional detailed agency proposal with pricing.",
+        prompt: "Draft an Executive Consulting Proposal detailing market entry strategy, brand positioning audis and corporate workshops. Stage 1 Audits: $3,000, Stage 2 Corporate Workshops: $5,000. Terms: 50% upfront, balance upon presentation of final deck."
+    },
+    {
+        title: "Independent Contractor",
+        desc: "Contractor agreement detailing delivery terms.",
+        prompt: "Create an Independent Contractor Contract for a Senior UI/UX Designer, monthly retainer of $3,200. Hours capped at 30 per week. IP assignment is 100% owned by the client upon receipt of payments."
+    }
+];
+
 const DocumentTransformer: React.FC<DocumentTransformerProps> = ({ company, user, generatedDocs, onSaveDoc }) => {
+    // Tab State: generate (Purpose-made), format (Format plain text), review (Compliance audit)
+    const [activeTab, setActiveTab] = useState<'generate' | 'format' | 'review'>('generate');
+
+    // General state
     const [rawText, setRawText] = useState('');
     const [generatedDoc, setGeneratedDoc] = useState<GeneratedDocument | null>(null);
     const [isLoading, setIsLoading] = useState(false);
     const [error, setError] = useState<string | null>(null);
 
+    // Feature i: Generate Document by Purpose
+    const [documentPurpose, setDocumentPurpose] = useState('');
+
+    // Feature ii: E-Signature
+    const [isSignModalOpen, setIsSignModalOpen] = useState(false);
+    const [sigType, setSigType] = useState<'draw' | 'type' | 'upload'>('draw');
+    const [typedName, setTypedName] = useState(user?.full_name || 'Sheriff Dean');
+    const [selectedCursiveStyle, setSelectedCursiveStyle] = useState<number>(0);
+    const [sigTitle, setSigTitle] = useState('Executive Partner');
+    const [drawnSigUrl, setDrawnSigUrl] = useState<string | null>(null);
+    const [uploadedSigUrl, setUploadedSigUrl] = useState<string | null>(null);
+    const [appliedSignature, setAppliedSignature] = useState<{
+        type: 'draw' | 'type' | 'upload';
+        value: string;
+        name: string;
+        title: string;
+        date: string;
+    } | null>(null);
+
+    // Drawing Canvas references
+    const canvasRef = useRef<HTMLCanvasElement | null>(null);
+    const [isDrawing, setIsDrawing] = useState(false);
+
+    // Feature iii: Document Review & Analysis
+    const [reviewText, setReviewText] = useState('');
+    const [reviewLoading, setReviewLoading] = useState(false);
+    const [reviewReport, setReviewReport] = useState<DocumentReviewResult | null>(null);
+    const [isDragOver, setIsDragOver] = useState(false);
+    const [uploadedFileName, setUploadedFileName] = useState('');
+
+    // Print & Layout references
     const documentRef = useRef<HTMLDivElement>(null);
 
-    const handleGenerate = async () => {
-        if (!rawText.trim() || !company || !user) {
-            setError('Input text and company context are required.');
+    // Dynamically load elegant signature cursive fonts
+    useEffect(() => {
+        const link = document.createElement('link');
+        link.href = 'https://fonts.googleapis.com/css2?family=Dancing+Script:wght@700&family=Great+Vibes&family=Herr+Von+Muellerhoff&family=Homemade+Apple&display=swap';
+        link.rel = 'stylesheet';
+        document.head.appendChild(link);
+        return () => {
+            document.head.removeChild(link);
+        };
+    }, []);
+
+    // Synchronize company defaults
+    const getCompanyContext = () => {
+        if (!company) return { name: 'CraveBiZ Corp', address: 'Plot 10, Victoria Island, Lagos', email: 'hello@cravebiz.ai', phone: '+234 800 000 0000', website: 'cravebiz.ai', logoUrl: '' };
+        return {
+            name: company.name,
+            address: company.address,
+            email: company.email,
+            phone: company.phone || '',
+            website: company.website || '',
+            logoUrl: company.logoUrl || ''
+        };
+    };
+
+    // Prompt-based generation (Feature i)
+    const handleGenerateByPurpose = async () => {
+        if (!documentPurpose.trim()) {
+            setError('Please enter the nature or purpose of the document to generate.');
             return;
         }
         setIsLoading(true);
         setError(null);
         setGeneratedDoc(null);
+        setAppliedSignature(null); // Reset signature for new document
         try {
-            const companyContext = {
-                name: company.name,
-                address: company.address,
-                email: company.email,
-                phone: company.phone || '',
-                website: company.website || '',
-                logoUrl: company.logoUrl || ''
-            };
-            const result = await transformDocument(rawText, companyContext);
+            const context = getCompanyContext();
+            const result = await generateDocumentFromPurpose(documentPurpose, context);
             if (result) {
                 setGeneratedDoc(result);
                 onSaveDoc(result);
             } else {
-                setError("Failed to generate document. The AI model returned an unexpected format.");
+                setError("Failure creating document. The AI model could not structure the document blocks.");
             }
         } catch (e) {
-            setError("An error occurred while communicating with the AI. Please try again.");
+            setError("Failed to communicate with CraveBiZ GenAI node. Please retry.");
             console.error(e);
         } finally {
             setIsLoading(false);
         }
     };
-    
-    const handleUpdateBlock = (blockId: string, newContent: any) => {
-        if (!generatedDoc) return;
-        const updatedBlocks = generatedDoc.blocks.map(block => 
-            block.id === blockId ? { ...block, content: newContent } : block
-        );
-        setGeneratedDoc({ ...generatedDoc, blocks: updatedBlocks });
+
+    // Format raw text (Existing feature enhanced)
+    const handleFormatRawText = async () => {
+        if (!rawText.trim()) {
+            setError('Please input or paste raw content first.');
+            return;
+        }
+        setIsLoading(true);
+        setError(null);
+        setGeneratedDoc(null);
+        setAppliedSignature(null);
+        try {
+            const context = getCompanyContext();
+            const result = await transformDocument(rawText, context);
+            if (result) {
+                setGeneratedDoc(result);
+                onSaveDoc(result);
+            } else {
+                setError("Format operation failed. The unstructured text format is unrecognizable.");
+            }
+        } catch (e) {
+            setError("A network error occurred formatting raw text.");
+            console.error(e);
+        } finally {
+            setIsLoading(false);
+        }
     };
 
+    // File Drop & Parse Processing (Feature iii)
+    const handleFileDrop = (e: React.DragEvent<HTMLDivElement>) => {
+        e.preventDefault();
+        setIsDragOver(false);
+        const file = e.dataTransfer.files[0];
+        if (file) {
+            processUploadedFile(file);
+        }
+    };
+
+    const processUploadedFile = (file: File) => {
+        setUploadedFileName(file.name);
+        const reader = new FileReader();
+        reader.onload = async (event) => {
+            const text = event.target?.result as string;
+            if (file.name.endsWith('.json')) {
+                try {
+                    const parsed = JSON.parse(text);
+                    if (parsed.documentType && parsed.blocks) {
+                        setGeneratedDoc(parsed);
+                        setReviewText(JSON.stringify(parsed, null, 2));
+                        handleAnalyzeText(text);
+                        return;
+                    }
+                } catch (err) {
+                    console.warn("JSON file was not in block layout, reading as standard text.");
+                }
+            }
+            setReviewText(text);
+            handleAnalyzeText(text);
+        };
+        reader.readAsText(file);
+    };
+
+    const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
+        const file = e.target.files?.[0];
+        if (file) {
+            processUploadedFile(file);
+        }
+    };
+
+    // AI Review Analysis (Feature iii)
+    const handleAnalyzeText = async (textToAnalyze: string) => {
+        const targetText = textToAnalyze || reviewText;
+        if (!targetText.trim()) {
+            setError('Please write, paste or upload some text to review first.');
+            return;
+        }
+        setReviewLoading(true);
+        setError(null);
+        setReviewReport(null);
+        try {
+            const result = await reviewDocumentContent(targetText);
+            if (result) {
+                setReviewReport(result);
+                // Dynamically populate standard preview for the uploaded file so user can sign it in-app!
+                if (!generatedDoc) {
+                    const parsedDoc: GeneratedDocument = {
+                        documentType: "Uploaded Document",
+                        blocks: [
+                            { id: 'hdr_up', type: 'header', content: { companyName: company?.name || 'Review Agency', address: company?.address || '', email: company?.email || '', phone: company?.phone || '', website: company?.website || '' } },
+                            { id: 'meta_up', type: 'metadata', content: { documentTitle: fileLabelClean(uploadedFileName) || "Reviewed Agreement File", clientName: "Counterparty Client", preparedBy: user?.full_name || "Assigned Officer", date: new Date().toLocaleDateString(), reference: "REF-" + Math.floor(Math.random() * 89999 + 10000) } },
+                            { id: 'p_up', type: 'paragraph', content: { text: targetText.substring(0, 5000) } }
+                        ]
+                    };
+                    setGeneratedDoc(parsedDoc);
+                }
+            } else {
+                setError("The compliance intelligence model was unable to parse this material.");
+            }
+        } catch (e) {
+            setError("Analysis process interrupted. Gemini node is currently rate-limited.");
+            console.error(e);
+        } finally {
+            setReviewLoading(false);
+        }
+    };
+
+    const fileLabelClean = (fname: string) => {
+        if (!fname) return '';
+        return fname.replace(/\.[^/.]+$/, "").replace(/[_\-]/g, " ");
+    };
+
+    // Canvas drawing signature mechanics
+    const startDrawing = (e: React.MouseEvent<HTMLCanvasElement> | React.TouchEvent<HTMLCanvasElement>) => {
+        const canvas = canvasRef.current;
+        if (!canvas) return;
+        const ctx = canvas.getContext('2d');
+        if (!ctx) return;
+        ctx.strokeStyle = '#1e3a8a'; // Deep blue signature ink
+        ctx.lineWidth = 2.5;
+        ctx.lineCap = 'round';
+
+        let clientX, clientY;
+        if ('touches' in e) {
+            clientX = e.touches[0].clientX;
+            clientY = e.touches[0].clientY;
+        } else {
+            clientX = e.clientX;
+            clientY = e.clientY;
+        }
+
+        const rect = canvas.getBoundingClientRect();
+        const x = clientX - rect.left;
+        const y = clientY - rect.top;
+
+        ctx.beginPath();
+        ctx.moveTo(x, y);
+        setIsDrawing(true);
+    };
+
+    const draw = (e: React.MouseEvent<HTMLCanvasElement> | React.TouchEvent<HTMLCanvasElement>) => {
+        if (!isDrawing) return;
+        e.preventDefault();
+        const canvas = canvasRef.current;
+        if (!canvas) return;
+        const ctx = canvas.getContext('2d');
+        if (!ctx) return;
+
+        let clientX, clientY;
+        if ('touches' in e) {
+            clientX = e.touches[0].clientX;
+            clientY = e.touches[0].clientY;
+        } else {
+            clientX = e.clientX;
+            clientY = e.clientY;
+        }
+
+        const rect = canvas.getBoundingClientRect();
+        const x = clientX - rect.left;
+        const y = clientY - rect.top;
+
+        ctx.lineTo(x, y);
+        ctx.stroke();
+    };
+
+    const stopDrawing = () => {
+        setIsDrawing(false);
+    };
+
+    const clearCanvas = () => {
+        const canvas = canvasRef.current;
+        if (!canvas) return;
+        const ctx = canvas.getContext('2d');
+        if (!ctx) return;
+        ctx.clearRect(0, 0, canvas.width, canvas.height);
+        setDrawnSigUrl(null);
+    };
+
+    const handleUploadSignatureChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+        const file = e.target.files?.[0];
+        if (file) {
+            const reader = new FileReader();
+            reader.onload = (event) => {
+                setUploadedSigUrl(event.target?.result as string);
+            };
+            reader.readAsDataURL(file);
+        }
+    };
+
+    // Apply E-Signature
+    const handleApplySignature = () => {
+        let value = '';
+        if (sigType === 'draw') {
+            const canvas = canvasRef.current;
+            if (canvas) {
+                value = canvas.toDataURL();
+            } else if (drawnSigUrl) {
+                value = drawnSigUrl;
+            }
+        } else if (sigType === 'type') {
+            if (!typedName.trim()) {
+                alert('Please type your signature letters.');
+                return;
+            }
+            value = selectedCursiveStyle.toString();
+        } else if (sigType === 'upload') {
+            if (!uploadedSigUrl) {
+                alert('Please upload an image representation of your signature.');
+                return;
+            }
+            value = uploadedSigUrl;
+        }
+
+        setAppliedSignature({
+            type: sigType,
+            value: value,
+            name: typedName || 'User Verified',
+            title: sigTitle || 'Authorized Representative',
+            date: new Date().toLocaleString()
+        });
+        setIsSignModalOpen(false);
+    };
+
+    // Export documents
     const handlePrint = () => {
         window.print();
     };
@@ -67,9 +358,8 @@ const DocumentTransformer: React.FC<DocumentTransformerProps> = ({ company, user
     const handleDownloadPdf = () => {
         const element = documentRef.current;
         if (!element || !(window as any).html2pdf) return;
-        
         const opt = {
-            margin: 0,
+            margin: 10,
             filename: `${generatedDoc?.documentType || 'document'}_${Date.now()}.pdf`,
             image: { type: 'jpeg', quality: 0.98 },
             html2canvas: { scale: 2, useCORS: true },
@@ -79,13 +369,15 @@ const DocumentTransformer: React.FC<DocumentTransformerProps> = ({ company, user
     };
 
     const handleSendEmail = () => {
-        const subject = `Regarding Your ${generatedDoc?.documentType || 'Document'}`;
-        const body = `Dear [Client Name],
+        const subject = `E-Signed Document Notification: ${generatedDoc?.documentType || 'Document'}`;
+        const body = `Hello,
 
-Please find the attached document for your review.
+Please inspect our finalized, e-signed ${generatedDoc?.documentType || 'Document'}.
+
+E-SIGNED BY: ${appliedSignature ? `${appliedSignature.name} (${appliedSignature.title}) on ${appliedSignature.date}` : 'Awaiting counterparty verification.'}
 
 Best regards,
-${company?.name || ''}`;
+${company?.name || 'CraveBiZ Vendor'}`;
         window.location.href = `mailto:?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`;
     };
 
@@ -94,8 +386,17 @@ ${company?.name || ''}`;
             documentType: doc.documentType,
             blocks: doc.blocks
         });
-        setRawText(''); // Optional: clear input to avoid confusion
+        setAppliedSignature(null);
         setError(null);
+        setReviewReport(null);
+    };
+
+    const handleUpdateBlock = (blockId: string, newContent: any) => {
+        if (!generatedDoc) return;
+        const updatedBlocks = generatedDoc.blocks.map(block =>
+            block.id === blockId ? { ...block, content: newContent } : block
+        );
+        setGeneratedDoc({ ...generatedDoc, blocks: updatedBlocks });
     };
 
     const renderBlock = (block: DocumentBlock) => {
@@ -106,12 +407,12 @@ ${company?.name || ''}`;
                 return (
                     <div className="flex justify-between items-start pb-6 border-b-2 border-gray-800">
                         <div className="flex items-center gap-5">
-                            {company?.logoUrl ? <img src={company.logoUrl} alt="Logo" className="h-16 w-auto" /> : <div className="h-16 w-16 bg-gray-100 flex items-center justify-center text-xs text-gray-400">Logo</div>}
+                            {company?.logoUrl ? <img src={company.logoUrl} alt="Logo" className="h-14 w-auto object-contain" /> : <div className="h-14 w-14 bg-gray-100 flex items-center justify-center rounded text-[10px] font-bold text-gray-400">Logo</div>}
                             <div>
-                                <EditableBlock as="h2" value={header.companyName} onUpdate={val => handleUpdateBlock(id, {...header, companyName: val})} className="text-2xl font-bold text-gray-800" />
-                                <EditableBlock as="p" value={header.address} onUpdate={val => handleUpdateBlock(id, {...header, address: val})} className="text-xs text-gray-500 mt-1" />
-                                <div className="text-xs text-gray-500 mt-1">
-                                    <EditableBlock as="span" value={header.email} onUpdate={val => handleUpdateBlock(id, {...header, email: val})} /> | <EditableBlock as="span" value={header.phone} onUpdate={val => handleUpdateBlock(id, {...header, phone: val})} />
+                                <EditableBlock as="h2" value={header.companyName} onUpdate={val => handleUpdateBlock(id, { ...header, companyName: val })} className="text-xl font-bold text-gray-800" />
+                                <EditableBlock as="p" value={header.address} onUpdate={val => handleUpdateBlock(id, { ...header, address: val })} className="text-[10px] text-gray-500 mt-0.5" />
+                                <div className="text-[10px] text-gray-400 mt-0.5 font-medium">
+                                    <EditableBlock as="span" value={header.email} onUpdate={val => handleUpdateBlock(id, { ...header, email: val })} /> | <EditableBlock as="span" value={header.phone} onUpdate={val => handleUpdateBlock(id, { ...header, phone: val })} />
                                 </div>
                             </div>
                         </div>
@@ -120,37 +421,37 @@ ${company?.name || ''}`;
             case 'metadata':
                 const meta = content as MetadataBlock;
                 return (
-                    <div className="my-8 grid grid-cols-2 gap-8">
+                    <div className="my-6 grid grid-cols-2 gap-4">
                         <div>
-                            <h1 className="text-4xl font-black text-gray-800 uppercase tracking-tighter">
-                                <EditableBlock as="span" value={meta.documentTitle} onUpdate={val => handleUpdateBlock(id, {...meta, documentTitle: val})} />
+                            <h1 className="text-2xl font-black text-gray-800 uppercase tracking-tight">
+                                <EditableBlock as="span" value={meta.documentTitle} onUpdate={val => handleUpdateBlock(id, { ...meta, documentTitle: val })} />
                             </h1>
-                             <EditableBlock as="p" value={`Ref: ${meta.reference}`} onUpdate={val => handleUpdateBlock(id, {...meta, reference: val.replace('Ref: ', '')})} className="text-sm text-gray-400 mt-1 font-mono" />
+                            <EditableBlock as="p" value={`Ref: ${meta.reference}`} onUpdate={val => handleUpdateBlock(id, { ...meta, reference: val.replace('Ref: ', '') })} className="text-xs text-gray-400 mt-0.5 font-mono" />
                         </div>
-                        <div className="text-sm space-y-2 text-right">
-                           <div className="grid grid-cols-2 items-center"><strong className="text-gray-500">Client:</strong> <EditableBlock as="span" value={meta.clientName} onUpdate={val => handleUpdateBlock(id, {...meta, clientName: val})} className="font-bold text-gray-800" /></div>
-                           <div className="grid grid-cols-2 items-center"><strong className="text-gray-500">Date:</strong> <EditableBlock as="span" value={meta.date} onUpdate={val => handleUpdateBlock(id, {...meta, date: val})} className="font-bold text-gray-800" /></div>
-                           <div className="grid grid-cols-2 items-center"><strong className="text-gray-500">Prepared By:</strong> <EditableBlock as="span" value={meta.preparedBy} onUpdate={val => handleUpdateBlock(id, {...meta, preparedBy: val})} className="font-bold text-gray-800" /></div>
+                        <div className="text-xs space-y-1 text-right">
+                            <div className="grid grid-cols-2 items-center text-right"><strong className="text-gray-500 font-medium">Prepared For:</strong> <EditableBlock as="span" value={meta.clientName} onUpdate={val => handleUpdateBlock(id, { ...meta, clientName: val })} className="font-bold text-gray-800" /></div>
+                            <div className="grid grid-cols-2 items-center text-right"><strong className="text-gray-500 font-medium">Date Issued:</strong> <EditableBlock as="span" value={meta.date} onUpdate={val => handleUpdateBlock(id, { ...meta, date: val })} className="font-bold text-gray-800" /></div>
+                            <div className="grid grid-cols-2 items-center text-right"><strong className="text-gray-500 font-medium">Consultant:</strong> <EditableBlock as="span" value={meta.preparedBy} onUpdate={val => handleUpdateBlock(id, { ...meta, preparedBy: val })} className="font-bold text-gray-800" /></div>
                         </div>
                     </div>
                 );
             case 'title':
-                 return <EditableBlock as="h3" value={(content as any).text || ''} onUpdate={val => handleUpdateBlock(id, { text: val })} className="text-xl font-bold text-gray-800 mt-8 mb-4 border-b pb-2" />;
+                return <EditableBlock as="h3" value={(content as any).text || ''} onUpdate={val => handleUpdateBlock(id, { text: val })} className="text-base font-bold text-gray-800 mt-6 mb-3 border-b-2 border-gray-100 pb-1 uppercase tracking-wider" />;
             case 'paragraph':
-                 return <EditableBlock as="p" value={(content as any).text || ''} onUpdate={val => handleUpdateBlock(id, { text: val })} className="text-sm text-gray-600 leading-relaxed mb-4" />;
+                return <EditableBlock as="p" value={(content as any).text || ''} onUpdate={val => handleUpdateBlock(id, { text: val })} className="text-xs text-gray-600 leading-relaxed mb-3 whitespace-pre-line" />;
             case 'table':
                 const table = content as TableBlock;
                 return (
-                    <table className="w-full text-sm my-6 border-collapse">
+                    <table className="w-full text-xs my-4 border-collapse">
                         <thead>
                             <tr className="bg-gray-800 text-white">
-                                {table.headers.map((h, i) => <th key={i} className="py-2 px-3 text-left font-bold uppercase tracking-wider text-xs"><EditableBlock as="span" value={h} onUpdate={val => { const newHeaders = [...table.headers]; newHeaders[i] = val; handleUpdateBlock(id, {...table, headers: newHeaders}); }} /></th>)}
+                                {table.headers.map((h, i) => <th key={i} className="py-1.5 px-2 text-left font-bold uppercase tracking-wider text-[10px]"><EditableBlock as="span" value={h} onUpdate={val => { const newHeaders = [...table.headers]; newHeaders[i] = val; handleUpdateBlock(id, { ...table, headers: newHeaders }); }} /></th>)}
                             </tr>
                         </thead>
                         <tbody>
                             {table.rows.map((row, rowIndex) => (
-                                <tr key={rowIndex} className="border-b border-gray-200">
-                                    {row.map((cell, cellIndex) => <td key={cellIndex} className="py-3 px-3 align-top"><EditableBlock as="span" value={cell} onUpdate={val => { const newRows = [...table.rows]; newRows[rowIndex][cellIndex] = val; handleUpdateBlock(id, {...table, rows: newRows}); }} /></td>)}
+                                <tr key={rowIndex} className="border-b border-gray-100 font-medium text-gray-700">
+                                    {row.map((cell, cellIndex) => <td key={cellIndex} className="py-2 px-2 align-top"><EditableBlock as="span" value={cell} onUpdate={val => { const newRows = [...table.rows]; newRows[rowIndex][cellIndex] = val; handleUpdateBlock(id, { ...table, rows: newRows }); }} /></td>)}
                                 </tr>
                             ))}
                         </tbody>
@@ -159,92 +460,607 @@ ${company?.name || ''}`;
             case 'summary':
                 const summary = content as SummaryBlock;
                 return (
-                    <div className="flex justify-end my-8">
-                        <div className="w-full max-w-xs space-y-2 text-sm">
-                             {summary.subtotal !== undefined && <div className="flex justify-between"><strong className="text-gray-500">Subtotal:</strong> <span>{summary.currency}<EditableBlock as="span" value={(summary.subtotal || 0).toString()} onUpdate={val => handleUpdateBlock(id, {...summary, subtotal: Number(val)})} /></span></div>}
-                             {summary.tax !== undefined && <div className="flex justify-between"><strong className="text-gray-500">Tax:</strong> <span>{summary.currency}<EditableBlock as="span" value={(summary.tax || 0).toString()} onUpdate={val => handleUpdateBlock(id, {...summary, tax: Number(val)})} /></span></div>}
-                             <div className="flex justify-between font-bold text-lg border-t pt-2 mt-2"><strong className="text-gray-800">Total:</strong> <span className="text-primary-700">{summary.currency}<EditableBlock as="span" value={(summary.total || 0).toString()} onUpdate={val => handleUpdateBlock(id, {...summary, total: Number(val)})} /></span></div>
-                             {summary.notes && <div className="pt-4 text-xs text-gray-500"><EditableBlock as="p" value={summary.notes} onUpdate={val => handleUpdateBlock(id, {...summary, notes: val})} /></div>}
+                    <div className="flex justify-end my-4">
+                        <div className="w-full max-w-xs space-y-1.5 text-xs border-t pt-3 border-gray-200">
+                            {summary.subtotal !== undefined && <div className="flex justify-between"><strong className="text-gray-500 font-medium">Subtotal:</strong> <span>{summary.currency}<EditableBlock as="span" value={(summary.subtotal || 0).toString()} onUpdate={val => handleUpdateBlock(id, { ...summary, subtotal: Number(val) })} /></span></div>}
+                            {summary.tax !== undefined && <div className="flex justify-between"><strong className="text-gray-500 font-medium">VAT & Taxes:</strong> <span>{summary.currency}<EditableBlock as="span" value={(summary.tax || 0).toString()} onUpdate={val => handleUpdateBlock(id, { ...summary, tax: Number(val) })} /></span></div>}
+                            <div className="flex justify-between font-bold text-sm border-t pt-1.5 mt-1.5 border-gray-200"><strong className="text-gray-800">Grand Total:</strong> <span className="text-primary-700">{summary.currency || '$'}<EditableBlock as="span" value={(summary.total || 0).toString()} onUpdate={val => handleUpdateBlock(id, { ...summary, total: Number(val) })} /></span></div>
+                            {summary.notes && <div className="pt-2 text-[10px] text-gray-400 font-medium italic"><EditableBlock as="p" value={summary.notes} onUpdate={val => handleUpdateBlock(id, { ...summary, notes: val })} /></div>}
                         </div>
                     </div>
                 );
             case 'footer':
-                 return <div className="text-center text-xs text-gray-400 mt-12 pt-4 border-t"><EditableBlock as="p" value={(content as any).text || ''} onUpdate={val => handleUpdateBlock(id, { text: val })} /></div>;
+                return <div className="text-center text-[10px] text-gray-400 mt-8 pt-3 border-t"><EditableBlock as="p" value={(content as any).text || ''} onUpdate={val => handleUpdateBlock(id, { text: val })} /></div>;
             default:
                 return null;
         }
     };
-    
-    return (
-        <div className="max-w-7xl mx-auto">
-            <h1 className="text-3xl font-black text-gray-800 uppercase tracking-tighter">AI Docs Transformer</h1>
-            <p className="text-gray-500 mt-1 font-medium">Paste any raw text and instantly generate a professional, editable business document.</p>
-            
-            <div className="mt-8 grid grid-cols-1 lg:grid-cols-2 gap-8">
-                <div>
-                    <textarea 
-                        value={rawText}
-                        onChange={(e) => setRawText(e.target.value)}
-                        placeholder="Paste your content here—like an email, notes, or a list of items..."
-                        className="w-full h-96 p-4 border-2 border-dashed border-gray-300 rounded-xl focus:outline-none focus:border-primary-500 bg-white"
-                        disabled={isLoading}
-                    />
-                    <button
-                        onClick={handleGenerate}
-                        disabled={isLoading || !rawText.trim()}
-                        className="w-full mt-4 py-4 bg-primary-600 text-white font-bold rounded-xl hover:bg-primary-700 shadow-lg shadow-primary-200 transition-all transform hover:-translate-y-0.5 disabled:bg-gray-400 disabled:transform-none"
-                    >
-                        {isLoading ? 'Analyzing & Generating...' : 'Format & Generate Document'}
-                    </button>
 
-                    <div className="mt-12">
-                        <h2 className="text-xl font-black text-gray-700 uppercase tracking-tighter mb-4">Generated Docs Archive</h2>
-                        <div className="bg-white rounded-xl shadow-inner border border-gray-100 max-h-96 overflow-y-auto">
-                            <ul className="divide-y divide-gray-100">
-                                {generatedDocs.map(doc => (
-                                    <li key={doc.id} className="p-4 flex justify-between items-center hover:bg-primary-50/50 transition-colors">
-                                        <div>
-                                            <p className="font-bold text-sm text-primary-800">{doc.documentType}</p>
-                                            <p className="text-xs text-gray-400 font-medium">{new Date(doc.createdAt).toLocaleString()}</p>
-                                        </div>
-                                        <button 
-                                            onClick={() => handleViewHistoryDoc(doc)}
-                                            className="px-4 py-2 bg-gray-100 text-[10px] font-black uppercase tracking-widest rounded-lg text-gray-600 hover:bg-gray-200 hover:text-gray-900 transition-all">
-                                            Load
+    return (
+        <div className="max-w-7xl mx-auto px-4 py-6">
+            <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 mb-2">
+                <div>
+                    <h1 className="text-3xl font-black text-gray-950 uppercase tracking-tighter">AI Contract & Document Hub</h1>
+                    <p className="text-gray-500 text-sm font-medium mt-1">Generate professional templates, execute secure legal e-signatures, and obtain compliance reviews instantly.</p>
+                </div>
+                
+                {/* Visual Accent Badge */}
+                <div className="p-3 bg-primary-100 rounded-xl flex items-center gap-2 border border-primary-200/50 shadow-sm">
+                    <span className="w-2.5 h-2.5 rounded-full bg-emerald-500 animate-pulse"></span>
+                    <span className="text-xs font-black text-primary-900 uppercase tracking-wider">Secure GenAI Engine Active</span>
+                </div>
+            </div>
+
+            {/* Hub Tab Switcher */}
+            <div className="grid grid-cols-3 bg-gray-100 p-1.5 rounded-xl border border-gray-200/50 my-6 shadow-sm">
+                <button
+                    onClick={() => { setActiveTab('generate'); setError(null); }}
+                    className={`py-3 text-xs font-black uppercase tracking-widest rounded-lg transition-all flex items-center justify-center gap-2 ${activeTab === 'generate' ? 'bg-white text-primary-900 shadow-md' : 'text-gray-600 hover:text-gray-900'}`}
+                >
+                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 9v3m0 0v3m0-3h3m-3 0H9m12 0a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>
+                    Generate Document
+                </button>
+                <button
+                    onClick={() => { setActiveTab('format'); setError(null); }}
+                    className={`py-3 text-xs font-black uppercase tracking-widest rounded-lg transition-all flex items-center justify-center gap-2 ${activeTab === 'format' ? 'bg-white text-primary-900 shadow-md' : 'text-gray-600 hover:text-gray-900'}`}
+                >
+                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M4 6h16M4 12h16M4 18h7"></path></svg>
+                    Format Plain Text
+                </button>
+                <button
+                    onClick={() => { setActiveTab('review'); setError(null); }}
+                    className={`py-3 text-xs font-black uppercase tracking-widest rounded-lg transition-all flex items-center justify-center gap-2 ${activeTab === 'review' ? 'bg-white text-primary-900 shadow-md' : 'text-gray-600 hover:text-gray-900'}`}
+                >
+                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z"></path></svg>
+                    Review Document
+                </button>
+            </div>
+
+            {/* Inner Dashboard Layout - Bento Grid */}
+            <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 items-start">
+                
+                {/* LEFT INTERACTIVE PANEL: Column Span 5 */}
+                <div className="lg:col-span-5 space-y-6">
+                    
+                    {/* Render Form based on Active Tab */}
+                    {activeTab === 'generate' && (
+                        <div className="bg-white p-5 rounded-2xl border border-gray-200/50 shadow-sm">
+                            <h2 className="text-sm font-black text-gray-800 uppercase tracking-wider mb-2 flex items-center gap-2">
+                                <span className="w-2 h-2 rounded-full bg-primary-600"></span>
+                                Purpose-Made Smart Document
+                            </h2>
+                            <p className="text-xs text-gray-500 font-medium mb-4 leading-relaxed">State the nature, parameters or rules for your desired document and let the GenAI architect draft a formatted business copy.</p>
+                            
+                            <textarea
+                                value={documentPurpose}
+                                onChange={(e) => setDocumentPurpose(e.target.value)}
+                                placeholder="Describe your document requirements—such as 'Service agreement with Joe Design Studio for 3 logo packages costing $1200 total, 50% retainer, delivery next month'..."
+                                className="w-full h-44 p-3 border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-primary-500/30 text-xs leading-relaxed font-medium placeholder-gray-400 bg-gray-50/50"
+                                disabled={isLoading}
+                            />
+
+                            {/* Template Suggestions Chips */}
+                            <div className="mt-4">
+                                <span className="text-[10px] font-black uppercase text-gray-400 tracking-wider">Quick Launch Presets:</span>
+                                <div className="grid grid-cols-2 gap-2 mt-2">
+                                    {TEMPLATES.map((tmpl, idx) => (
+                                        <button
+                                            key={idx}
+                                            onClick={() => setDocumentPurpose(tmpl.prompt)}
+                                            className="p-2 border border-gray-100 rounded-lg hover:border-primary-200 hover:bg-primary-50/30 transition-all text-left group"
+                                        >
+                                            <p className="text-[11px] font-bold text-gray-700 group-hover:text-primary-700">{tmpl.title}</p>
+                                            <p className="text-[9px] text-gray-400 truncate mt-0.5">{tmpl.desc}</p>
                                         </button>
-                                    </li>
-                                ))}
-                                {generatedDocs.length === 0 && (
-                                    <li className="p-10 text-center text-sm text-gray-400 font-medium">Your generated documents will appear here.</li>
+                                    ))}
+                                </div>
+                            </div>
+
+                            <button
+                                onClick={handleGenerateByPurpose}
+                                disabled={isLoading || !documentPurpose.trim()}
+                                className="w-full mt-5 py-3.5 bg-primary-600 text-white text-xs font-black uppercase tracking-widest rounded-xl hover:bg-primary-700 active:scale-95 shadow-md shadow-primary-200/50 transition-all disabled:bg-gray-400 disabled:shadow-none"
+                            >
+                                {isLoading ? 'Generating Draft Blocks...' : 'Generate Document'}
+                            </button>
+                        </div>
+                    )}
+
+                    {activeTab === 'format' && (
+                        <div className="bg-white p-5 rounded-2xl border border-gray-200/50 shadow-sm">
+                            <h2 className="text-sm font-black text-gray-800 uppercase tracking-wider mb-2 flex items-center gap-2">
+                                <span className="w-2 h-2 rounded-full bg-primary-600"></span>
+                                AI Document Formatter
+                            </h2>
+                            <p className="text-xs text-gray-500 font-medium mb-4 leading-relaxed">Paste existing drafts, meeting briefs, emails, or bullet points to align them instantly into structured, editable A4 files.</p>
+                            
+                            <textarea
+                                value={rawText}
+                                onChange={(e) => setRawText(e.target.value)}
+                                placeholder="Paste or draft unstructured notes here..."
+                                className="w-full h-80 p-3 border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-primary-500/30 text-xs font-medium placeholder-gray-400 bg-gray-50/50"
+                                disabled={isLoading}
+                            />
+
+                            <button
+                                onClick={handleFormatRawText}
+                                disabled={isLoading || !rawText.trim()}
+                                className="w-full mt-4 py-3.5 bg-primary-600 text-white text-xs font-black uppercase tracking-widest rounded-xl hover:bg-primary-700 active:scale-95 shadow-md shadow-primary-200/50 transition-all disabled:bg-gray-400 disabled:shadow-none"
+                            >
+                                {isLoading ? 'Formatting Outline...' : 'Format & Structure'}
+                            </button>
+                        </div>
+                    )}
+
+                    {activeTab === 'review' && (
+                        <div className="bg-white p-5 rounded-2xl border border-gray-200/50 shadow-sm space-y-4">
+                            <h2 className="text-sm font-black text-gray-800 uppercase tracking-wider flex items-center gap-2">
+                                <span className="w-2 h-2 rounded-full bg-primary-600"></span>
+                                Review & Sign Center
+                            </h2>
+                            <p className="text-xs text-gray-500 font-medium leading-relaxed">Upload contracts, invoices or NDAs for deep legal risk evaluation, compliance analysis and client signing execution.</p>
+                            
+                            {/* Drag & Drop Upload Zone */}
+                            <div
+                                onDragOver={(e) => { e.preventDefault(); setIsDragOver(true); }}
+                                onDragLeave={() => setIsDragOver(false)}
+                                onDrop={handleFileDrop}
+                                className={`h-40 border-2 border-dashed rounded-xl flex flex-col justify-center items-center p-4 transition-all relative ${isDragOver ? 'border-primary-500 bg-primary-50/50' : 'border-gray-200 bg-gray-50'} cursor-pointer`}
+                            >
+                                <input
+                                    type="file"
+                                    id="review-uploader"
+                                    onChange={handleFileSelect}
+                                    accept=".txt,.md,.json"
+                                    className="absolute inset-0 opacity-0 cursor-pointer"
+                                />
+                                <div className="p-2.5 bg-white shadow-sm rounded-full mb-2">
+                                    <svg className="w-6 h-6 text-primary-600" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12"></path></svg>
+                                </div>
+                                <span className="text-xs font-bold text-gray-700">Drag & Drop Files Here</span>
+                                <span className="text-[10px] text-gray-400 font-medium mt-0.5">Supports .txt, .md, .json backups</span>
+                                
+                                {uploadedFileName && (
+                                    <div className="absolute bottom-2 left-2 right-2 bg-white px-2 py-1 border border-primary-100 rounded text-[9px] text-primary-800 font-mono flex items-center justify-between">
+                                        <span className="truncate max-w-[200px]">{uploadedFileName}</span>
+                                        <span className="text-emerald-500 font-bold">✔ Uploaded</span>
+                                    </div>
                                 )}
-                            </ul>
+                            </div>
+
+                            <div className="flex items-center gap-1">
+                                <div className="h-px bg-gray-100 flex-1"></div>
+                                <span className="text-[9px] font-black uppercase text-gray-400 px-2 tracking-widest">Or raw text</span>
+                                <div className="h-px bg-gray-100 flex-1"></div>
+                            </div>
+
+                            <textarea
+                                value={reviewText}
+                                onChange={(e) => setReviewText(e.target.value)}
+                                placeholder="Paste specific terms or legal clauses to audit..."
+                                className="w-full h-40 p-3 border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-primary-500/30 text-xs font-medium placeholder-gray-400 bg-gray-50/50"
+                                disabled={reviewLoading}
+                            />
+
+                            <button
+                                onClick={() => handleAnalyzeText('')}
+                                disabled={reviewLoading || (!reviewText.trim() && !uploadedFileName)}
+                                className="w-full py-3.5 bg-primary-600 text-white text-xs font-black uppercase tracking-widest rounded-xl hover:bg-primary-700 active:scale-95 shadow-md shadow-primary-200/50 transition-all disabled:bg-gray-400 disabled:shadow-none"
+                            >
+                                {reviewLoading ? 'Scanning Clauses...' : 'Review & Audit Document'}
+                            </button>
+                        </div>
+                    )}
+
+                    {/* Left Footer: Past History Archives */}
+                    <div className="bg-white p-5 rounded-2xl border border-gray-200/50 shadow-sm">
+                        <h3 className="text-sm font-black text-gray-800 uppercase tracking-wider mb-3">Contracts & Vault Archive</h3>
+                        <div className="max-h-48 overflow-y-auto space-y-2">
+                            {generatedDocs.map(doc => (
+                                <div key={doc.id} className="p-3 border border-gray-100 rounded-xl flex items-center justify-between bg-gray-50 hover:bg-primary-50/30 transition-colors">
+                                    <div className="truncate pr-2">
+                                        <p className="font-bold text-xs text-gray-800 truncate">{doc.documentType}</p>
+                                        <p className="text-[9px] text-gray-400 font-medium">{new Date(doc.createdAt).toLocaleDateString()} {new Date(doc.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</p>
+                                    </div>
+                                    <button
+                                        onClick={() => handleViewHistoryDoc(doc)}
+                                        className="px-3 py-1.5 bg-white hover:bg-primary-600 hover:text-white border border-gray-200 text-[9px] font-black uppercase tracking-widest rounded-lg text-gray-600 transition-all flex-shrink-0"
+                                    >
+                                        Load
+                                    </button>
+                                </div>
+                            ))}
+                            {generatedDocs.length === 0 && (
+                                <div className="p-6 text-center text-xs text-gray-400 font-medium">No documents saved in this tenant vault yet.</div>
+                            )}
                         </div>
                     </div>
                 </div>
-                
-                <div className="bg-gray-200 p-4 rounded-xl">
-                    <div className="bg-white rounded-lg shadow-lg overflow-y-auto h-[32rem]">
-                        {isLoading && <div className="p-10 text-center text-gray-500">Generating your document...</div>}
-                        {error && <div className="p-10 text-center text-red-500">{error}</div>}
-                        {generatedDoc && (
-                            <>
-                                <div className="p-3 bg-gray-100 border-b print-hidden flex justify-between items-center sticky top-0 z-10">
-                                    <span className="text-xs font-bold text-gray-500">{generatedDoc.documentType} Preview</span>
-                                    <div className="space-x-2">
-                                        <button onClick={handlePrint} className="px-3 py-1 bg-gray-200 text-xs font-bold rounded">Print</button>
-                                        <button onClick={handleDownloadPdf} className="px-3 py-1 bg-gray-200 text-xs font-bold rounded">PDF</button>
-                                        <button onClick={handleSendEmail} className="px-3 py-1 bg-gray-200 text-xs font-bold rounded">Email</button>
+
+                {/* RIGHT SYSTEM PREVIEW / RESPONSE BENTO GRID: Column Span 7 */}
+                <div className="lg:col-span-7 space-y-6">
+
+                    {/* Rendering AI Review / Analysis Report inside Preview area if requested */}
+                    {reviewReport && activeTab === 'review' && (
+                        <div className="bg-white p-5 rounded-2xl border border-primary-200 shadow-md bg-gradient-to-br from-white to-primary-50/10">
+                            <div className="flex items-center justify-between border-b pb-4 mb-4">
+                                <div>
+                                    <h3 className="text-sm font-black text-primary-900 uppercase tracking-widest flex items-center gap-1.5">
+                                        <svg className="w-5 h-5 text-primary-600" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>
+                                        AI Compliance Review Report
+                                    </h3>
+                                    <p className="text-[10px] text-gray-400 font-medium uppercase mt-0.5 tracking-wider">CraveBiZ Risk Intelligence Module</p>
+                                </div>
+
+                                {/* Dynamic Circular Score Gauge */}
+                                <div className="flex items-center gap-2">
+                                    <div className="relative w-12 h-12 flex items-center justify-center">
+                                        <svg className="w-full h-full transform -rotate-90">
+                                            <circle cx="24" cy="24" r="18" strokeWidth="4" stroke="#f3f4f6" fill="transparent" />
+                                            <circle cx="24" cy="24" r="18" strokeWidth="4" stroke={reviewReport.score >= 70 ? "#059669" : reviewReport.score >= 40 ? "#d97706" : "#dc2626"} fill="transparent" strokeDasharray={`${18 * 2 * Math.PI}`} strokeDashoffset={`${18 * 2 * Math.PI * (1 - reviewReport.score / 100)}`} strokeLinecap="round" />
+                                        </svg>
+                                        <span className="absolute text-xs font-black text-gray-800">{reviewReport.score}</span>
+                                    </div>
+                                    <div className="text-left">
+                                        <p className="text-[9px] font-black text-gray-400 uppercase tracking-wider">Health Score</p>
+                                        <p className={`text-[10px] font-bold ${reviewReport.score >= 70 ? 'text-emerald-600' : reviewReport.score >= 40 ? 'text-amber-600' : 'text-red-600'}`}>
+                                            {reviewReport.score >= 70 ? 'Strong / Safe' : reviewReport.score >= 40 ? 'Moderate Risks' : 'Critical Issues'}
+                                        </p>
                                     </div>
                                 </div>
-                                <div ref={documentRef} className="p-8 A4-simulation">
-                                    {generatedDoc.blocks.map(block => <div key={block.id}>{renderBlock(block)}</div>)}
+                            </div>
+
+                            {/* Summary Text */}
+                            <div className="p-3 bg-gray-50 rounded-xl border border-gray-100 mb-4 text-xs font-medium text-gray-600 leading-relaxed italic">
+                                "{reviewReport.summary}"
+                            </div>
+
+                            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                {/* Risks Section */}
+                                <div className="space-y-2.5">
+                                    <h4 className="text-[10px] font-black text-red-700 uppercase tracking-widest flex items-center gap-1">
+                                        <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"></path></svg>
+                                        Vulnerabilities & Loop holes ({reviewReport.risks.length})
+                                    </h4>
+                                    <ul className="space-y-1.5">
+                                        {reviewReport.risks.map((risk, i) => (
+                                            <li key={i} className="text-xs font-medium text-gray-600 bg-red-50/40 p-2 rounded-lg border border-red-100 flex items-start gap-1.5 leading-relaxed">
+                                                <span className="w-1.5 h-1.5 rounded-full bg-red-400 mt-1.5 flex-shrink-0"></span>
+                                                {risk}
+                                            </li>
+                                        ))}
+                                    </ul>
                                 </div>
-                            </>
-                        )}
-                         {!generatedDoc && !isLoading && !error && <div className="p-10 text-center text-gray-400">Your generated document will appear here.</div>}
+
+                                {/* Suggestions Section */}
+                                <div className="space-y-2.5">
+                                    <h4 className="text-[10px] font-black text-teal-700 uppercase tracking-widest flex items-center gap-1">
+                                        <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9.663 17h4.673M12 3v1m6.364 1.636l-.707.707M21 12h-1M4 12H3m3.343-5.657l-.707-.707m2.828 9.9a5 5 0 117.072 0l-.548.547A3.374 3.374 0 0014 18.469V19a2 2 0 01-2 2h0a2 2 0 01-2-2v-.531c0-.895-.356-1.754-.988-2.386l-.548-.547z"></path></svg>
+                                        Optimizations & Edits ({reviewReport.suggestions.length})
+                                    </h4>
+                                    <ul className="space-y-1.5">
+                                        {reviewReport.suggestions.map((sug, i) => (
+                                            <li key={i} className="text-xs font-medium text-gray-600 bg-teal-50/40 p-2 rounded-lg border border-teal-100 flex items-start gap-1.5 leading-relaxed">
+                                                <span className="w-1.5 h-1.5 rounded-full bg-teal-400 mt-1.5 flex-shrink-0"></span>
+                                                {sug}
+                                            </li>
+                                        ))}
+                                    </ul>
+                                </div>
+                            </div>
+
+                            {/* Extracted Key Clauses */}
+                            <div className="mt-4 pt-4 border-t">
+                                <h4 className="text-[10px] font-black text-gray-500 uppercase tracking-widest mb-2 flex items-center gap-1">
+                                    <svg className="w-3.5 h-3.5 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"></path></svg>
+                                    Extracted Critical Contracts Clauses
+                                </h4>
+                                <div className="space-y-2">
+                                    {reviewReport.keyClauses.map((clause, idx) => (
+                                        <details key={idx} className="group border border-gray-100 rounded-lg bg-gray-50 p-2 text-xs transition-all">
+                                            <summary className="font-bold text-gray-700 cursor-pointer list-none flex justify-between items-center select-none">
+                                                <span>{clause.name}</span>
+                                                <svg className="w-3.5 h-3.5 text-gray-400 group-open:rotate-180 transition-transform" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 9l-7 7-7-7"></path></svg>
+                                            </summary>
+                                            <p className="mt-1.5 text-gray-500 font-medium text-[11px] leading-relaxed">{clause.content}</p>
+                                        </details>
+                                    ))}
+                                </div>
+                            </div>
+                        </div>
+                    )}
+
+                    {/* Preview Box Container */}
+                    <div className="bg-gray-100 p-4 rounded-3xl border border-gray-200/50 shadow-inner">
+                        <div className="bg-white rounded-2xl shadow-xl border border-gray-200 overflow-hidden min-h-[40rem] flex flex-col">
+                            {isLoading && (
+                                <div className="flex-1 flex flex-col justify-center items-center p-12 text-center">
+                                    <div className="w-12 h-12 border-4 border-primary-100 border-t-primary-600 rounded-full animate-spin mb-4"></div>
+                                    <p className="font-black uppercase text-xs text-gray-600 tracking-wider">CraveBiZ AI Transformer operating...</p>
+                                    <p className="text-[11px] text-gray-400 mt-1 max-w-sm leading-relaxed">Gemini-3.5-Flash is currently creating realistic legal terms, filling metadata and mapping layout structures.</p>
+                                </div>
+                            )}
+
+                            {error && (
+                                <div className="flex-1 flex flex-col justify-center items-center p-12 text-center text-red-500 font-medium">
+                                    <svg className="w-10 h-10 text-red-100 rounded-full bg-red-50 p-2 mb-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"></path></svg>
+                                    <p className="text-xs uppercase font-black tracking-widest text-red-700">Transformer Interrupted</p>
+                                    <p className="text-xs text-red-500 mt-1 max-w-sm font-medium leading-relaxed">{error}</p>
+                                </div>
+                            )}
+
+                            {generatedDoc && !isLoading && !error && (
+                                <>
+                                    {/* Action Header Control Bar */}
+                                    <div className="p-3 bg-gray-50 border-b border-gray-100 flex flex-wrap gap-2 justify-between items-center print-hidden">
+                                        <span className="text-[10px] font-black text-gray-400 uppercase tracking-widest">{generatedDoc.documentType} Preview Pane</span>
+                                        <div className="flex items-center gap-1.5 flex-wrap">
+                                            {/* Feature ii: Interactive E-Signature Button */}
+                                            <button
+                                                onClick={() => setIsSignModalOpen(true)}
+                                                className="px-3 py-1.5 bg-primary-600 text-white hover:bg-primary-700 text-[10px] font-black uppercase tracking-wider rounded-lg transition-all flex items-center gap-1 shadow-sm"
+                                            >
+                                                <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z"></path></svg>
+                                                {appliedSignature ? 'Change Signature' : 'Sign Document'}
+                                            </button>
+                                            
+                                            <button onClick={handlePrint} className="px-3 py-1.5 bg-white hover:bg-gray-100 text-gray-700 border border-gray-200 text-[10px] font-black uppercase tracking-wider rounded-lg transition-all">Print</button>
+                                            <button onClick={handleDownloadPdf} className="px-3 py-1.5 bg-white hover:bg-gray-100 text-gray-700 border border-gray-200 text-[10px] font-black uppercase tracking-wider rounded-lg transition-all">PDF</button>
+                                            <button onClick={handleSendEmail} className="px-3 py-1.5 bg-white hover:bg-gray-100 text-gray-700 border border-gray-200 text-[10px] font-black uppercase tracking-wider rounded-lg transition-all">Email</button>
+                                        </div>
+                                    </div>
+
+                                    {/* Virtual A4 Canvas */}
+                                    <div className="flex-1 overflow-y-auto" style={{ maxHeight: '42rem' }}>
+                                        <div ref={documentRef} className="p-10 bg-white max-w-[210mm] mx-auto min-h-[297mm]">
+                                            <div className="space-y-4">
+                                                {generatedDoc.blocks.map(block => <div key={block.id}>{renderBlock(block)}</div>)}
+                                            </div>
+
+                                            {/* Feature ii: Applied Signature Box rendered inside A4 Simulation */}
+                                            {appliedSignature ? (
+                                                <div className="mt-12 pt-8 border-t border-dashed border-gray-200">
+                                                    <h4 className="text-[10px] font-black text-gray-400 uppercase tracking-widest mb-6">Execution & Counterparty Sign-Off</h4>
+                                                    <div className="grid grid-cols-2 gap-12 text-xs">
+                                                        
+                                                        {/* Preparer Auto-sign */}
+                                                        <div className="border border-gray-100 rounded-xl p-3 bg-gray-50/50">
+                                                            <p className="text-[9px] font-black text-gray-400 uppercase mb-2">Issued On Behalf Of:</p>
+                                                            <div className="h-10 flex items-center mb-1">
+                                                                <span className="font-mono text-gray-300 text-[10px] italic">[CraveBiZ Vendor Code Match Verified]</span>
+                                                            </div>
+                                                            <div className="border-t pt-1.5 border-gray-200">
+                                                                <p className="font-bold text-gray-800 text-[11px]">{company?.name || 'CraveBiZ Vendor'}</p>
+                                                                <p className="text-[9px] text-gray-400 font-medium">{user?.full_name || 'Assigned Agent'}</p>
+                                                            </div>
+                                                        </div>
+
+                                                        {/* Applied Client Signature */}
+                                                        <div className="border border-primary-200 bg-primary-50/20 rounded-xl p-3 relative overflow-hidden">
+                                                            <div className="absolute top-0 right-0 bg-primary-600 text-white text-[7px] font-black uppercase px-2 py-0.5 rounded-bl tracking-widest select-none">
+                                                                Verified
+                                                            </div>
+                                                            <p className="text-[9px] font-black text-primary-700 uppercase mb-2">E-Signed Electronically:</p>
+                                                            
+                                                            <div className="h-10 flex items-center justify-center mb-1 overflow-hidden">
+                                                                {appliedSignature.type === 'draw' && (
+                                                                    <img src={appliedSignature.value} alt="Signature drawn" className="h-9 max-w-full object-contain" />
+                                                                )}
+                                                                {appliedSignature.type === 'upload' && (
+                                                                    <img src={appliedSignature.value} alt="Signature file" className="h-9 max-w-full object-contain" />
+                                                                )}
+                                                                {appliedSignature.type === 'type' && (
+                                                                    <span
+                                                                        className="text-2xl text-primary-900 select-none font-bold"
+                                                                        style={{ 
+                                                                            fontFamily: 
+                                                                                appliedSignature.value === '0' ? "'Dancing Script', cursive" : 
+                                                                                appliedSignature.value === '1' ? "'Great Vibes', cursive" : 
+                                                                                appliedSignature.value === '2' ? "'Herr Von Muellerhoff', cursive" :
+                                                                                "'Homemade Apple', cursive" 
+                                                                        }}
+                                                                    >
+                                                                        {appliedSignature.name}
+                                                                    </span>
+                                                                )}
+                                                            </div>
+
+                                                            <div className="border-t pt-1.5 border-primary-100">
+                                                                <p className="font-bold text-gray-800 text-[11px] truncate">{appliedSignature.name}</p>
+                                                                <p className="text-[9px] text-gray-400 font-medium truncate">{appliedSignature.title}</p>
+                                                                <p className="text-[8px] text-gray-400 mt-0.5 font-mono leading-none truncate">{appliedSignature.date}</p>
+                                                            </div>
+                                                        </div>
+
+                                                    </div>
+                                                </div>
+                                            ) : (
+                                                <div className="mt-12 p-5 border border-dashed border-gray-200 rounded-xl text-center bg-gray-50/30 print-hidden">
+                                                    <p className="text-gray-400 text-xs font-medium leading-relaxed">This document remains unexecuted. Click the <strong className="text-primary-600">Sign Document</strong> action in the upper controls to add signatures.</p>
+                                                </div>
+                                            )}
+                                        </div>
+                                    </div>
+                                </>
+                            )}
+
+                            {!generatedDoc && !isLoading && !error && (
+                                <div className="flex-1 flex flex-col justify-center items-center p-12 text-center">
+                                    <div className="p-4 bg-gray-50 rounded-full border border-gray-100 mb-3">
+                                        <svg className="w-8 h-8 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"></path></svg>
+                                    </div>
+                                    <p className="font-black uppercase text-xs text-gray-500 tracking-wider">Awaiting Source Data</p>
+                                    <p className="text-xs text-gray-400 mt-1 max-w-sm leading-relaxed font-semibold">Select a preset template, paste draft materials, or upload custom contracts on the left to activate the preview canvas.</p>
+                                </div>
+                            )}
+                        </div>
                     </div>
+
                 </div>
             </div>
+
+            {/* Feature ii: INTERACTIVE ESIGN MODAL OVERLAY */}
+            {isSignModalOpen && (
+                <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-gray-950/60 backdrop-blur-sm animate-fade-in">
+                    <div className="bg-white rounded-3xl max-w-lg w-full overflow-hidden shadow-2xl border border-gray-100 p-6 space-y-5 animate-scale-up">
+                        
+                        <div className="flex justify-between items-start">
+                            <div>
+                                <h3 className="text-lg font-black text-gray-950 uppercase tracking-tight flex items-center gap-1.5">
+                                    <svg className="w-5 h-5 text-primary-600 animate-pulse" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z"></path></svg>
+                                    Audit & Apply Secure eSignature
+                                </h3>
+                                <p className="text-xs text-gray-400 font-medium">Verified by CraveBiZ Clients eSign Protocol.</p>
+                            </div>
+                            <button
+                                onClick={() => setIsSignModalOpen(false)}
+                                className="p-1 hover:bg-gray-100 rounded-lg text-gray-400 hover:text-gray-800 transition-all"
+                            >
+                                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M6 18L18 6M6 6l12 12"></path></svg>
+                            </button>
+                        </div>
+
+                        {/* Signature Type Switch Tabs */}
+                        <div className="grid grid-cols-3 bg-gray-50 border border-gray-100 p-1 rounded-xl text-center text-xs">
+                            <button onClick={() => setSigType('draw')} className={`py-1.5 font-bold rounded-lg transition-colors ${sigType === 'draw' ? 'bg-white text-primary-900 shadow-sm border border-gray-100' : 'text-gray-500 hover:text-gray-700'}`}>Draw Pad</button>
+                            <button onClick={() => setSigType('type')} className={`py-1.5 font-bold rounded-lg transition-colors ${sigType === 'type' ? 'bg-white text-primary-900 shadow-sm border border-gray-100' : 'text-gray-500 hover:text-gray-700'}`}>Type Cursive</button>
+                            <button onClick={() => setSigType('upload')} className={`py-1.5 font-bold rounded-lg transition-colors ${sigType === 'upload' ? 'bg-white text-primary-900 shadow-sm border border-gray-100' : 'text-gray-500 hover:text-gray-700'}`}>Signature File</button>
+                        </div>
+
+                        {/* SIGNATURE DRAWING PAD VIEW */}
+                        {sigType === 'draw' && (
+                            <div className="space-y-2">
+                                <div className="border border-gray-200 rounded-2xl bg-gray-50/50 p-1 relative">
+                                    <canvas
+                                        ref={canvasRef}
+                                        onMouseDown={startDrawing}
+                                        onMouseMove={draw}
+                                        onMouseUp={stopDrawing}
+                                        onMouseLeave={stopDrawing}
+                                        onTouchStart={startDrawing}
+                                        onTouchMove={draw}
+                                        onTouchEnd={stopDrawing}
+                                        className="w-full h-44 bg-white rounded-xl border border-gray-100 cursor-crosshair touch-none"
+                                        width={480}
+                                        height={176}
+                                    />
+                                    <button
+                                        onClick={clearCanvas}
+                                        className="absolute right-3 bottom-3 px-2.5 py-1 bg-gray-900 bg-opacity-80 hover:bg-opacity-100 text-white text-[9px] font-black uppercase tracking-widest rounded transition-all"
+                                    >
+                                        Clear
+                                    </button>
+                                </div>
+                                <span className="text-[10px] text-gray-400 leading-none">Use your trackpad, mouse, or touch screen to draw your signature line above.</span>
+                            </div>
+                        )}
+
+                        {/* SIGNATURE TYPING VIEW */}
+                        {sigType === 'type' && (
+                            <div className="space-y-4">
+                                <div className="space-y-1">
+                                    <label className="text-[10px] font-black uppercase tracking-wider text-gray-400">FullName Signature Text</label>
+                                    <input
+                                        type="text"
+                                        value={typedName}
+                                        onChange={(e) => setTypedName(e.target.value)}
+                                        className="w-full px-3 py-2 border border-gray-200 rounded-xl focus:outline-none focus:border-primary-500 text-xs font-semibold"
+                                        placeholder="Type full name letters..."
+                                    />
+                                </div>
+
+                                <div className="space-y-2">
+                                    <label className="text-[10px] font-black uppercase tracking-wider text-gray-400">Select Signature Presentation Cursive</label>
+                                    <div className="grid grid-cols-2 gap-3">
+                                        {[
+                                            { font: "'Dancing Script', cursive", label: "Dynamic Cursive" },
+                                            { font: "'Great Vibes', cursive", label: "Formal Elegant" },
+                                            { font: "'Herr Von Muellerhoff', cursive", label: "Classic Calligraphy" },
+                                            { font: "'Homemade Apple', cursive", label: "Handwritten Informal" }
+                                        ].map((style, idx) => (
+                                            <button
+                                                key={idx}
+                                                onClick={() => setSelectedCursiveStyle(idx)}
+                                                className={`p-3 border rounded-xl hover:bg-primary-50/10 text-left transition-all ${selectedCursiveStyle === idx ? 'border-primary-600 bg-primary-50/20 shadow-sm ring-1 ring-primary-500' : 'border-gray-200 bg-white'}`}
+                                            >
+                                                <p className="text-[8px] font-black text-gray-400 uppercase tracking-widest leading-none mb-1">{style.label}</p>
+                                                <p className="text-xl truncate text-primary-900 select-none font-bold" style={{ fontFamily: style.font }}>
+                                                    {typedName || 'Signee Name'}
+                                                </p>
+                                            </button>
+                                        ))}
+                                    </div>
+                                </div>
+                            </div>
+                        )}
+
+                        {/* SIGNATURE IMAGE UPLOADER */}
+                        {sigType === 'upload' && (
+                            <div className="space-y-3">
+                                <div className="border border-gray-200 rounded-2xl bg-gray-50/50 p-6 flex flex-col items-center justify-center relative cursor-pointer hover:bg-gray-100/40 transition-colors">
+                                    <input
+                                        type="file"
+                                        accept="image/*"
+                                        onChange={handleUploadSignatureChange}
+                                        className="absolute inset-0 opacity-0 cursor-pointer"
+                                    />
+                                    {uploadedSigUrl ? (
+                                        <div className="space-y-2 text-center">
+                                            <img src={uploadedSigUrl} alt="Signature Upload Review" className="h-16 max-w-full object-contain mx-auto" />
+                                            <p className="text-[9px] text-emerald-500 font-bold">Image loaded successfully</p>
+                                        </div>
+                                    ) : (
+                                        <>
+                                            <svg className="w-8 h-8 text-primary-600 mb-2" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z"></path></svg>
+                                            <span className="text-xs font-bold text-gray-700">Choose Signature Image File</span>
+                                            <span className="text-[9px] text-gray-400 mt-0.5">Recommended format: transparent PNG</span>
+                                        </>
+                                    )}
+                                </div>
+                            </div>
+                        )}
+
+                        {/* Metadata inputs for Signee Title */}
+                        <div className="grid grid-cols-2 gap-3 pt-2">
+                            <div className="space-y-1">
+                                <label className="text-[10px] font-black uppercase tracking-wider text-gray-400">Printed Representative Name</label>
+                                <input
+                                    type="text"
+                                    value={typedName}
+                                    onChange={(e) => setTypedName(e.target.value)}
+                                    className="w-full px-3 py-2 border border-gray-200 rounded-xl focus:outline-none focus:border-primary-500 text-xs font-semibold"
+                                />
+                            </div>
+                            <div className="space-y-1">
+                                <label className="text-[10px] font-black uppercase tracking-wider text-gray-400">Representative Corporate Title</label>
+                                <input
+                                    type="text"
+                                    value={sigTitle}
+                                    onChange={(e) => setSigTitle(e.target.value)}
+                                    className="w-full px-3 py-2 border border-gray-200 rounded-xl focus:outline-none focus:border-primary-500 text-xs font-semibold"
+                                    placeholder="CEO, Legal Lead, etc..."
+                                />
+                            </div>
+                        </div>
+
+                        {/* Save Actions */}
+                        <div className="grid grid-cols-2 gap-4 pt-3 border-t">
+                            <button
+                                onClick={() => setIsSignModalOpen(false)}
+                                className="py-2.5 bg-gray-50 text-gray-700 hover:bg-gray-100 text-xs font-black uppercase tracking-widest rounded-xl border transition-all"
+                            >
+                                Cancel
+                            </button>
+                            <button
+                                onClick={handleApplySignature}
+                                className="py-2.5 bg-primary-600 text-white hover:bg-primary-700 text-xs font-black uppercase tracking-widest rounded-xl transition-all shadow-md active:scale-95"
+                            >
+                                Apply Signature
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            )}
         </div>
     );
 };

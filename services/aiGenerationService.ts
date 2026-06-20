@@ -208,3 +208,162 @@ export async function generateClientPaymentHealthReport(clientId: string, paymen
         return "Failed to generate health report.";
     }
 }
+
+export async function generateDocumentFromPurpose(purpose: string, companyContext: any): Promise<GeneratedDocument | null> {
+    if (!process.env.API_KEY) {
+        console.error("API_KEY environment variable not set.");
+        return null;
+    }
+    const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
+    const model = 'gemini-3.5-flash';
+
+    const systemInstruction = `You are an expert corporate lawyer and document preparer. Your task is to generate a professional business document (like a Contract, Service Agreement, NDA, Proposal, Quote, or Invoice) based entirely on the user's stated purpose/requirements.
+    Your output MUST be a structured business document in JSON format matching the schema.
+    - Generate correct blocks: [header, metadata, title, paragraph, table, summary, footer].
+    - Automatically create realistic details to make the document whole, e.g. sections/paragraphs with standard legal boilerplate if it is an agreement, realistic table items with prices if it is a proposal/fee breakdown, and clean summary values.
+    - Standard document types like: "Service Agreement", "Non-Disclosure Agreement", "Consulting Proposal", "MOU".
+    - Automatically fill company detail fields from the companyContext.
+    - Use metadata block with current date and preparedBy.
+    - Return a professional, clean, legally sound document design.`;
+
+    const prompt = `Generate a business document based on this purpose: "${purpose}".
+    
+    Here is the company context that MUST be placed in the header block:
+    Company Name: ${companyContext.name}
+    Address: ${companyContext.address}
+    Email: ${companyContext.email}
+    Phone: ${companyContext.phone}
+    Website: ${companyContext.website}
+    Logo URL: ${companyContext.logoUrl || ''}
+    
+    Use the schema to structure the generated document content.`;
+
+    const schema = {
+        type: Type.OBJECT,
+        properties: {
+            documentType: { type: Type.STRING, description: "Type of business document generated." },
+            blocks: {
+                type: Type.ARRAY,
+                items: {
+                    type: Type.OBJECT,
+                    properties: {
+                        id: { type: Type.STRING },
+                        type: { type: Type.STRING, description: "The type of content block.", enum: ['header', 'metadata', 'title', 'paragraph', 'table', 'summary', 'footer'] },
+                        content: {
+                            type: Type.OBJECT,
+                            properties: {
+                                text: { type: Type.STRING },
+                                companyName: { type: Type.STRING },
+                                address: { type: Type.STRING },
+                                phone: { type: Type.STRING },
+                                email: { type: Type.STRING },
+                                website: { type: Type.STRING },
+                                logoUrl: { type: Type.STRING },
+                                documentTitle: { type: Type.STRING },
+                                clientName: { type: Type.STRING },
+                                preparedBy: { type: Type.STRING },
+                                date: { type: Type.STRING },
+                                reference: { type: Type.STRING },
+                                headers: { type: Type.ARRAY, items: { type: Type.STRING } },
+                                rows: { type: Type.ARRAY, items: { type: Type.ARRAY, items: { type: Type.STRING } } },
+                                subtotal: { type: Type.NUMBER },
+                                tax: { type: Type.NUMBER },
+                                total: { type: Type.NUMBER },
+                                currency: { type: Type.STRING },
+                                notes: { type: Type.STRING },
+                            }
+                        }
+                    },
+                    required: ['id', 'type', 'content']
+                }
+            }
+        },
+        required: ['documentType', 'blocks']
+    };
+
+    try {
+        const response = await ai.models.generateContent({
+            model: model,
+            contents: prompt,
+            config: {
+                systemInstruction: systemInstruction,
+                responseMimeType: "application/json",
+                responseSchema: schema
+            },
+        });
+        const jsonString = response.text.trim();
+        const cleaned = jsonString.replace(/^```json\s*|```\s*$/g, '');
+        return JSON.parse(cleaned) as GeneratedDocument;
+    } catch (error) {
+        console.error("Gemini AI Error generating document from purpose:", error);
+        return null;
+    }
+}
+
+export interface DocumentReviewResult {
+    score: number;
+    summary: string;
+    risks: string[];
+    suggestions: string[];
+    keyClauses: { name: string; content: string }[];
+}
+
+export async function reviewDocumentContent(documentText: string): Promise<DocumentReviewResult | null> {
+    if (!process.env.API_KEY) {
+        console.error("API_KEY environment variable not set.");
+        return null;
+    }
+    const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
+    const model = 'gemini-3.5-flash';
+
+    const systemInstruction = `You are an elite legal and compliance officer. Review the provided business document or text and deliver a structured compliance analysis.
+    - Provide an overall health/safety score strictly between 0 and 100 representing how complete and low-risk the document is.
+    - Write a elegant 2-3 sentence executive summary of the document and its structural validity.
+    - Identify key risks, potential loopholes, or unfavorable clauses in 'risks'.
+    - Provide constructive, actionable suggestions for improving the document's terms in 'suggestions'.
+    - Extract and list critical legal/financial clauses (e.g. Indemnification, Termination, Payment Terms, Confidentiality) in 'keyClauses' with their names and short content summaries.`;
+
+    const prompt = `Review and analyze this document content:\n\n---\n${documentText}\n---\n\nDeliver the compliance and structural report matching the schema format.`;
+
+    const schema = {
+        type: Type.OBJECT,
+        properties: {
+            score: { type: Type.INTEGER, description: "Compliance/health score from 0 to 100." },
+            summary: { type: Type.STRING, description: "A high-level executive summary of the document." },
+            risks: { type: Type.ARRAY, items: { type: Type.STRING }, description: "List of identified risks, pitfalls, or loopholes." },
+            suggestions: { type: Type.ARRAY, items: { type: Type.STRING }, description: "Actionable suggestions for improving the document." },
+            keyClauses: {
+                type: Type.ARRAY,
+                items: {
+                    type: Type.OBJECT,
+                    properties: {
+                        name: { type: Type.STRING, description: "Clause name (e.g. Confidentiality, Limitation of Liability)." },
+                        content: { type: Type.STRING, description: "Summary or content of the clause." }
+                    },
+                    required: ['name', 'content']
+                },
+                description: "Key clauses extracted from the document."
+            }
+        },
+        required: ['score', 'summary', 'risks', 'suggestions', 'keyClauses']
+    };
+
+    try {
+        const response = await ai.models.generateContent({
+            model: model,
+            contents: prompt,
+            config: {
+                systemInstruction: systemInstruction,
+                responseMimeType: "application/json",
+                responseSchema: schema
+            },
+        });
+        const jsonString = response.text.trim();
+        const cleaned = jsonString.replace(/^```json\s*|```\s*$/g, '');
+        return JSON.parse(cleaned) as DocumentReviewResult;
+    } catch (error) {
+        console.error("Gemini AI Error reviewing document:", error);
+        return null;
+    }
+}
+
