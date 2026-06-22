@@ -155,9 +155,22 @@ export interface SummaryBlock {
   notes?: string;
 }
 
+export interface SignatureInfo {
+  id: string;
+  type: 'draw' | 'type' | 'upload';
+  value: string;
+  name: string;
+  title: string;
+  date: string;
+  signatoryType: 'Main' | 'Witness';
+  email?: string;
+  isSigned: boolean;
+}
+
 export interface GeneratedDocument {
   documentType: string;
   blocks: DocumentBlock[];
+  signatures?: SignatureInfo[];
 }
 
 export interface StoredGeneratedDoc extends GeneratedDocument {

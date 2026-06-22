@@ -450,13 +450,26 @@ class CraveBizApi {
         
       if (error) throw error;
       
-      dbDocs = (data || []).map(doc => ({
-        id: doc.id,
-        companyId: doc.company_id,
-        createdAt: doc.created_at,
-        documentType: doc.document_type,
-        blocks: doc.content as DocumentBlock[]
-      }));
+      dbDocs = (data || []).map(doc => {
+        let blocks: DocumentBlock[] = [];
+        let signatures: any[] = [];
+        if (doc.content) {
+          if (Array.isArray(doc.content)) {
+            blocks = doc.content;
+          } else if (typeof doc.content === 'object') {
+            blocks = (doc.content as any).blocks || [];
+            signatures = (doc.content as any).signatures || [];
+          }
+        }
+        return {
+          id: doc.id,
+          companyId: doc.company_id,
+          createdAt: doc.created_at,
+          documentType: doc.document_type,
+          blocks,
+          signatures
+        };
+      });
     } catch (dbError) {
       console.warn("Supabase fetch failed for generated_documents, relying on cache and localStorage:", dbError);
     }
@@ -485,6 +498,10 @@ class CraveBizApi {
 
   async saveGeneratedDoc(companyId: string, doc: GeneratedDocument): Promise<StoredGeneratedDoc> {
     const docId = generateId();
+    const contentPayload = {
+      blocks: doc.blocks,
+      signatures: doc.signatures || []
+    };
     try {
       // 1. Proactively ensure currently logged-in user is mapped in company_members to help satisfy membership RLS policy
       const { data: { user } } = await supabase.auth.getUser();
@@ -514,19 +531,22 @@ class CraveBizApi {
           id: docId,
           company_id: companyId,
           document_type: doc.documentType,
-          content: doc.blocks
+          content: contentPayload
         })
         .select()
         .single();
         
       if (error) throw error;
       
+      const resBlocks = (data.content as any)?.blocks || [];
+      const resSigs = (data.content as any)?.signatures || [];
       return {
         id: data.id,
         companyId: data.company_id,
         createdAt: data.created_at,
         documentType: data.document_type,
-        blocks: data.content as DocumentBlock[]
+        blocks: resBlocks,
+        signatures: resSigs
       };
     } catch (dbError: any) {
       console.warn("Supabase insertion triggered RLS/DB constraint. Initiating durable local workspace fallback:", dbError);
@@ -536,7 +556,8 @@ class CraveBizApi {
         companyId: companyId,
         createdAt: new Date().toISOString(),
         documentType: doc.documentType,
-        blocks: doc.blocks
+        blocks: doc.blocks,
+        signatures: doc.signatures || []
       };
       
       const localKey = `cravebiz_docs_${companyId}`;
@@ -558,6 +579,91 @@ class CraveBizApi {
       }
       localStorage.setItem(localKey, JSON.stringify(list));
       
+      return fallbackDoc;
+    }
+  }
+
+  async updateGeneratedDoc(companyId: string, id: string, doc: GeneratedDocument): Promise<StoredGeneratedDoc> {
+    const contentPayload = {
+      blocks: doc.blocks,
+      signatures: doc.signatures || []
+    };
+    try {
+      const { data, error } = await supabase.from('generated_documents')
+        .update({
+          document_type: doc.documentType,
+          content: contentPayload
+        })
+        .eq('id', id)
+        .select()
+        .single();
+        
+      if (error) throw error;
+      
+      const resBlocks = (data.content as any)?.blocks || [];
+      const resSigs = (data.content as any)?.signatures || [];
+      
+      // Update local storage cache to match
+      const localKey = `cravebiz_docs_${companyId}`;
+      const savedListRaw = localStorage.getItem(localKey);
+      let list: StoredGeneratedDoc[] = [];
+      if (savedListRaw) {
+        try {
+          list = JSON.parse(savedListRaw);
+        } catch {
+          list = [];
+        }
+      }
+      
+      const updatedDoc: StoredGeneratedDoc = {
+        id: id,
+        companyId: companyId,
+        createdAt: data.created_at || new Date().toISOString(),
+        documentType: doc.documentType,
+        blocks: resBlocks,
+        signatures: resSigs
+      };
+      
+      const existingIndex = list.findIndex(d => d.id === id);
+      if (existingIndex > -1) {
+        list[existingIndex] = updatedDoc;
+      } else {
+        list.unshift(updatedDoc);
+      }
+      localStorage.setItem(localKey, JSON.stringify(list));
+      
+      return updatedDoc;
+    } catch (dbError: any) {
+      console.warn("Supabase update fail fallback:", dbError);
+      
+      const localKey = `cravebiz_docs_${companyId}`;
+      const savedListRaw = localStorage.getItem(localKey);
+      let list: StoredGeneratedDoc[] = [];
+      if (savedListRaw) {
+        try {
+          list = JSON.parse(savedListRaw);
+        } catch {
+          list = [];
+        }
+      }
+      
+      const foundIdx = list.findIndex(d => d.id === id);
+      const createdAt = foundIdx > -1 ? list[foundIdx].createdAt : new Date().toISOString();
+      const fallbackDoc: StoredGeneratedDoc = {
+        id: id,
+        companyId: companyId,
+        createdAt: createdAt,
+        documentType: doc.documentType,
+        blocks: doc.blocks,
+        signatures: doc.signatures || []
+      };
+      
+      if (foundIdx > -1) {
+        list[foundIdx] = fallbackDoc;
+      } else {
+        list.unshift(fallbackDoc);
+      }
+      localStorage.setItem(localKey, JSON.stringify(list));
       return fallbackDoc;
     }
   }

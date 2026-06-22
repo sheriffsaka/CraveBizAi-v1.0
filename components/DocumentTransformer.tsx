@@ -3,7 +3,7 @@ import React, { useState, useRef, useEffect } from 'react';
 // @ts-ignore
 import mammoth from 'mammoth';
 import { transformDocument, generateDocumentFromPurpose, reviewDocumentContent } from '../services/aiGenerationService';
-import { GeneratedDocument, DocumentBlock, HeaderBlock, MetadataBlock, TableBlock, SummaryBlock, Company, User, StoredGeneratedDoc, DocumentReviewResult } from '../types';
+import { GeneratedDocument, DocumentBlock, HeaderBlock, MetadataBlock, TableBlock, SummaryBlock, Company, User, StoredGeneratedDoc, DocumentReviewResult, SignatureInfo } from '../types';
 import EditableBlock from './EditableBlock';
 import Icon from './common/Icon';
 
@@ -58,7 +58,7 @@ interface DocumentTransformerProps {
     company: Company | null;
     user: User | null;
     generatedDocs: StoredGeneratedDoc[];
-    onSaveDoc: (doc: GeneratedDocument) => void;
+    onSaveDoc: (doc: GeneratedDocument, id?: string) => void;
 }
 
 const TEMPLATES = [
@@ -277,6 +277,15 @@ const DocumentTransformer: React.FC<DocumentTransformerProps> = ({ company, user
     const [isDragOver, setIsDragOver] = useState(false);
     const [uploadedFileName, setUploadedFileName] = useState('');
 
+    // Dynamic Multi-Signatories states
+    const [signatories, setSignatories] = useState<SignatureInfo[]>([]);
+    const [activeSignatoryIndex, setActiveSignatoryIndex] = useState<number | null>(null);
+    const [newSigName, setNewSigName] = useState('');
+    const [newSigTitle, setNewSigTitle] = useState('');
+    const [newSigEmail, setNewSigEmail] = useState('');
+    const [newSigType, setNewSigType] = useState<'Main' | 'Witness'>('Main');
+    const [editingDocId, setEditingDocId] = useState<string | null>(null);
+
     // Print & Layout references
     const documentRef = useRef<HTMLDivElement>(null);
 
@@ -292,6 +301,47 @@ const DocumentTransformer: React.FC<DocumentTransformerProps> = ({ company, user
              }
         };
     }, []);
+
+    const initializeSignatoriesForNewDoc = (doc: GeneratedDocument) => {
+        if (doc.signatures && doc.signatures.length > 0) {
+            setSignatories(doc.signatures);
+        } else {
+            const creatorSlot: SignatureInfo = {
+                id: 'creator',
+                type: 'type',
+                value: '',
+                name: user?.full_name || company?.name || 'Creator',
+                title: 'Authorized Representative',
+                date: '',
+                signatoryType: 'Main',
+                email: user?.email || '',
+                isSigned: false
+            };
+            setSignatories([creatorSlot]);
+        }
+    };
+
+    const handleLoadNewDocument = (doc: GeneratedDocument) => {
+        const creatorSlot: SignatureInfo = {
+            id: 'creator',
+            type: 'type',
+            value: '',
+            name: user?.full_name || company?.name || 'Creator',
+            title: 'Authorized Representative',
+            date: '',
+            signatoryType: 'Main',
+            email: user?.email || '',
+            isSigned: false
+        };
+        const finalDoc = {
+            ...doc,
+            signatures: doc.signatures && doc.signatures.length > 0 ? doc.signatures : [creatorSlot]
+        };
+        setGeneratedDoc(finalDoc);
+        setSignatories(finalDoc.signatures);
+        setEditingDocId(null);
+        onSaveDoc(finalDoc);
+    };
 
     // Synchronize company defaults
     const getCompanyContext = () => {
@@ -319,35 +369,19 @@ const DocumentTransformer: React.FC<DocumentTransformerProps> = ({ company, user
         
         const context = getCompanyContext();
 
-        if (useLocalCompiler) {
-            try {
-                const result = compileDocumentOffline(documentPurpose, context);
-                setGeneratedDoc(result);
-                onSaveDoc(result);
-            } catch (e: any) {
-                setError("Offline compilation failed: " + e.message);
-            } finally {
-                setIsLoading(false);
-            }
-            return;
-        }
-
         try {
             const result = await generateDocumentFromPurpose(documentPurpose, context);
             if (result) {
-                setGeneratedDoc(result);
-                onSaveDoc(result);
+                handleLoadNewDocument(result);
             } else {
                 console.warn("AI returned empty, falling back to local offline template compiler.");
                 const fallbackResult = compileDocumentOffline(documentPurpose, context);
-                setGeneratedDoc(fallbackResult);
-                onSaveDoc(fallbackResult);
+                handleLoadNewDocument(fallbackResult);
             }
         } catch (e) {
             console.warn("Failsafe triggers offline local compiler:", e);
             const fallbackResult = compileDocumentOffline(documentPurpose, context);
-            setGeneratedDoc(fallbackResult);
-            onSaveDoc(fallbackResult);
+            handleLoadNewDocument(fallbackResult);
         } finally {
             setIsLoading(false);
         }
@@ -441,8 +475,9 @@ const DocumentTransformer: React.FC<DocumentTransformerProps> = ({ company, user
                 };
             }
 
-            setGeneratedDoc(parsedDoc);
-            onSaveDoc(parsedDoc); // Save to the database workspace automatically so they can see/work on it!
+            if (parsedDoc) {
+                handleLoadNewDocument(parsedDoc);
+            }
         } catch (e: any) {
             setError("Failed to compile local blocks structure for signing: " + e.message);
         } finally {
@@ -464,8 +499,7 @@ const DocumentTransformer: React.FC<DocumentTransformerProps> = ({ company, user
             const context = getCompanyContext();
             const result = await transformDocument(rawText, context);
             if (result) {
-                setGeneratedDoc(result);
-                onSaveDoc(result);
+                handleLoadNewDocument(result);
             } else {
                 setError("Format operation failed. The unstructured text format is unrecognizable.");
             }
@@ -556,8 +590,7 @@ const DocumentTransformer: React.FC<DocumentTransformerProps> = ({ company, user
                         blocks
                     };
 
-                    setGeneratedDoc(parsedDoc);
-                    onSaveDoc(parsedDoc);
+                    handleLoadNewDocument(parsedDoc);
                 } catch (err: any) {
                     console.error("PDF extraction error:", err);
                     setError("Failed to extract text from PDF: " + err.message);
@@ -636,8 +669,7 @@ const DocumentTransformer: React.FC<DocumentTransformerProps> = ({ company, user
                         blocks
                     };
 
-                    setGeneratedDoc(parsedDoc);
-                    onSaveDoc(parsedDoc);
+                    handleLoadNewDocument(parsedDoc);
                 } catch (err: any) {
                     console.error("Word Doc extraction error:", err);
                     setError("Failed to extract text from Word document: " + err.message);
@@ -778,6 +810,19 @@ const DocumentTransformer: React.FC<DocumentTransformerProps> = ({ company, user
         }
     };
 
+    const handleOpenSignModalForIndex = (index: number) => {
+        setActiveSignatoryIndex(index);
+        const sig = signatories[index];
+        if (sig) {
+            setTypedName(sig.name || '');
+            setSigTitle(sig.title || 'Representative');
+        } else {
+            setTypedName('');
+            setSigTitle('Representative');
+        }
+        setIsSignModalOpen(true);
+    };
+
     // Apply E-Signature
     const handleApplySignature = () => {
         let value = '';
@@ -802,13 +847,45 @@ const DocumentTransformer: React.FC<DocumentTransformerProps> = ({ company, user
             value = uploadedSigUrl;
         }
 
+        const dateStr = new Date().toLocaleString();
+        
+        // Find which slot we represent
+        const activeIndex = activeSignatoryIndex !== null ? activeSignatoryIndex : 0;
+        const updatedSignatories = signatories.map((sig, i) => {
+            if (i === activeIndex) {
+                return {
+                    ...sig,
+                    type: sigType,
+                    value: value,
+                    name: typedName || sig.name || 'User Verified',
+                    title: sigTitle || sig.title || 'Representative',
+                    date: dateStr,
+                    isSigned: true
+                };
+            }
+            return sig;
+        });
+
+        // Set local state
+        setSignatories(updatedSignatories);
         setAppliedSignature({
             type: sigType,
             value: value,
             name: typedName || 'User Verified',
             title: sigTitle || 'Authorized Representative',
-            date: new Date().toLocaleString()
+            date: dateStr
         });
+
+        // Sync and save immediately!
+        if (generatedDoc) {
+            const nextDoc = {
+                ...generatedDoc,
+                signatures: updatedSignatories
+            };
+            setGeneratedDoc(nextDoc);
+            onSaveDoc(nextDoc, editingDocId || undefined);
+        }
+
         setIsSignModalOpen(false);
     };
 
@@ -844,10 +921,26 @@ ${company?.name || 'CraveBiZ Vendor'}`;
     };
 
     const handleViewHistoryDoc = (doc: StoredGeneratedDoc) => {
+        const creatorSlot: SignatureInfo = {
+            id: 'creator',
+            type: 'type',
+            value: '',
+            name: user?.full_name || company?.name || 'Creator',
+            title: 'Authorized Representative',
+            date: '',
+            signatoryType: 'Main',
+            email: user?.email || '',
+            isSigned: false
+        };
+        const loadedSigs = doc.signatures && doc.signatures.length > 0 ? doc.signatures : [creatorSlot];
+
         setGeneratedDoc({
             documentType: doc.documentType,
-            blocks: doc.blocks
+            blocks: doc.blocks,
+            signatures: loadedSigs
         });
+        setSignatories(loadedSigs);
+        setEditingDocId(doc.id);
         setAppliedSignature(null);
         setError(null);
         setReviewReport(null);
@@ -858,7 +951,20 @@ ${company?.name || 'CraveBiZ Vendor'}`;
         const updatedBlocks = generatedDoc.blocks.map(block =>
             block.id === blockId ? { ...block, content: newContent } : block
         );
-        setGeneratedDoc({ ...generatedDoc, blocks: updatedBlocks });
+        const nextDoc = { ...generatedDoc, blocks: updatedBlocks };
+        setGeneratedDoc(nextDoc);
+        // Auto-save any inline updates to our active working copy
+        onSaveDoc({ ...nextDoc, signatures: signatories }, editingDocId || undefined);
+    };
+
+    const handleSaveCurrentDocument = () => {
+        if (!generatedDoc) return;
+        const savedDoc = {
+            ...generatedDoc,
+            signatures: signatories
+        };
+        onSaveDoc(savedDoc, editingDocId || undefined);
+        alert('Your document changes and signature configurations have been securely saved to the CraveBiz SmartDocs Archive Vault!');
     };
 
     const renderBlock = (block: DocumentBlock) => {
@@ -1360,18 +1466,30 @@ ${company?.name || 'CraveBiZ Vendor'}`;
                                     <div className="p-3 bg-gray-50 border-b border-gray-100 flex flex-wrap gap-2 justify-between items-center print-hidden">
                                         <span className="text-[10px] font-black text-gray-400 uppercase tracking-widest">{generatedDoc.documentType} Preview Pane</span>
                                         <div className="flex items-center gap-1.5 flex-wrap">
+                                            {/* Manual Save / Update changes button */}
+                                            <button 
+                                                onClick={handleSaveCurrentDocument} 
+                                                className="px-3 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white text-[10px] font-black uppercase tracking-wider rounded-lg transition-all flex items-center gap-1 shadow-sm"
+                                            >
+                                                <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M8 7H5a2 2 0 00-2 2v9a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-3m-1 4l-3 3m0 0l-3-3m3 3V4"></path></svg>
+                                                {editingDocId ? 'Update & Save' : 'Save Document'}
+                                            </button>
+
                                             {/* Feature ii: Interactive E-Signature Button */}
                                             <button
-                                                onClick={() => setIsSignModalOpen(true)}
+                                                onClick={() => {
+                                                    setActiveSignatoryIndex(0); // Creator/First signatory
+                                                    setIsSignModalOpen(true);
+                                                }}
                                                 className="px-3 py-1.5 bg-primary-600 text-white hover:bg-primary-700 text-[10px] font-black uppercase tracking-wider rounded-lg transition-all flex items-center gap-1 shadow-sm"
                                             >
                                                 <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z"></path></svg>
-                                                {appliedSignature ? 'Change Signature' : 'DocSignify'}
+                                                {signatories[0]?.isSigned ? 'Change My Signature' : 'Sign Document'}
                                             </button>
                                             
                                             <button onClick={handlePrint} className="px-3 py-1.5 bg-white hover:bg-gray-100 text-gray-700 border border-gray-200 text-[10px] font-black uppercase tracking-wider rounded-lg transition-all">Print</button>
                                             <button onClick={handleDownloadPdf} className="px-3 py-1.5 bg-white hover:bg-gray-100 text-gray-700 border border-gray-200 text-[10px] font-black uppercase tracking-wider rounded-lg transition-all">PDF</button>
-                                            <button onClick={handleSendEmail} className="px-3 py-1.5 bg-white hover:bg-gray-100 text-gray-700 border border-gray-200 text-[10px] font-black uppercase tracking-wider rounded-lg transition-all">Email</button>
+                                            <button onClick={handleSendEmail} className="px-3 py-1.5 bg-white hover:bg-gray-100 text-gray-700 border border-gray-200 text-[10px] font-black uppercase tracking-wider rounded-lg transition-all">Email Link</button>
                                         </div>
                                     </div>
 
@@ -1382,66 +1500,72 @@ ${company?.name || 'CraveBiZ Vendor'}`;
                                                 {generatedDoc.blocks.map(block => <div key={block.id}>{renderBlock(block)}</div>)}
                                             </div>
 
-                                            {/* Feature ii: Applied Signature Box rendered inside A4 Simulation */}
-                                            {appliedSignature ? (
+                                            {/* Feature ii: Dynamic E-Signatures Board rendered inside A4 Simulation */}
+                                            {signatories && signatories.length > 0 ? (
                                                 <div className="mt-12 pt-8 border-t border-dashed border-gray-200">
                                                     <h4 className="text-[10px] font-black text-gray-400 uppercase tracking-widest mb-6">Execution & Counterparty Sign-Off</h4>
-                                                    <div className="grid grid-cols-2 gap-12 text-xs">
+                                                    <div className="grid grid-cols-2 gap-6 text-xs">
                                                         
-                                                        {/* Preparer Auto-sign */}
-                                                        <div className="border border-gray-100 rounded-xl p-3 bg-gray-50/50">
-                                                            <p className="text-[9px] font-black text-gray-400 uppercase mb-2">Issued On Behalf Of:</p>
-                                                            <div className="h-10 flex items-center mb-1">
-                                                                <span className="font-mono text-gray-300 text-[10px] italic">[CraveBiZ Vendor Code Match Verified]</span>
-                                                            </div>
-                                                            <div className="border-t pt-1.5 border-gray-200">
-                                                                <p className="font-bold text-gray-800 text-[11px]">{company?.name || 'CraveBiZ Vendor'}</p>
-                                                                <p className="text-[9px] text-gray-400 font-medium">{user?.full_name || 'Assigned Agent'}</p>
-                                                            </div>
-                                                        </div>
+                                                        {signatories.map((sig, idx) => (
+                                                            <div key={sig.id || idx} className={`border rounded-xl p-3 relative overflow-hidden ${sig.isSigned ? 'border-primary-200 bg-primary-50/10' : 'border-dashed border-gray-200 bg-gray-50/30'}`}>
+                                                                {sig.isSigned ? (
+                                                                    <div className="absolute top-0 right-0 bg-emerald-600 text-white text-[7px] font-black uppercase px-2 py-0.5 rounded-bl tracking-widest select-none">
+                                                                        Verified
+                                                                    </div>
+                                                                ) : (
+                                                                    <div className="absolute top-0 right-0 bg-amber-500 text-white text-[7px] font-black uppercase px-2 py-0.5 rounded-bl tracking-widest select-none bg-opacity-90">
+                                                                        Awaiting Signature
+                                                                    </div>
+                                                                )}
+                                                                <p className="text-[9px] font-black text-gray-400 uppercase mb-2">
+                                                                    {sig.signatoryType} Signee Slot:
+                                                                </p>
+                                                                
+                                                                <div className="h-10 flex items-center justify-center mb-1 overflow-hidden">
+                                                                    {sig.isSigned ? (
+                                                                        <>
+                                                                            {sig.type === 'draw' && (
+                                                                                <img src={sig.value} alt="Signature drawn" className="h-9 max-w-full object-contain" />
+                                                                            )}
+                                                                            {sig.type === 'upload' && (
+                                                                                <img src={sig.value} alt="Signature file" className="h-9 max-w-full object-contain" />
+                                                                            )}
+                                                                            {sig.type === 'type' && (
+                                                                                <span
+                                                                                    className="text-lg text-indigo-950 select-none font-bold italic"
+                                                                                    style={{ 
+                                                                                        fontFamily: 
+                                                                                            sig.value === '0' ? "'Dancing Script', cursive" : 
+                                                                                            sig.value === '1' ? "'Great Vibes', cursive" : 
+                                                                                            sig.value === '2' ? "'Herr Von Muellerhoff', cursive" :
+                                                                                            "'Homemade Apple', cursive" 
+                                                                                    }}
+                                                                                >
+                                                                                    {sig.name}
+                                                                                </span>
+                                                                            )}
+                                                                        </>
+                                                                    ) : (
+                                                                        <span className="text-[10px] text-gray-300 font-mono italic">[Unexecuted Signature]</span>
+                                                                    )}
+                                                                </div>
 
-                                                        {/* Applied Client Signature */}
-                                                        <div className="border border-primary-200 bg-primary-50/20 rounded-xl p-3 relative overflow-hidden">
-                                                            <div className="absolute top-0 right-0 bg-primary-600 text-white text-[7px] font-black uppercase px-2 py-0.5 rounded-bl tracking-widest select-none">
-                                                                Verified
+                                                                <div className={`border-t pt-1.5 ${sig.isSigned ? 'border-primary-100' : 'border-gray-100'}`}>
+                                                                    <p className="font-bold text-gray-800 text-[11px] truncate">{sig.name || 'Signee Name'}</p>
+                                                                    <p className="text-[9px] text-gray-400 font-medium truncate">{sig.title || 'Corporate Title'}</p>
+                                                                    {sig.email && <p className="text-[8px] text-gray-400 font-medium truncate">{sig.email}</p>}
+                                                                    {sig.isSigned && sig.date && (
+                                                                        <p className="text-[8px] text-primary-400 mt-1 font-mono leading-none truncate">{sig.date}</p>
+                                                                    )}
+                                                                </div>
                                                             </div>
-                                                            <p className="text-[9px] font-black text-primary-700 uppercase mb-2">E-Signed Electronically:</p>
-                                                            
-                                                            <div className="h-10 flex items-center justify-center mb-1 overflow-hidden">
-                                                                {appliedSignature.type === 'draw' && (
-                                                                    <img src={appliedSignature.value} alt="Signature drawn" className="h-9 max-w-full object-contain" />
-                                                                )}
-                                                                {appliedSignature.type === 'upload' && (
-                                                                    <img src={appliedSignature.value} alt="Signature file" className="h-9 max-w-full object-contain" />
-                                                                )}
-                                                                {appliedSignature.type === 'type' && (
-                                                                    <span
-                                                                        className="text-2xl text-primary-900 select-none font-bold"
-                                                                        style={{ 
-                                                                            fontFamily: 
-                                                                                appliedSignature.value === '0' ? "'Dancing Script', cursive" : 
-                                                                                appliedSignature.value === '1' ? "'Great Vibes', cursive" : 
-                                                                                appliedSignature.value === '2' ? "'Herr Von Muellerhoff', cursive" :
-                                                                                "'Homemade Apple', cursive" 
-                                                                        }}
-                                                                    >
-                                                                        {appliedSignature.name}
-                                                                    </span>
-                                                                )}
-                                                            </div>
-
-                                                            <div className="border-t pt-1.5 border-primary-100">
-                                                                <p className="font-bold text-gray-800 text-[11px] truncate">{appliedSignature.name}</p>
-                                                                <p className="text-[9px] text-gray-400 font-medium truncate">{appliedSignature.title}</p>
-                                                                <p className="text-[8px] text-gray-400 mt-0.5 font-mono leading-none truncate">{appliedSignature.date}</p>
-                                                            </div>
-                                                        </div>
+                                                        ))}
 
                                                     </div>
                                                 </div>
                                             ) : (
                                                 <div className="mt-12 p-5 border border-dashed border-gray-200 rounded-xl text-center bg-gray-50/30 print-hidden">
-                                                    <p className="text-gray-400 text-xs font-medium leading-relaxed">This document remains unexecuted. Click the <strong className="text-primary-600">DocSignify</strong> action in the upper controls to add signatures.</p>
+                                                    <p className="text-gray-400 text-xs font-medium leading-relaxed">This document has no signatory configured. Click the <strong className="text-primary-600">DocSignify</strong> section on the left to configure legal signatories.</p>
                                                 </div>
                                             )}
                                         </div>

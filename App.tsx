@@ -348,9 +348,13 @@ export default function App() {
 
     switch (activePage) {
       case 'dashboard': return <Dashboard invoices={invoices} clients={clients} setActivePage={navigateTo} onViewInvoice={(id) => { setSelectedInvoiceId(id); navigateTo('invoice-detail'); }} onEditInvoice={handleEditInvoiceAction} onGenerateRenewal={handleGenerateRenewal} />;
-      case 'document-transformer': return <DocumentTransformer company={activeCompany} user={currentUser} generatedDocs={generatedDocs} onSaveDoc={async (doc) => { 
+      case 'document-transformer': return <DocumentTransformer company={activeCompany} user={currentUser} generatedDocs={generatedDocs} onSaveDoc={async (doc, id) => { 
           try {
-              await api.saveGeneratedDoc(activeTenantId!, doc); 
+              if (id) {
+                  await api.updateGeneratedDoc(activeTenantId!, id, doc);
+              } else {
+                  await api.saveGeneratedDoc(activeTenantId!, doc); 
+              }
               await forceSyncData(activeTenantId!); 
           } catch (e) {
               setSyncError(stringifyError(e));
