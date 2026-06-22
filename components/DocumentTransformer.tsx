@@ -1,5 +1,7 @@
 
 import React, { useState, useRef, useEffect } from 'react';
+// @ts-ignore
+import mammoth from 'mammoth';
 import { transformDocument, generateDocumentFromPurpose, reviewDocumentContent } from '../services/aiGenerationService';
 import { GeneratedDocument, DocumentBlock, HeaderBlock, MetadataBlock, TableBlock, SummaryBlock, Company, User, StoredGeneratedDoc, DocumentReviewResult } from '../types';
 import EditableBlock from './EditableBlock';
@@ -82,9 +84,162 @@ const TEMPLATES = [
     }
 ];
 
+function compileDocumentOffline(purpose: string, companyContext: any): GeneratedDocument {
+    const today = new Date().toLocaleDateString();
+    
+    // Heuristic parser
+    let clientName = "Acme Client Corp";
+    const clientMatches = purpose.match(/(?:between|and|client|partner)\s+([A-Z][a-zA-Z0-9\s]{2,25})/i);
+    if (clientMatches && clientMatches[1]) {
+        const cleanVal = clientMatches[1].trim();
+        if (cleanVal.toLowerCase() !== companyContext.name.toLowerCase() && cleanVal.toLowerCase() !== 'client' && cleanVal.toLowerCase() !== 'partner') {
+            clientName = cleanVal;
+        }
+    }
+    
+    // Fee detection
+    const dollarMatches = purpose.match(/\$[0-9,]+/g);
+    const feeString = dollarMatches ? dollarMatches.join(", ") : "$5,000.00";
+    
+    // Jurisdiction
+    let jurisdiction = "Lagos State, Nigeria";
+    const jurMatch = purpose.match(/(?:jurisdiction|laws of|governing law:?)\s+([A-Z][a-zA-Z0-9\s,]{2,30})/i);
+    if (jurMatch && jurMatch[1]) {
+        jurisdiction = jurMatch[1].trim();
+    }
+
+    const documentTitle = purpose.toLowerCase().includes('nda') || purpose.toLowerCase().includes('disclosure') 
+        ? "MUTUAL NON-DISCLOSURE AGREEMENT" 
+        : purpose.toLowerCase().includes('consult')
+        ? "EXECUTIVE CONSULTING PROPOSAL"
+        : purpose.toLowerCase().includes('contractor')
+        ? "INDEPENDENT CONTRACTOR AGREEMENT"
+        : "PARTNERSHIP SERVICE AGREEMENT";
+
+    const blocks: DocumentBlock[] = [
+        {
+            id: 'hdr_' + Math.floor(Math.random() * 10000),
+            type: 'header',
+            content: {
+                companyName: companyContext.name,
+                address: companyContext.address,
+                email: companyContext.email,
+                phone: companyContext.phone,
+                website: companyContext.website
+            }
+        },
+        {
+            id: 'meta_' + Math.floor(Math.random() * 10000),
+            type: 'metadata',
+            content: {
+                documentTitle: documentTitle,
+                clientName: clientName,
+                preparedBy: companyContext.name,
+                date: today,
+                reference: "REF-" + Math.floor(Math.random() * 89999 + 10000)
+            }
+        },
+        {
+            id: 'title_1',
+            type: 'title',
+            content: { text: "1. COVENANT OF ENGAGEMENT" }
+        },
+        {
+            id: 'p_1',
+            type: 'paragraph',
+            content: { text: `This Agreement is effective as of ${today} by and between ${companyContext.name} and the esteemed client, ${clientName}. This contract formalizes the parameters and terms requested relative to: ${purpose}.` }
+        }
+    ];
+
+    if (documentTitle.includes("NON-DISCLOSURE")) {
+        blocks.push(
+            {
+                id: 'title_2',
+                type: 'title',
+                content: { text: "2. DEFINITION OF CONFIDENTIAL INFORMATION" }
+            },
+            {
+                id: 'p_2',
+                type: 'paragraph',
+                content: { text: "Confidential Information refers to proprietary technical architectures, designs, workflows, user-experiences, business strategies, and all other strategic info designated as protected or provided under NDA." }
+            },
+            {
+                id: 'title_3',
+                type: 'title',
+                content: { text: "3. PERFORMANCE TERM & NON-COMPETE LIMITS" }
+            },
+            {
+                id: 'p_3',
+                type: 'paragraph',
+                content: { text: "This non-disclosure covenant remains strictly in force for five (5) consecutive years from the execution date. Both parties pledge not to leverage or compile the other's intellectual components for competitive duplication outside this venture." }
+            }
+        );
+    } else {
+        blocks.push(
+            {
+                id: 'title_2',
+                type: 'title',
+                content: { text: "2. SCHEDULE OF SERVICES & SCOPE" }
+            },
+            {
+                id: 'p_2',
+                type: 'paragraph',
+                content: { text: `The service provider shall deliver the professional packages or execution items details under: ${purpose}. All deliverables will be reviewed under modern QA practices to meet enterprise standards.` }
+            },
+            {
+                id: 'title_3',
+                type: 'title',
+                content: { text: "3. FINANCIAL CONSIDERATION & BILLING STAGES" }
+            },
+            {
+                id: 'p_3',
+                type: 'paragraph',
+                content: { text: `In consideration for the fulfillment of the detailed tasks, the Client shall pay a total sum of ${feeString}, which is structured under standard net-30 terms post-milestone delivery, unless otherwise customized.` }
+            },
+            {
+                id: 'tbl_1',
+                type: 'table',
+                content: {
+                    headers: ["Description Milestones", "Associated Stage", "Assigned Cost"],
+                    rows: [
+                        ["Initial Setup / Kick-off", "Phase 1", "$1,500.00"],
+                        ["Core Development & Drafting", "Phase 2", "$3,000.00"],
+                        ["Client Signoff & Activation", "Phase 3", "$1,500.00"],
+                    ]
+                }
+            }
+        );
+    }
+
+    blocks.push(
+        {
+            id: 'title_final',
+            type: 'title',
+            content: { text: "4. JURISDICTION & GOVERNING LAWS" }
+        },
+        {
+            id: 'p_final',
+            type: 'paragraph',
+            content: { text: `We hereby declare that all conditions and responsibilities outlined in this document shall be interpreted and governed by the laws and regulations in ${jurisdiction}.` }
+        },
+        {
+            id: 'footer_idx',
+            type: 'footer',
+            content: { text: `Compiled locally by CraveBiZ SmartDocs Engine. (CraveBiZ No-AI Offline Compiler)` }
+        }
+    );
+
+    return {
+        documentType: documentTitle,
+        blocks
+    };
+}
+
 const DocumentTransformer: React.FC<DocumentTransformerProps> = ({ company, user, generatedDocs, onSaveDoc }) => {
     // Tab State: generate (Purpose-made), sign (E-Signature), manage (Workspace Archive)
     const [activeTab, setActiveTab] = useState<'generate' | 'sign' | 'manage'>('generate');
+    const [useLocalCompiler, setUseLocalCompiler] = useState(false);
+    const [searchTerm, setSearchTerm] = useState('');
 
     // General state
     const [rawText, setRawText] = useState('');
@@ -161,18 +316,38 @@ const DocumentTransformer: React.FC<DocumentTransformerProps> = ({ company, user
         setError(null);
         setGeneratedDoc(null);
         setAppliedSignature(null); // Reset signature for new document
+        
+        const context = getCompanyContext();
+
+        if (useLocalCompiler) {
+            try {
+                const result = compileDocumentOffline(documentPurpose, context);
+                setGeneratedDoc(result);
+                onSaveDoc(result);
+            } catch (e: any) {
+                setError("Offline compilation failed: " + e.message);
+            } finally {
+                setIsLoading(false);
+            }
+            return;
+        }
+
         try {
-            const context = getCompanyContext();
             const result = await generateDocumentFromPurpose(documentPurpose, context);
             if (result) {
                 setGeneratedDoc(result);
                 onSaveDoc(result);
             } else {
-                setError("Failure creating document. The AI model could not structure the document blocks.");
+                console.warn("AI returned empty, falling back to local offline template compiler.");
+                const fallbackResult = compileDocumentOffline(documentPurpose, context);
+                setGeneratedDoc(fallbackResult);
+                onSaveDoc(fallbackResult);
             }
         } catch (e) {
-            setError("Failed to communicate with CraveBiZ GenAI node. Please retry.");
-            console.error(e);
+            console.warn("Failsafe triggers offline local compiler:", e);
+            const fallbackResult = compileDocumentOffline(documentPurpose, context);
+            setGeneratedDoc(fallbackResult);
+            onSaveDoc(fallbackResult);
         } finally {
             setIsLoading(false);
         }
@@ -314,10 +489,10 @@ const DocumentTransformer: React.FC<DocumentTransformerProps> = ({ company, user
 
     const processUploadedFile = (file: File) => {
         setUploadedFileName(file.name);
+        setError(null);
         
         if (file.name.endsWith('.pdf') || file.type === 'application/pdf') {
             setIsLoading(true);
-            setError(null);
             const reader = new FileReader();
             reader.onload = async (event) => {
                 try {
@@ -394,30 +569,87 @@ const DocumentTransformer: React.FC<DocumentTransformerProps> = ({ company, user
             return;
         }
 
-        const reader = new FileReader();
-        reader.onload = async (event) => {
-            const text = event.target?.result as string;
-            setRawText(text);
-            setReviewText(text);
-            
-            // If it's a JSON block-layout document, we can load it directly to active canvas
-            if (file.name.endsWith('.json')) {
+        if (file.name.endsWith('.docx') || file.type === 'application/vnd.openxmlformats-officedocument.wordprocessingml.document') {
+            setIsLoading(true);
+            const reader = new FileReader();
+            reader.onload = async (event) => {
                 try {
-                    const parsed = JSON.parse(text);
-                    if (parsed && typeof parsed === 'object' && parsed.blocks && Array.isArray(parsed.blocks)) {
-                        setGeneratedDoc({
-                            documentType: parsed.documentType || "Uploaded JSON Agreement",
-                            blocks: parsed.blocks
-                        });
-                        setAppliedSignature(null);
-                        setError(null);
-                    }
-                } catch (err) {
-                    console.warn("JSON file was not in layout format, loaded as text instead.");
+                    const arrayBuffer = event.target?.result as ArrayBuffer;
+                    // @ts-ignore
+                    const result = await mammoth.extractRawText({ arrayBuffer });
+                    const extractedText = result.value;
+                    setRawText(extractedText);
+                    setReviewText(extractedText);
+                    
+                    const context = getCompanyContext();
+                    const parts = extractedText.split(/\n\s*\n/).map(p => p.trim()).filter(Boolean);
+                    const blocks: DocumentBlock[] = [
+                        {
+                            id: 'hdr_l_' + Math.floor(Math.random() * 10000),
+                            type: 'header',
+                            content: {
+                                companyName: context.name,
+                                address: context.address,
+                                email: context.email,
+                                phone: context.phone,
+                                website: context.website
+                            }
+                        },
+                        {
+                            id: 'meta_l_' + Math.floor(Math.random() * 10000),
+                            type: 'metadata',
+                            content: {
+                                documentTitle: fileLabelClean(file.name) || "Assigned Signature Agreement",
+                                clientName: "Authorized Counterparty",
+                                preparedBy: user?.full_name || "Contract Admin",
+                                date: new Date().toLocaleDateString(),
+                                reference: "REF-" + Math.floor(Math.random() * 89999 + 10000)
+                            }
+                        }
+                    ];
+
+                    parts.forEach((part, index) => {
+                        const lines = part.split('\n').map(l => l.trim()).filter(Boolean);
+                        if (lines.length === 1 && lines[0].length < 100 && (index === 0 || lines[0] === lines[0].toUpperCase())) {
+                            blocks.push({
+                                id: `title_l_${index}`,
+                                type: 'title',
+                                content: { text: lines[0] }
+                            });
+                        } else {
+                            blocks.push({
+                                id: `p_l_${index}`,
+                                type: 'paragraph',
+                                content: { text: part }
+                            });
+                        }
+                    });
+
+                    blocks.push({
+                        id: 'footer_l',
+                        type: 'footer',
+                        content: { text: "Prepared and formatted locally via CraveBiZ Secure eSign offline module." }
+                    });
+
+                    const parsedDoc: GeneratedDocument = {
+                        documentType: fileLabelClean(file.name) || "Uploaded Document",
+                        blocks
+                    };
+
+                    setGeneratedDoc(parsedDoc);
+                    onSaveDoc(parsedDoc);
+                } catch (err: any) {
+                    console.error("Word Doc extraction error:", err);
+                    setError("Failed to extract text from Word document: " + err.message);
+                } finally {
+                    setIsLoading(false);
                 }
-            }
-        };
-        reader.readAsText(file);
+            };
+            reader.readAsArrayBuffer(file);
+            return;
+        }
+
+        setError("Unsupported file format. Please upload a PDF (.pdf) or Word (.docx) document.");
     };
 
     const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -754,7 +986,7 @@ ${company?.name || 'CraveBiZ Vendor'}`;
                     
                     {/* Render Form based on Active Tab */}
                     {activeTab === 'generate' && (
-                        <div className="bg-white p-5 rounded-2xl border border-gray-200/50 shadow-sm">
+                        <div className="bg-white p-5 rounded-2xl border border-gray-200/50 shadow-sm space-y-4">
                             <h2 className="text-sm font-black text-gray-800 uppercase tracking-wider mb-2 flex items-center gap-2">
                                 <span className="w-2 h-2 rounded-full bg-primary-600"></span>
                                 Purpose-Made Smart Document
@@ -769,8 +1001,25 @@ ${company?.name || 'CraveBiZ Vendor'}`;
                                 disabled={isLoading}
                             />
 
+                            {/* Local offline compiler toggle */}
+                            <div className="p-3 bg-gray-50 border border-gray-100 rounded-xl flex items-center justify-between">
+                                <div className="space-y-0.5">
+                                    <span className="text-xs font-bold text-gray-700 block">Offline Local Compiler</span>
+                                    <span className="text-[10px] text-gray-400 block font-medium">Bypass AI & compile instantly offline</span>
+                                </div>
+                                <label className="relative inline-flex items-center cursor-pointer">
+                                    <input 
+                                        type="checkbox" 
+                                        checked={useLocalCompiler}
+                                        onChange={(e) => setUseLocalCompiler(e.target.checked)}
+                                        className="sr-only peer" 
+                                    />
+                                    <div className="w-9 h-5 bg-gray-200 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-primary-600"></div>
+                                </label>
+                            </div>
+
                             {/* Template Suggestions Chips */}
-                            <div className="mt-4">
+                            <div>
                                 <span className="text-[10px] font-black uppercase text-gray-400 tracking-wider">Quick Launch Presets:</span>
                                 <div className="grid grid-cols-2 gap-2 mt-2">
                                     {TEMPLATES.map((tmpl, idx) => (
@@ -789,9 +1038,9 @@ ${company?.name || 'CraveBiZ Vendor'}`;
                             <button
                                 onClick={handleGenerateByPurpose}
                                 disabled={isLoading || !documentPurpose.trim()}
-                                className="w-full mt-5 py-3.5 bg-primary-600 text-white text-xs font-black uppercase tracking-widest rounded-xl hover:bg-primary-700 active:scale-95 shadow-md shadow-primary-200/50 transition-all disabled:bg-gray-400 disabled:shadow-none"
+                                className="w-full mt-2 py-3.5 bg-primary-600 text-white text-xs font-black uppercase tracking-widest rounded-xl hover:bg-primary-700 active:scale-95 shadow-md shadow-primary-200/50 transition-all disabled:bg-gray-400 disabled:shadow-none"
                             >
-                                {isLoading ? 'Generating Draft Blocks...' : 'DocGenerator'}
+                                {isLoading ? 'Compiling Document...' : 'DocGenerator'}
                             </button>
                         </div>
                     )}
@@ -803,7 +1052,7 @@ ${company?.name || 'CraveBiZ Vendor'}`;
                                 Client Sign-Off & Upload
                             </h2>
                             <p className="text-xs text-gray-500 font-medium leading-relaxed">
-                                Upload a document file (.txt, .md, .json) or paste plain text rules below. We will instantly format it into an A4 sheet ready for signing, completely offline—no AI key needed!
+                                Upload any professional Word (.docx) or PDF (.pdf) file. We will extract and automatically map its text onto our premium signable canvas.
                             </p>
                             
                             {/* Drag & Drop Upload Zone */}
@@ -817,14 +1066,14 @@ ${company?.name || 'CraveBiZ Vendor'}`;
                                     type="file"
                                     id="review-uploader"
                                     onChange={handleFileSelect}
-                                    accept=".txt,.md,.json"
+                                    accept=".pdf,.docx"
                                     className="absolute inset-0 opacity-0 cursor-pointer"
                                 />
                                 <div className="p-2.5 bg-white shadow-sm rounded-full mb-2">
                                     <svg className="w-6 h-6 text-primary-600" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12"></path></svg>
                                 </div>
                                 <span className="text-xs font-bold text-gray-700">Drag & Drop Files Here</span>
-                                <span className="text-[10px] text-gray-400 font-medium mt-0.5">Supports .txt, .md, .json backups</span>
+                                <span className="text-[10px] text-gray-400 font-medium mt-0.5">Supports PDF or Word format (.pdf, .docx)</span>
                                 
                                 {uploadedFileName && (
                                     <div className="absolute bottom-2 left-2 right-2 bg-white px-2 py-1 border border-primary-100 rounded text-[9px] text-primary-800 font-mono flex items-center justify-between">
@@ -853,23 +1102,49 @@ ${company?.name || 'CraveBiZ Vendor'}`;
                                 disabled={isLoading || (!rawText.trim() && !uploadedFileName)}
                                 className="w-full py-3.5 bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-black uppercase tracking-widest rounded-xl shadow-md transition-all disabled:bg-gray-400"
                             >
-                                {isLoading ? 'Parsing Document Offline...' : 'Prepare & Load onto Canvas'}
+                                {isLoading ? 'Parsing Document...' : 'Prepare & Load onto Canvas'}
                             </button>
                         </div>
                     )}
 
                     {activeTab === 'manage' && (
                         <div className="bg-white p-5 rounded-2xl border border-gray-200/50 shadow-sm space-y-4">
-                            <h2 className="text-sm font-black text-gray-800 uppercase tracking-wider flex items-center gap-2">
-                                <span className="w-2.5 h-2.5 rounded-full bg-primary-600 animate-pulse"></span>
-                                Workspace Manage Vault
-                            </h2>
-                            <p className="text-xs text-gray-500 font-medium leading-relaxed">
-                                Manage and work on documents already created inside your SME workspace. Select any record below to load it on-canvas, modify blocks, or check AI compliance instantly.
-                            </p>
+                            <div className="flex justify-between items-start">
+                                <div>
+                                    <h2 className="text-sm font-black text-gray-800 uppercase tracking-wider flex items-center gap-2">
+                                        <span className="w-2.5 h-2.5 rounded-full bg-primary-600 animate-pulse"></span>
+                                        SmartDocs Archive Vault
+                                    </h2>
+                                    <p className="text-xs text-gray-500 font-medium leading-relaxed mt-1">
+                                        Detailed view of all generated and parsed documents active in the system.
+                                    </p>
+                                </div>
+                                <span className="bg-primary-100 text-primary-800 text-[10px] font-bold px-2.5 py-1 rounded-full border border-primary-200">
+                                    Total: {generatedDocs.length}
+                                </span>
+                            </div>
+
+                            {/* Live Search Input Box */}
+                            <div className="relative">
+                                <input
+                                    type="text"
+                                    value={searchTerm}
+                                    onChange={(e) => setSearchTerm(e.target.value)}
+                                    placeholder="Search documents by title..."
+                                    className="w-full px-3 py-2 pl-9 text-xs border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-primary-500/20 bg-gray-50/50"
+                                />
+                                <svg className="absolute left-3 top-2.5 w-4 h-4 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+                                </svg>
+                                {searchTerm && (
+                                    <button onClick={() => setSearchTerm('')} className="absolute right-3 top-2.5 text-xs text-gray-400 hover:text-gray-600">
+                                        Clear
+                                    </button>
+                                )}
+                            </div>
 
                             <div className="space-y-3 max-h-[36rem] overflow-y-auto pr-1">
-                                {generatedDocs.map(doc => {
+                                {generatedDocs.filter(doc => !searchTerm.trim() || doc.documentType.toLowerCase().includes(searchTerm.toLowerCase())).map(doc => {
                                     const isCurrentlyLoaded = generatedDoc?.documentType === doc.documentType && JSON.stringify(generatedDoc.blocks) === JSON.stringify(doc.blocks);
                                     return (
                                         <div 
@@ -883,11 +1158,13 @@ ${company?.name || 'CraveBiZ Vendor'}`;
                                             <div>
                                                 <div className="flex items-start justify-between gap-2">
                                                     <h3 className="font-bold text-xs text-gray-800 truncate max-w-[180px]">{doc.documentType}</h3>
-                                                    {isCurrentlyLoaded && (
-                                                        <span className="text-[8px] bg-indigo-600 text-white font-black uppercase tracking-wider px-1.5 py-0.5 rounded leading-none">
-                                                            Active
-                                                        </span>
-                                                    )}
+                                                    <div className="flex items-center gap-1.5 flex-shrink-0">
+                                                        {isCurrentlyLoaded && (
+                                                            <span className="text-[8px] bg-indigo-600 text-white font-black uppercase tracking-wider px-1.5 py-0.5 rounded leading-none">
+                                                                Active
+                                                            </span>
+                                                        )}
+                                                    </div>
                                                 </div>
                                                 <p className="text-[9px] text-gray-400 mt-1 font-mono">
                                                     Ref: REF-{doc.id.substring(0, 8).toUpperCase()} | {new Date(doc.createdAt).toLocaleDateString()}
@@ -910,7 +1187,7 @@ ${company?.name || 'CraveBiZ Vendor'}`;
                                                     onClick={async () => {
                                                         // First load the document onto the canvas
                                                         handleViewHistoryDoc(doc);
-                                                        // Then trigger compliance audit using document content text
+                                                        // Then trigger compliance audit using document text
                                                         const fullTextLines = doc.blocks
                                                             .filter(b => b.type === 'paragraph' || b.type === 'title')
                                                             .map(b => (b.content as any).text || '')
