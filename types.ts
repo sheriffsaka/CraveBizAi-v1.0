@@ -165,6 +165,7 @@ export interface SignatureInfo {
   signatoryType: 'Main' | 'Witness';
   email?: string;
   isSigned: boolean;
+  isRequested?: boolean;
 }
 
 export interface GeneratedDocument {

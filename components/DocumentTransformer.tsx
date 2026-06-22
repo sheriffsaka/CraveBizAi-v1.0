@@ -286,6 +286,111 @@ const DocumentTransformer: React.FC<DocumentTransformerProps> = ({ company, user
     const [newSigType, setNewSigType] = useState<'Main' | 'Witness'>('Main');
     const [editingDocId, setEditingDocId] = useState<string | null>(null);
 
+    const [isAddSignatoryModalOpen, setIsAddSignatoryModalOpen] = useState(false);
+    const [isRequestModalOpen, setIsRequestModalOpen] = useState(false);
+    const [requestingSigIndex, setRequestingSigIndex] = useState<number | null>(null);
+    const [requestEmail, setRequestEmail] = useState('');
+    const [toastMessage, setToastMessage] = useState<string | null>(null);
+    const [isDocumentSubmitted, setIsDocumentSubmitted] = useState(false);
+
+    const triggerToast = (msg: string) => {
+        setToastMessage(msg);
+        setTimeout(() => setToastMessage(null), 4000);
+    };
+
+    const handleAddSignatorySubmit = () => {
+        if (!newSigName.trim()) {
+            alert("Please enter the signatory's full name.");
+            return;
+        }
+        if (!newSigTitle.trim()) {
+            alert("Please enter their corporate/legal title.");
+            return;
+        }
+
+        const newSlot: SignatureInfo = {
+            id: 'sig_' + Math.floor(Math.random() * 899999 + 100000),
+            type: 'type',
+            value: '',
+            name: newSigName.trim(),
+            title: newSigTitle.trim(),
+            date: '',
+            signatoryType: newSigType,
+            email: newSigEmail.trim(),
+            isSigned: false,
+            isRequested: false
+        };
+
+        const updated = [...signatories, newSlot];
+        setSignatories(updated);
+
+        if (generatedDoc) {
+            const nextDoc = {
+                ...generatedDoc,
+                signatures: updated
+            };
+            setGeneratedDoc(nextDoc);
+            onSaveDoc(nextDoc, editingDocId || undefined);
+        }
+
+        // Reset fields & close
+        setNewSigName('');
+        setNewSigTitle('');
+        setNewSigEmail('');
+        setNewSigType('Main');
+        setIsAddSignatoryModalOpen(false);
+
+        triggerToast(`Signatory "${newSlot.name}" added as ${newSlot.signatoryType} Signatory successfully.`);
+    };
+
+    const handleOpenRequestModal = (index: number) => {
+        setRequestingSigIndex(index);
+        const sig = signatories[index];
+        if (sig) {
+            setRequestEmail(sig.email || '');
+        } else {
+            setRequestEmail('');
+        }
+        setIsRequestModalOpen(true);
+    };
+
+    const handleSendRequestSubmit = () => {
+        if (requestingSigIndex === null) return;
+        if (!requestEmail.trim() || !requestEmail.includes('@')) {
+            alert("Please enter a valid email address.");
+            return;
+        }
+
+        const updated = signatories.map((sig, idx) => {
+            if (idx === requestingSigIndex) {
+                return {
+                    ...sig,
+                    email: requestEmail.trim(),
+                    isRequested: true
+                };
+            }
+            return sig;
+        });
+
+        setSignatories(updated);
+
+        if (generatedDoc) {
+            const nextDoc = {
+                ...generatedDoc,
+                signatures: updated
+            };
+            setGeneratedDoc(nextDoc);
+            onSaveDoc(nextDoc, editingDocId || undefined);
+        }
+
+        const signeeName = signatories[requestingSigIndex]?.name || 'the recipient';
+        setIsRequestModalOpen(false);
+        setRequestingSigIndex(null);
+        setRequestEmail('');
+
+        triggerToast(`Secure signature request dispatch success! Document link sent to ${requestEmail}.`);
+    };
+
     // Print & Layout references
     const documentRef = useRef<HTMLDivElement>(null);
 
@@ -1155,65 +1260,146 @@ ${company?.name || 'CraveBiZ Vendor'}`;
                     )}
 
                     {activeTab === 'sign' && (
-                        <div className="bg-white p-5 rounded-2xl border border-gray-200/50 shadow-sm space-y-4">
-                            <h2 className="text-sm font-black text-gray-800 uppercase tracking-wider flex items-center gap-2">
-                                <span className="w-2.5 h-2.5 rounded-full bg-indigo-600 animate-pulse"></span>
-                                Client Sign-Off & Upload
-                            </h2>
-                            <p className="text-xs text-gray-500 font-medium leading-relaxed">
-                                Upload any professional Word (.docx) or PDF (.pdf) file. We will extract and automatically map its text onto our premium signable canvas.
-                            </p>
-                            
-                            {/* Drag & Drop Upload Zone */}
-                            <div
-                                onDragOver={(e) => { e.preventDefault(); setIsDragOver(true); }}
-                                onDragLeave={() => setIsDragOver(false)}
-                                onDrop={handleFileDrop}
-                                className={`h-40 border-2 border-dashed rounded-xl flex flex-col justify-center items-center p-4 transition-all relative ${isDragOver ? 'border-primary-500 bg-primary-50/50' : 'border-gray-200 bg-gray-50'} cursor-pointer`}
-                            >
-                                <input
-                                    type="file"
-                                    id="review-uploader"
-                                    onChange={handleFileSelect}
-                                    accept=".pdf,.docx"
-                                    className="absolute inset-0 opacity-0 cursor-pointer"
-                                />
-                                <div className="p-2.5 bg-white shadow-sm rounded-full mb-2">
-                                    <svg className="w-6 h-6 text-primary-600" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12"></path></svg>
-                                </div>
-                                <span className="text-xs font-bold text-gray-700">Drag & Drop Files Here</span>
-                                <span className="text-[10px] text-gray-400 font-medium mt-0.5">Supports PDF or Word format (.pdf, .docx)</span>
+                        <>
+                            <div className="bg-white p-5 rounded-2xl border border-gray-200/50 shadow-sm space-y-4">
+                                <h2 className="text-sm font-black text-gray-800 uppercase tracking-wider flex items-center gap-2">
+                                    <span className="w-2.5 h-2.5 rounded-full bg-indigo-600 animate-pulse"></span>
+                                    Client Sign-Off & Upload
+                                </h2>
+                                <p className="text-xs text-gray-500 font-medium leading-relaxed">
+                                    Upload any professional Word (.docx) or PDF (.pdf) file. We will extract and automatically map its text onto our premium signable canvas.
+                                </p>
                                 
-                                {uploadedFileName && (
-                                    <div className="absolute bottom-2 left-2 right-2 bg-white px-2 py-1 border border-primary-100 rounded text-[9px] text-primary-800 font-mono flex items-center justify-between">
-                                        <span className="truncate max-w-[200px]">{uploadedFileName}</span>
-                                        <span className="text-emerald-500 font-bold">✔ Uploaded</span>
+                                {/* Drag & Drop Upload Zone */}
+                                <div
+                                    onDragOver={(e) => { e.preventDefault(); setIsDragOver(true); }}
+                                    onDragLeave={() => setIsDragOver(false)}
+                                    onDrop={handleFileDrop}
+                                    className={`h-40 border-2 border-dashed rounded-xl flex flex-col justify-center items-center p-4 transition-all relative ${isDragOver ? 'border-primary-500 bg-primary-50/50' : 'border-gray-200 bg-gray-50'} cursor-pointer`}
+                                >
+                                    <input
+                                        type="file"
+                                        id="review-uploader"
+                                        onChange={handleFileSelect}
+                                        accept=".pdf,.docx"
+                                        className="absolute inset-0 opacity-0 cursor-pointer"
+                                    />
+                                    <div className="p-2.5 bg-white shadow-sm rounded-full mb-2">
+                                        <svg className="w-6 h-6 text-primary-600" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12"></path></svg>
                                     </div>
-                                )}
+                                    <span className="text-xs font-bold text-gray-700">Drag & Drop Files Here</span>
+                                    <span className="text-[10px] text-gray-400 font-medium mt-0.5">Supports PDF or Word format (.pdf, .docx)</span>
+                                    
+                                    {uploadedFileName && (
+                                        <div className="absolute bottom-2 left-2 right-2 bg-white px-2 py-1 border border-primary-100 rounded text-[9px] text-primary-800 font-mono flex items-center justify-between">
+                                            <span className="truncate max-w-[200px]">{uploadedFileName}</span>
+                                            <span className="text-emerald-500 font-bold">✔ Uploaded</span>
+                                        </div>
+                                    )}
+                                </div>
+
+                                <div className="flex items-center gap-1">
+                                    <div className="h-px bg-gray-100 flex-1"></div>
+                                    <span className="text-[9px] font-black uppercase text-gray-400 px-2 tracking-widest">Or raw text clauses</span>
+                                    <div className="h-px bg-gray-100 flex-1"></div>
+                                </div>
+
+                                <textarea
+                                    value={rawText}
+                                    onChange={(e) => setRawText(e.target.value)}
+                                    placeholder="Paste specific terms or legal clauses to prepare for signing..."
+                                    className="w-full h-44 p-3 border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-primary-500/30 text-xs font-medium placeholder-gray-400 bg-gray-50/50"
+                                    disabled={isLoading}
+                                    id="raw_text_clauses"
+                                />
+
+                                <button
+                                    onClick={handlePrepareSignDocument}
+                                    disabled={isLoading || (!rawText.trim() && !uploadedFileName)}
+                                    className="w-full py-3.5 bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-black uppercase tracking-widest rounded-xl shadow-md transition-all disabled:bg-gray-400"
+                                    id="prepare_sign_btn"
+                                >
+                                    {isLoading ? 'Parsing Document...' : 'Prepare & Load onto Canvas'}
+                                </button>
                             </div>
 
-                            <div className="flex items-center gap-1">
-                                <div className="h-px bg-gray-100 flex-1"></div>
-                                <span className="text-[9px] font-black uppercase text-gray-400 px-2 tracking-widest">Or raw text clauses</span>
-                                <div className="h-px bg-gray-100 flex-1"></div>
-                            </div>
+                            {/* Added Signatories Management card! */}
+                            {generatedDoc && (
+                                <div className="bg-white p-5 rounded-2xl border border-gray-200/50 shadow-sm space-y-4 animate-in slide-in-from-top-4 duration-300">
+                                    <h2 className="text-xs font-black text-gray-800 uppercase tracking-wider flex items-center gap-2">
+                                        <svg className="w-4 h-4 text-primary-600" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0zm6 3a2 2 0 11-4 0 2 2 0 014 0zM7 10a2 2 0 11-4 0 2 2 0 014 0z" /></svg>
+                                        Live Signatories Configuration
+                                    </h2>
+                                    <p className="text-[11px] text-gray-500 font-medium">Manage counterparty slots and request electronic execution links directly on site.</p>
+                                    
+                                    <div className="space-y-2">
+                                        {signatories.map((sig, idx) => (
+                                            <div key={sig.id || idx} className="p-3 bg-gray-50/50 border border-gray-100 rounded-xl flex items-center justify-between text-xs transition-colors hover:bg-gray-50">
+                                                <div className="truncate pr-2">
+                                                    <p className="font-bold text-gray-700 truncate">{sig.name || 'Awaiting Signee'}</p>
+                                                    <p className="text-[10px] text-gray-400 font-semibold">{sig.title || 'Corporate Officer'} • <span className="font-bold text-primary-600">{sig.signatoryType}</span></p>
+                                                    {sig.email && <p className="text-[9px] text-gray-400 font-mono mt-0.5 truncate">{sig.email}</p>}
+                                                </div>
+                                                <div className="flex-shrink-0 flex items-center gap-1.5">
+                                                    {sig.isSigned ? (
+                                                        <span className="bg-emerald-100 text-emerald-800 text-[8px] font-black uppercase tracking-wider px-2 py-0.5 rounded border border-emerald-200">
+                                                            Executed
+                                                        </span>
+                                                    ) : sig.isRequested ? (
+                                                        <div className="flex flex-col items-end">
+                                                            <span className="bg-indigo-100 text-indigo-800 text-[8px] font-black uppercase tracking-wider px-2 py-0.5 rounded border border-indigo-200">
+                                                                Requested
+                                                            </span>
+                                                            <button 
+                                                                onClick={() => handleOpenRequestModal(idx)}
+                                                                className="text-[8px] text-indigo-600 hover:underline font-bold mt-1"
+                                                            >
+                                                                Update Request
+                                                            </button>
+                                                        </div>
+                                                    ) : (
+                                                        <div className="flex flex-col items-end gap-1">
+                                                            <span className="bg-amber-100 text-amber-800 text-[8px] font-black uppercase tracking-wider px-2 py-0.5 rounded border border-amber-200">
+                                                                Unsigned
+                                                            </span>
+                                                            {idx > 0 && (
+                                                                <button 
+                                                                    onClick={() => handleOpenRequestModal(idx)}
+                                                                    className="text-[9px] bg-indigo-50 hover:bg-indigo-100 text-indigo-700 px-1.5 py-0.5 rounded border border-indigo-200 font-black uppercase tracking-widest text-[8px]"
+                                                                >
+                                                                    Request
+                                                                </button>
+                                                            )}
+                                                        </div>
+                                                    )}
+                                                </div>
+                                            </div>
+                                        ))}
+                                    </div>
 
-                            <textarea
-                                value={rawText}
-                                onChange={(e) => setRawText(e.target.value)}
-                                placeholder="Paste specific terms or legal clauses to prepare for signing..."
-                                className="w-full h-44 p-3 border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-primary-500/30 text-xs font-medium placeholder-gray-400 bg-gray-50/50"
-                                disabled={isLoading}
-                            />
-
-                            <button
-                                onClick={handlePrepareSignDocument}
-                                disabled={isLoading || (!rawText.trim() && !uploadedFileName)}
-                                className="w-full py-3.5 bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-black uppercase tracking-widest rounded-xl shadow-md transition-all disabled:bg-gray-400"
-                            >
-                                {isLoading ? 'Parsing Document...' : 'Prepare & Load onto Canvas'}
-                            </button>
-                        </div>
+                                    {/* Action button immediately shown AFTER owner (first signatory) signs */}
+                                    {signatories[0]?.isSigned ? (
+                                        <button
+                                            onClick={() => setIsAddSignatoryModalOpen(true)}
+                                            className="w-full py-3 bg-primary-600 hover:bg-primary-700 text-white text-xs font-black uppercase tracking-widest rounded-xl shadow-md hover:shadow-lg hover:scale-[1.01] active:scale-95 transition-all flex items-center justify-center gap-2"
+                                            id="add_signatory_btn"
+                                        >
+                                            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 9v3m0 0v3m0-3h3m-3 0H9m12 0a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
+                                            Add Signatory
+                                        </button>
+                                    ) : (
+                                        <div className="p-3.5 bg-amber-50/50 border border-amber-200 rounded-xl text-center">
+                                            <p className="text-[10px] text-amber-800 font-bold leading-relaxed">
+                                                🔒 Onboard Additional Signatories
+                                            </p>
+                                            <p className="text-[9px] text-amber-600 font-medium mt-0.5">
+                                                Please sign the document slot as the owner first. After your official sign-off, you can add and route slots to counterparties.
+                                            </p>
+                                        </div>
+                                    )}
+                                </div>
+                            )}
+                        </>
                     )}
 
                     {activeTab === 'manage' && (
@@ -1554,11 +1740,38 @@ ${company?.name || 'CraveBiZ Vendor'}`;
                                                                 </div>
 
                                                                 <div className={`border-t pt-1.5 ${sig.isSigned ? 'border-primary-100' : 'border-gray-100'}`}>
+                                                                    {idx > 0 && !sig.isSigned && (
+                                                                        <button
+                                                                            type="button"
+                                                                            onClick={() => handleOpenRequestModal(idx)}
+                                                                            className="w-full mb-1.5 py-1 px-1.5 bg-indigo-50 hover:bg-indigo-100 text-indigo-700 text-[8px] font-black uppercase tracking-wider rounded transition-all flex items-center justify-center gap-1 border border-indigo-200/40 print-hidden"
+                                                                        >
+                                                                            <svg className="w-2.5 h-2.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 19l9 2-9-18-9 18 9-2zm0 0v-8" /></svg>
+                                                                            Request Signature
+                                                                        </button>
+                                                                    )}
+                                                                    
                                                                     <p className="font-bold text-gray-800 text-[11px] truncate">{sig.name || 'Signee Name'}</p>
                                                                     <p className="text-[9px] text-gray-400 font-medium truncate">{sig.title || 'Corporate Title'}</p>
-                                                                    {sig.email && <p className="text-[8px] text-gray-400 font-medium truncate">{sig.email}</p>}
+                                                                    {sig.email && (
+                                                                        <p className="text-[8px] text-gray-400 font-medium truncate flex items-center gap-1 mt-0.5">
+                                                                            <span className="w-1 h-1 rounded-full bg-indigo-400"></span>
+                                                                            {sig.email}
+                                                                        </p>
+                                                                    )}
                                                                     {sig.isSigned && sig.date && (
                                                                         <p className="text-[8px] text-primary-400 mt-1 font-mono leading-none truncate">{sig.date}</p>
+                                                                    )}
+
+                                                                    {!sig.isSigned && (
+                                                                        <button
+                                                                            type="button"
+                                                                            onClick={() => handleOpenSignModalForIndex(idx)}
+                                                                            className="w-full mt-1.5 py-1 px-1.5 bg-primary-600 hover:bg-primary-700 text-white text-[8px] font-black uppercase tracking-wider rounded transition-all flex items-center justify-center gap-1 shadow-sm print-hidden"
+                                                                        >
+                                                                            <svg className="w-2.5 h-2.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z" /></svg>
+                                                                            Sign Slot
+                                                                        </button>
                                                                     )}
                                                                 </div>
                                                             </div>
@@ -1750,6 +1963,177 @@ ${company?.name || 'CraveBiZ Vendor'}`;
                                 Apply Signature
                             </button>
                         </div>
+                    </div>
+                </div>
+            )}
+
+            {/* Add Signatory Modal */}
+            {isAddSignatoryModalOpen && (
+                <div className="fixed inset-0 z-[105] flex items-center justify-center p-4 bg-gray-950/60 backdrop-blur-sm animate-fade-in">
+                    <div className="bg-white rounded-3xl max-w-md w-full overflow-hidden shadow-2xl border border-gray-100 p-6 space-y-4 animate-scale-up">
+                        <div className="flex justify-between items-start">
+                            <div>
+                                <h3 className="text-sm font-black text-gray-950 uppercase tracking-tight flex items-center gap-1.5">
+                                    <svg className="w-4 h-4 text-primary-600 animate-pulse" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M18 9v3m0 0v3m0-3h3m-3 0H9m12 0a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
+                                    Add Counterparty Signatory Slot
+                                </h3>
+                                <p className="text-[10px] text-gray-400 font-semibold uppercase tracking-wider mt-0.5">Register signee credentials</p>
+                            </div>
+                            <button
+                                onClick={() => setIsAddSignatoryModalOpen(false)}
+                                className="p-1 hover:bg-gray-100 rounded-lg text-gray-400 hover:text-gray-800 transition-all"
+                            >
+                                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M6 18L18 6M6 6l12 12" /></svg>
+                            </button>
+                        </div>
+
+                        <div className="space-y-1.5">
+                            <label className="text-[10px] font-black uppercase tracking-wider text-gray-400">Signatory Legal Type</label>
+                            <div className="grid grid-cols-2 gap-3">
+                                <button
+                                    type="button"
+                                    onClick={() => setNewSigType('Main')}
+                                    className={`py-3 px-4 rounded-xl border-2 text-xs font-black uppercase tracking-wider transition-all flex flex-col items-center justify-center gap-1.5 ${newSigType === 'Main' ? 'border-primary-600 bg-primary-50/25 text-primary-900' : 'border-gray-100 bg-gray-50/50 text-gray-500 hover:border-gray-200'}`}
+                                >
+                                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" /></svg>
+                                    Main Signatory
+                                </button>
+                                <button
+                                    type="button"
+                                    onClick={() => setNewSigType('Witness')}
+                                    className={`py-3 px-4 rounded-xl border-2 text-xs font-black uppercase tracking-wider transition-all flex flex-col items-center justify-center gap-1.5 ${newSigType === 'Witness' ? 'border-indigo-600 bg-indigo-50/25 text-indigo-900' : 'border-gray-100 bg-gray-50/50 text-gray-500 hover:border-gray-200'}`}
+                                >
+                                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" /><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" /></svg>
+                                    Witness Signatory
+                                </button>
+                            </div>
+                        </div>
+
+                        <div className="space-y-3">
+                            <div className="space-y-1">
+                                <label className="text-[10px] font-black uppercase tracking-wider text-gray-400">Signatory Full Name</label>
+                                <input
+                                    type="text"
+                                    value={newSigName}
+                                    onChange={(e) => setNewSigName(e.target.value)}
+                                    placeholder="e.g. Johnathan Doe"
+                                    className="w-full px-3 py-2 border border-gray-200 rounded-xl focus:outline-none focus:border-primary-500 text-xs font-semibold bg-gray-50/30"
+                                />
+                            </div>
+
+                            <div className="space-y-1">
+                                <label className="text-[10px] font-black uppercase tracking-wider text-gray-400">Legal/Corporate Title</label>
+                                <input
+                                    type="text"
+                                    value={newSigTitle}
+                                    onChange={(e) => setNewSigTitle(e.target.value)}
+                                    placeholder="e.g. Chief Executive Officer"
+                                    className="w-full px-3 py-2 border border-gray-200 rounded-xl focus:outline-none focus:border-primary-500 text-xs font-semibold bg-gray-50/30"
+                                />
+                            </div>
+
+                            <div className="space-y-1">
+                                <label className="text-[10px] font-black uppercase tracking-wider text-gray-400">Contact Email (Optional)</label>
+                                <input
+                                    type="email"
+                                    value={newSigEmail}
+                                    onChange={(e) => setNewSigEmail(e.target.value)}
+                                    placeholder="e.g. j.doe@counterparty.com"
+                                    className="w-full px-3 py-2 border border-gray-200 rounded-xl focus:outline-none focus:border-primary-500 text-xs font-semibold bg-gray-50/30 font-semibold"
+                                />
+                            </div>
+                        </div>
+
+                        <div className="grid grid-cols-2 gap-3 pt-2">
+                            <button
+                                onClick={() => setIsAddSignatoryModalOpen(false)}
+                                className="py-2.5 bg-gray-50 text-gray-700 hover:bg-gray-100 text-xs font-black uppercase tracking-widest rounded-xl border transition-all"
+                            >
+                                Cancel
+                            </button>
+                            <button
+                                onClick={handleAddSignatorySubmit}
+                                className="py-2.5 bg-primary-600 text-white hover:bg-primary-700 text-xs font-black uppercase tracking-widest rounded-xl transition-all shadow-md active:scale-95"
+                            >
+                                Add Signatory
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            )}
+
+            {/* Request Signature Modal */}
+            {isRequestModalOpen && (
+                <div className="fixed inset-0 z-[105] flex items-center justify-center p-4 bg-gray-950/60 backdrop-blur-sm animate-fade-in">
+                    <div className="bg-white rounded-3xl max-w-md w-full overflow-hidden shadow-2xl border border-gray-100 p-6 space-y-4 animate-scale-up">
+                        <div className="flex justify-between items-start">
+                            <div>
+                                <h3 className="text-sm font-black text-gray-950 uppercase tracking-tight flex items-center gap-1.5">
+                                    <svg className="w-4 h-4 text-indigo-600 animate-pulse" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 19l9 2-9-18-9 18 9-2zm0 0v-8" /></svg>
+                                    Secure Signature Dispatch Engine
+                                </h3>
+                                <p className="text-[10px] text-gray-400 font-semibold uppercase tracking-wider mt-0.5">Route legal execution invite</p>
+                            </div>
+                            <button
+                                onClick={() => {
+                                    setIsRequestModalOpen(false);
+                                    setRequestingSigIndex(null);
+                                }}
+                                className="p-1 hover:bg-gray-100 rounded-lg text-gray-400 hover:text-gray-800 transition-all"
+                            >
+                                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M6 18L18 6M6 6l12 12" /></svg>
+                            </button>
+                        </div>
+
+                        <div className="p-4 bg-indigo-50/40 border border-indigo-100 rounded-2xl space-y-1.5 text-xs">
+                            <span className="font-bold text-indigo-900 block">Recipient Onboarding Context:</span>
+                            <p className="text-gray-600 font-medium leading-relaxed">
+                                You are requesting an electronic signature from <strong className="font-black text-gray-800">{requestingSigIndex !== null ? signatories[requestingSigIndex]?.name : 'the counterparty'}</strong> acting as <strong className="font-black text-gray-800">{requestingSigIndex !== null ? signatories[requestingSigIndex]?.title : 'Officer'}</strong>. Mention their email below to securely map their verification token.
+                            </p>
+                        </div>
+
+                        <div className="space-y-1">
+                            <label className="text-[10px] font-black uppercase tracking-wider text-gray-400">Recipient Email Address</label>
+                            <input
+                                type="email"
+                                value={requestEmail}
+                                onChange={(e) => setRequestEmail(e.target.value)}
+                                placeholder="name@counterpartycompany.com"
+                                className="w-full px-3.5 py-2.5 border border-gray-200 rounded-xl focus:outline-none focus:border-indigo-500 text-xs font-semibold bg-gray-50/30"
+                            />
+                        </div>
+
+                        <div className="grid grid-cols-2 gap-3 pt-2">
+                            <button
+                                onClick={() => {
+                                    setIsRequestModalOpen(false);
+                                    setRequestingSigIndex(null);
+                                }}
+                                className="py-2.5 bg-gray-50 text-gray-700 hover:bg-gray-100 text-xs font-black uppercase tracking-widest rounded-xl border transition-all"
+                            >
+                                Cancel
+                            </button>
+                            <button
+                                onClick={handleSendRequestSubmit}
+                                className="py-2.5 bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-black uppercase tracking-widest rounded-xl transition-all shadow-md flex items-center justify-center gap-1.5 active:scale-95"
+                            >
+                                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 19l9 2-9-18-9 18 9-2zm0 0v-8" /></svg>
+                                Send Request
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            )}
+
+            {/* Elegant Outbound Notification Toast */}
+            {toastMessage && (
+                <div className="fixed bottom-6 right-6 z-[120] bg-gray-900 border border-gray-800 text-white px-5 py-4 rounded-2xl shadow-2xl flex items-center gap-3 animate-in slide-in-from-bottom-5 max-w-sm">
+                    <div className="p-1.5 bg-emerald-500 text-white rounded-lg">
+                        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M5 13l4 4L19 7" /></svg>
+                    </div>
+                    <div>
+                        <p className="text-xs font-bold font-mono tracking-tight text-gray-200">System Notification</p>
+                        <p className="text-[11px] text-gray-400 font-medium leading-normal mt-0.5">{toastMessage}</p>
                     </div>
                 </div>
             )}
