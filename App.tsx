@@ -67,7 +67,7 @@ export default function App() {
     'edit-invoice': 'Modify Record', 'invoice-detail': 'Document Detail', 'receipt-detail': 'Receipt Detail',
     'plain-invoice-detail': 'Document View', 'recurring-invoices': 'Recurring Invoices',
     'email-verification': 'Email Verification', 'sent-receipts': 'Sent Receipts',
-    'admin-dashboard': 'System Console', 'document-transformer': 'AI Docs Transformer',
+    'admin-dashboard': 'System Console', 'document-transformer': 'SmartDocs',
     'payment-intelligence': 'Payment Intelligence Board',
   };
 

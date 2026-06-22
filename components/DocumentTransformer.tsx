@@ -710,7 +710,7 @@ ${company?.name || 'CraveBiZ Vendor'}`;
         <div className="max-w-7xl mx-auto px-4 py-6">
             <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 mb-2">
                 <div>
-                    <h1 className="text-3xl font-black text-gray-950 uppercase tracking-tighter">AI Contract & Document Hub</h1>
+                    <h1 className="text-3xl font-black text-gray-950 uppercase tracking-tighter">SmartDocs</h1>
                     <p className="text-gray-500 text-sm font-medium mt-1">Generate professional templates, execute secure legal e-signatures, and obtain compliance reviews instantly.</p>
                 </div>
                 
@@ -728,21 +728,21 @@ ${company?.name || 'CraveBiZ Vendor'}`;
                     className={`py-3 text-xs font-black uppercase tracking-widest rounded-lg transition-all flex items-center justify-center gap-2 ${activeTab === 'generate' ? 'bg-white text-primary-900 shadow-md' : 'text-gray-600 hover:text-gray-900'}`}
                 >
                     <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 9v3m0 0v3m0-3h3m-3 0H9m12 0a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>
-                    Generate Document
+                    DocGenerator
                 </button>
                 <button
                     onClick={() => { setActiveTab('sign'); setError(null); }}
                     className={`py-3 text-xs font-black uppercase tracking-widest rounded-lg transition-all flex items-center justify-center gap-2 ${activeTab === 'sign' ? 'bg-white text-primary-900 shadow-md' : 'text-gray-600 hover:text-gray-900'}`}
                 >
                     <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z"></path></svg>
-                    Sign Document
+                    DocSignify
                 </button>
                 <button
                     onClick={() => { setActiveTab('manage'); setError(null); }}
                     className={`py-3 text-xs font-black uppercase tracking-widest rounded-lg transition-all flex items-center justify-center gap-2 ${activeTab === 'manage' ? 'bg-white text-primary-900 shadow-md' : 'text-gray-600 hover:text-gray-900'}`}
                 >
                     <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10"></path></svg>
-                    Manage Document
+                    DocManager
                 </button>
             </div>
 
@@ -791,7 +791,7 @@ ${company?.name || 'CraveBiZ Vendor'}`;
                                 disabled={isLoading || !documentPurpose.trim()}
                                 className="w-full mt-5 py-3.5 bg-primary-600 text-white text-xs font-black uppercase tracking-widest rounded-xl hover:bg-primary-700 active:scale-95 shadow-md shadow-primary-200/50 transition-all disabled:bg-gray-400 disabled:shadow-none"
                             >
-                                {isLoading ? 'Generating Draft Blocks...' : 'Generate Document'}
+                                {isLoading ? 'Generating Draft Blocks...' : 'DocGenerator'}
                             </button>
                         </div>
                     )}
@@ -1089,7 +1089,7 @@ ${company?.name || 'CraveBiZ Vendor'}`;
                                                 className="px-3 py-1.5 bg-primary-600 text-white hover:bg-primary-700 text-[10px] font-black uppercase tracking-wider rounded-lg transition-all flex items-center gap-1 shadow-sm"
                                             >
                                                 <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z"></path></svg>
-                                                {appliedSignature ? 'Change Signature' : 'Sign Document'}
+                                                {appliedSignature ? 'Change Signature' : 'DocSignify'}
                                             </button>
                                             
                                             <button onClick={handlePrint} className="px-3 py-1.5 bg-white hover:bg-gray-100 text-gray-700 border border-gray-200 text-[10px] font-black uppercase tracking-wider rounded-lg transition-all">Print</button>
@@ -1164,7 +1164,7 @@ ${company?.name || 'CraveBiZ Vendor'}`;
                                                 </div>
                                             ) : (
                                                 <div className="mt-12 p-5 border border-dashed border-gray-200 rounded-xl text-center bg-gray-50/30 print-hidden">
-                                                    <p className="text-gray-400 text-xs font-medium leading-relaxed">This document remains unexecuted. Click the <strong className="text-primary-600">Sign Document</strong> action in the upper controls to add signatures.</p>
+                                                    <p className="text-gray-400 text-xs font-medium leading-relaxed">This document remains unexecuted. Click the <strong className="text-primary-600">DocSignify</strong> action in the upper controls to add signatures.</p>
                                                 </div>
                                             )}
                                         </div>
