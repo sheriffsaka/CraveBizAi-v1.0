@@ -5,6 +5,53 @@ import { GeneratedDocument, DocumentBlock, HeaderBlock, MetadataBlock, TableBloc
 import EditableBlock from './EditableBlock';
 import Icon from './common/Icon';
 
+const loadPdfJS = (): Promise<any> => {
+    return new Promise((resolve, reject) => {
+        if ((window as any).pdfjsLib) {
+            resolve((window as any).pdfjsLib);
+            return;
+        }
+
+        const script = document.createElement('script');
+        script.src = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.4.120/pdf.min.js';
+        script.onload = () => {
+            (window as any).pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.4.120/pdf.worker.min.js';
+            resolve((window as any).pdfjsLib);
+        };
+        script.onerror = () => {
+            reject(new Error("Failed to load PDF parsing SDK. Please check your internet connection."));
+        };
+        document.head.appendChild(script);
+    });
+};
+
+const extractTextFromPdf = async (arrayBuffer: ArrayBuffer): Promise<string> => {
+    const pdfjsLib = await loadPdfJS();
+    const loadingTask = pdfjsLib.getDocument({ data: new Uint8Array(arrayBuffer) });
+    const pdf = await loadingTask.promise;
+    let fullText = '';
+
+    for (let pageNum = 1; pageNum <= pdf.numPages; pageNum++) {
+        const page = await pdf.getPage(pageNum);
+        const textContent = await page.getTextContent();
+        let lastY = -1;
+        let pageText = '';
+        
+        for (const item of textContent.items as any[]) {
+            const currentY = item.transform[5];
+            if (lastY !== -1 && Math.abs(currentY - lastY) > 5) {
+                pageText += '\n';
+            } else if (pageText.length > 0 && !pageText.endsWith(' ') && !item.str.startsWith(' ')) {
+                pageText += ' ';
+            }
+            pageText += item.str;
+            lastY = currentY;
+        }
+        fullText += pageText + '\n\n';
+    }
+    return fullText;
+};
+
 interface DocumentTransformerProps {
     company: Company | null;
     user: User | null;
@@ -36,8 +83,8 @@ const TEMPLATES = [
 ];
 
 const DocumentTransformer: React.FC<DocumentTransformerProps> = ({ company, user, generatedDocs, onSaveDoc }) => {
-    // Tab State: generate (Purpose-made), format (Format plain text), review (Compliance audit)
-    const [activeTab, setActiveTab] = useState<'generate' | 'format' | 'review'>('generate');
+    // Tab State: generate (Purpose-made), sign (E-Signature), manage (Workspace Archive)
+    const [activeTab, setActiveTab] = useState<'generate' | 'sign' | 'manage'>('generate');
 
     // General state
     const [rawText, setRawText] = useState('');
@@ -85,7 +132,9 @@ const DocumentTransformer: React.FC<DocumentTransformerProps> = ({ company, user
         link.rel = 'stylesheet';
         document.head.appendChild(link);
         return () => {
-            document.head.removeChild(link);
+             if (document.head.contains(link)) {
+                 document.head.removeChild(link);
+             }
         };
     }, []);
 
@@ -129,7 +178,104 @@ const DocumentTransformer: React.FC<DocumentTransformerProps> = ({ company, user
         }
     };
 
-    // Format raw text (Existing feature enhanced)
+    // Offline block compiler for signing (completely works offline, no API keys necessary!)
+    const handlePrepareSignDocument = () => {
+        const textToUse = rawText.trim();
+        if (!textToUse && !uploadedFileName) {
+            setError('Please first input some agreement clauses or drag & drop a document backup file above.');
+            return;
+        }
+
+        setIsLoading(true);
+        setError(null);
+        setGeneratedDoc(null);
+        setAppliedSignature(null);
+
+        try {
+            const context = getCompanyContext();
+            let parsedDoc: GeneratedDocument | null = null;
+
+            // Attempt to parse structured backup JSON
+            if (uploadedFileName.endsWith('.json')) {
+                try {
+                    const parsed = JSON.parse(textToUse);
+                    if (parsed && typeof parsed === 'object' && parsed.blocks && Array.isArray(parsed.blocks)) {
+                        parsedDoc = {
+                            documentType: parsed.documentType || "Uploaded JSON Agreement",
+                            blocks: parsed.blocks
+                        };
+                    }
+                } catch (err) {
+                    console.warn("Uploaded JSON does not conform to generated blocks layout. Processing as plain raw text instead.");
+                }
+            }
+
+            if (!parsedDoc) {
+                const parts = textToUse.split(/\n\s*\n/).map(p => p.trim()).filter(Boolean);
+                const blocks: DocumentBlock[] = [
+                    {
+                        id: 'hdr_l_' + Math.floor(Math.random() * 10000),
+                        type: 'header',
+                        content: {
+                            companyName: context.name,
+                            address: context.address,
+                            email: context.email,
+                            phone: context.phone,
+                            website: context.website
+                        }
+                    },
+                    {
+                        id: 'meta_l_' + Math.floor(Math.random() * 10000),
+                        type: 'metadata',
+                        content: {
+                            documentTitle: uploadedFileName ? fileLabelClean(uploadedFileName) : "Assigned Signature Agreement",
+                            clientName: "Authorized Counterparty",
+                            preparedBy: user?.full_name || "Contract Admin",
+                            date: new Date().toLocaleDateString(),
+                            reference: "REF-" + Math.floor(Math.random() * 89999 + 10000)
+                        }
+                    }
+                ];
+
+                parts.forEach((part, index) => {
+                    const lines = part.split('\n').map(l => l.trim()).filter(Boolean);
+                    if (lines.length === 1 && lines[0].length < 100 && (index === 0 || lines[0] === lines[0].toUpperCase())) {
+                        blocks.push({
+                            id: `title_l_${index}`,
+                            type: 'title',
+                            content: { text: lines[0] }
+                        });
+                    } else {
+                        blocks.push({
+                            id: `p_l_${index}`,
+                            type: 'paragraph',
+                            content: { text: part }
+                        });
+                    }
+                });
+
+                blocks.push({
+                    id: 'footer_l',
+                    type: 'footer',
+                    content: { text: "Prepared and formatted locally via CraveBiZ Secure eSign offline module." }
+                });
+
+                parsedDoc = {
+                    documentType: uploadedFileName ? fileLabelClean(uploadedFileName) : "Local Agreement",
+                    blocks
+                };
+            }
+
+            setGeneratedDoc(parsedDoc);
+            onSaveDoc(parsedDoc); // Save to the database workspace automatically so they can see/work on it!
+        } catch (e: any) {
+            setError("Failed to compile local blocks structure for signing: " + e.message);
+        } finally {
+            setIsLoading(false);
+        }
+    };
+
+    // Format raw text using AI (Optional fallback)
     const handleFormatRawText = async () => {
         if (!rawText.trim()) {
             setError('Please input or paste raw content first.');
@@ -168,24 +314,108 @@ const DocumentTransformer: React.FC<DocumentTransformerProps> = ({ company, user
 
     const processUploadedFile = (file: File) => {
         setUploadedFileName(file.name);
+        
+        if (file.name.endsWith('.pdf') || file.type === 'application/pdf') {
+            setIsLoading(true);
+            setError(null);
+            const reader = new FileReader();
+            reader.onload = async (event) => {
+                try {
+                    const arrayBuffer = event.target?.result as ArrayBuffer;
+                    const extractedText = await extractTextFromPdf(arrayBuffer);
+                    setRawText(extractedText);
+                    setReviewText(extractedText);
+                    
+                    const context = getCompanyContext();
+                    const parts = extractedText.split(/\n\s*\n/).map(p => p.trim()).filter(Boolean);
+                    const blocks: DocumentBlock[] = [
+                        {
+                            id: 'hdr_l_' + Math.floor(Math.random() * 10000),
+                            type: 'header',
+                            content: {
+                                companyName: context.name,
+                                address: context.address,
+                                email: context.email,
+                                phone: context.phone,
+                                website: context.website
+                            }
+                        },
+                        {
+                            id: 'meta_l_' + Math.floor(Math.random() * 10000),
+                            type: 'metadata',
+                            content: {
+                                documentTitle: fileLabelClean(file.name) || "Assigned Signature Agreement",
+                                clientName: "Authorized Counterparty",
+                                preparedBy: user?.full_name || "Contract Admin",
+                                date: new Date().toLocaleDateString(),
+                                reference: "REF-" + Math.floor(Math.random() * 89999 + 10000)
+                            }
+                        }
+                    ];
+
+                    parts.forEach((part, index) => {
+                        const lines = part.split('\n').map(l => l.trim()).filter(Boolean);
+                        if (lines.length === 1 && lines[0].length < 100 && (index === 0 || lines[0] === lines[0].toUpperCase())) {
+                            blocks.push({
+                                id: `title_l_${index}`,
+                                type: 'title',
+                                content: { text: lines[0] }
+                            });
+                        } else {
+                            blocks.push({
+                                id: `p_l_${index}`,
+                                type: 'paragraph',
+                                content: { text: part }
+                            });
+                        }
+                    });
+
+                    blocks.push({
+                        id: 'footer_l',
+                        type: 'footer',
+                        content: { text: "Prepared and formatted locally via CraveBiZ Secure eSign offline module." }
+                    });
+
+                    const parsedDoc: GeneratedDocument = {
+                        documentType: fileLabelClean(file.name) || "Uploaded Document",
+                        blocks
+                    };
+
+                    setGeneratedDoc(parsedDoc);
+                    onSaveDoc(parsedDoc);
+                } catch (err: any) {
+                    console.error("PDF extraction error:", err);
+                    setError("Failed to extract text from PDF: " + err.message);
+                } finally {
+                    setIsLoading(false);
+                }
+            };
+            reader.readAsArrayBuffer(file);
+            return;
+        }
+
         const reader = new FileReader();
         reader.onload = async (event) => {
             const text = event.target?.result as string;
+            setRawText(text);
+            setReviewText(text);
+            
+            // If it's a JSON block-layout document, we can load it directly to active canvas
             if (file.name.endsWith('.json')) {
                 try {
                     const parsed = JSON.parse(text);
-                    if (parsed.documentType && parsed.blocks) {
-                        setGeneratedDoc(parsed);
-                        setReviewText(JSON.stringify(parsed, null, 2));
-                        handleAnalyzeText(text);
-                        return;
+                    if (parsed && typeof parsed === 'object' && parsed.blocks && Array.isArray(parsed.blocks)) {
+                        setGeneratedDoc({
+                            documentType: parsed.documentType || "Uploaded JSON Agreement",
+                            blocks: parsed.blocks
+                        });
+                        setAppliedSignature(null);
+                        setError(null);
                     }
                 } catch (err) {
-                    console.warn("JSON file was not in block layout, reading as standard text.");
+                    console.warn("JSON file was not in layout format, loaded as text instead.");
                 }
             }
-            setReviewText(text);
-            handleAnalyzeText(text);
         };
         reader.readAsText(file);
     };
@@ -501,18 +731,18 @@ ${company?.name || 'CraveBiZ Vendor'}`;
                     Generate Document
                 </button>
                 <button
-                    onClick={() => { setActiveTab('format'); setError(null); }}
-                    className={`py-3 text-xs font-black uppercase tracking-widest rounded-lg transition-all flex items-center justify-center gap-2 ${activeTab === 'format' ? 'bg-white text-primary-900 shadow-md' : 'text-gray-600 hover:text-gray-900'}`}
+                    onClick={() => { setActiveTab('sign'); setError(null); }}
+                    className={`py-3 text-xs font-black uppercase tracking-widest rounded-lg transition-all flex items-center justify-center gap-2 ${activeTab === 'sign' ? 'bg-white text-primary-900 shadow-md' : 'text-gray-600 hover:text-gray-900'}`}
                 >
-                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M4 6h16M4 12h16M4 18h7"></path></svg>
-                    Format Plain Text
+                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z"></path></svg>
+                    Sign Document
                 </button>
                 <button
-                    onClick={() => { setActiveTab('review'); setError(null); }}
-                    className={`py-3 text-xs font-black uppercase tracking-widest rounded-lg transition-all flex items-center justify-center gap-2 ${activeTab === 'review' ? 'bg-white text-primary-900 shadow-md' : 'text-gray-600 hover:text-gray-900'}`}
+                    onClick={() => { setActiveTab('manage'); setError(null); }}
+                    className={`py-3 text-xs font-black uppercase tracking-widest rounded-lg transition-all flex items-center justify-center gap-2 ${activeTab === 'manage' ? 'bg-white text-primary-900 shadow-md' : 'text-gray-600 hover:text-gray-900'}`}
                 >
-                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z"></path></svg>
-                    Review Document
+                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10"></path></svg>
+                    Manage Document
                 </button>
             </div>
 
@@ -566,39 +796,15 @@ ${company?.name || 'CraveBiZ Vendor'}`;
                         </div>
                     )}
 
-                    {activeTab === 'format' && (
-                        <div className="bg-white p-5 rounded-2xl border border-gray-200/50 shadow-sm">
-                            <h2 className="text-sm font-black text-gray-800 uppercase tracking-wider mb-2 flex items-center gap-2">
-                                <span className="w-2 h-2 rounded-full bg-primary-600"></span>
-                                AI Document Formatter
-                            </h2>
-                            <p className="text-xs text-gray-500 font-medium mb-4 leading-relaxed">Paste existing drafts, meeting briefs, emails, or bullet points to align them instantly into structured, editable A4 files.</p>
-                            
-                            <textarea
-                                value={rawText}
-                                onChange={(e) => setRawText(e.target.value)}
-                                placeholder="Paste or draft unstructured notes here..."
-                                className="w-full h-80 p-3 border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-primary-500/30 text-xs font-medium placeholder-gray-400 bg-gray-50/50"
-                                disabled={isLoading}
-                            />
-
-                            <button
-                                onClick={handleFormatRawText}
-                                disabled={isLoading || !rawText.trim()}
-                                className="w-full mt-4 py-3.5 bg-primary-600 text-white text-xs font-black uppercase tracking-widest rounded-xl hover:bg-primary-700 active:scale-95 shadow-md shadow-primary-200/50 transition-all disabled:bg-gray-400 disabled:shadow-none"
-                            >
-                                {isLoading ? 'Formatting Outline...' : 'Format & Structure'}
-                            </button>
-                        </div>
-                    )}
-
-                    {activeTab === 'review' && (
+                    {activeTab === 'sign' && (
                         <div className="bg-white p-5 rounded-2xl border border-gray-200/50 shadow-sm space-y-4">
                             <h2 className="text-sm font-black text-gray-800 uppercase tracking-wider flex items-center gap-2">
-                                <span className="w-2 h-2 rounded-full bg-primary-600"></span>
-                                Review & Sign Center
+                                <span className="w-2.5 h-2.5 rounded-full bg-indigo-600 animate-pulse"></span>
+                                Client Sign-Off & Upload
                             </h2>
-                            <p className="text-xs text-gray-500 font-medium leading-relaxed">Upload contracts, invoices or NDAs for deep legal risk evaluation, compliance analysis and client signing execution.</p>
+                            <p className="text-xs text-gray-500 font-medium leading-relaxed">
+                                Upload a document file (.txt, .md, .json) or paste plain text rules below. We will instantly format it into an A4 sheet ready for signing, completely offline—no AI key needed!
+                            </p>
                             
                             {/* Drag & Drop Upload Zone */}
                             <div
@@ -630,58 +836,140 @@ ${company?.name || 'CraveBiZ Vendor'}`;
 
                             <div className="flex items-center gap-1">
                                 <div className="h-px bg-gray-100 flex-1"></div>
-                                <span className="text-[9px] font-black uppercase text-gray-400 px-2 tracking-widest">Or raw text</span>
+                                <span className="text-[9px] font-black uppercase text-gray-400 px-2 tracking-widest">Or raw text clauses</span>
                                 <div className="h-px bg-gray-100 flex-1"></div>
                             </div>
 
                             <textarea
-                                value={reviewText}
-                                onChange={(e) => setReviewText(e.target.value)}
-                                placeholder="Paste specific terms or legal clauses to audit..."
-                                className="w-full h-40 p-3 border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-primary-500/30 text-xs font-medium placeholder-gray-400 bg-gray-50/50"
-                                disabled={reviewLoading}
+                                value={rawText}
+                                onChange={(e) => setRawText(e.target.value)}
+                                placeholder="Paste specific terms or legal clauses to prepare for signing..."
+                                className="w-full h-44 p-3 border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-primary-500/30 text-xs font-medium placeholder-gray-400 bg-gray-50/50"
+                                disabled={isLoading}
                             />
 
                             <button
-                                onClick={() => handleAnalyzeText('')}
-                                disabled={reviewLoading || (!reviewText.trim() && !uploadedFileName)}
-                                className="w-full py-3.5 bg-primary-600 text-white text-xs font-black uppercase tracking-widest rounded-xl hover:bg-primary-700 active:scale-95 shadow-md shadow-primary-200/50 transition-all disabled:bg-gray-400 disabled:shadow-none"
+                                onClick={handlePrepareSignDocument}
+                                disabled={isLoading || (!rawText.trim() && !uploadedFileName)}
+                                className="w-full py-3.5 bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-black uppercase tracking-widest rounded-xl shadow-md transition-all disabled:bg-gray-400"
                             >
-                                {reviewLoading ? 'Scanning Clauses...' : 'Review & Audit Document'}
+                                {isLoading ? 'Parsing Document Offline...' : 'Prepare & Load onto Canvas'}
                             </button>
                         </div>
                     )}
 
-                    {/* Left Footer: Past History Archives */}
-                    <div className="bg-white p-5 rounded-2xl border border-gray-200/50 shadow-sm">
-                        <h3 className="text-sm font-black text-gray-800 uppercase tracking-wider mb-3">Contracts & Vault Archive</h3>
-                        <div className="max-h-48 overflow-y-auto space-y-2">
-                            {generatedDocs.map(doc => (
-                                <div key={doc.id} className="p-3 border border-gray-100 rounded-xl flex items-center justify-between bg-gray-50 hover:bg-primary-50/30 transition-colors">
-                                    <div className="truncate pr-2">
-                                        <p className="font-bold text-xs text-gray-800 truncate">{doc.documentType}</p>
-                                        <p className="text-[9px] text-gray-400 font-medium">{new Date(doc.createdAt).toLocaleDateString()} {new Date(doc.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</p>
+                    {activeTab === 'manage' && (
+                        <div className="bg-white p-5 rounded-2xl border border-gray-200/50 shadow-sm space-y-4">
+                            <h2 className="text-sm font-black text-gray-800 uppercase tracking-wider flex items-center gap-2">
+                                <span className="w-2.5 h-2.5 rounded-full bg-primary-600 animate-pulse"></span>
+                                Workspace Manage Vault
+                            </h2>
+                            <p className="text-xs text-gray-500 font-medium leading-relaxed">
+                                Manage and work on documents already created inside your SME workspace. Select any record below to load it on-canvas, modify blocks, or check AI compliance instantly.
+                            </p>
+
+                            <div className="space-y-3 max-h-[36rem] overflow-y-auto pr-1">
+                                {generatedDocs.map(doc => {
+                                    const isCurrentlyLoaded = generatedDoc?.documentType === doc.documentType && JSON.stringify(generatedDoc.blocks) === JSON.stringify(doc.blocks);
+                                    return (
+                                        <div 
+                                            key={doc.id} 
+                                            className={`p-4 rounded-xl border transition-all flex flex-col gap-3 ${
+                                                isCurrentlyLoaded 
+                                                    ? 'border-indigo-500 bg-indigo-50/20 shadow-sm' 
+                                                    : 'border-gray-100 bg-gray-50/50 hover:bg-gray-100/30'
+                                            }`}
+                                        >
+                                            <div>
+                                                <div className="flex items-start justify-between gap-2">
+                                                    <h3 className="font-bold text-xs text-gray-800 truncate max-w-[180px]">{doc.documentType}</h3>
+                                                    {isCurrentlyLoaded && (
+                                                        <span className="text-[8px] bg-indigo-600 text-white font-black uppercase tracking-wider px-1.5 py-0.5 rounded leading-none">
+                                                            Active
+                                                        </span>
+                                                    )}
+                                                </div>
+                                                <p className="text-[9px] text-gray-400 mt-1 font-mono">
+                                                    Ref: REF-{doc.id.substring(0, 8).toUpperCase()} | {new Date(doc.createdAt).toLocaleDateString()}
+                                                </p>
+                                            </div>
+
+                                            <div className="grid grid-cols-2 gap-2">
+                                                <button
+                                                    onClick={() => handleViewHistoryDoc(doc)}
+                                                    className="py-2 bg-white text-gray-700 hover:text-indigo-600 border border-gray-200 text-[10px] font-black uppercase tracking-widest rounded-lg transition-all flex items-center justify-center gap-1 shadow-sm"
+                                                >
+                                                    <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+                                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
+                                                    </svg>
+                                                    Load
+                                                </button>
+
+                                                <button
+                                                    onClick={async () => {
+                                                        // First load the document onto the canvas
+                                                        handleViewHistoryDoc(doc);
+                                                        // Then trigger compliance audit using document content text
+                                                        const fullTextLines = doc.blocks
+                                                            .filter(b => b.type === 'paragraph' || b.type === 'title')
+                                                            .map(b => (b.content as any).text || '')
+                                                            .join('\n\n');
+                                                        handleAnalyzeText(fullTextLines || doc.documentType);
+                                                    }}
+                                                    className="py-2 bg-gray-800 text-white hover:bg-gray-900 text-[10px] font-black uppercase tracking-widest rounded-lg transition-all flex items-center justify-center gap-1 shadow-sm"
+                                                >
+                                                    <svg className="w-3.5 h-3.5 text-indigo-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z" />
+                                                    </svg>
+                                                    AI Audit
+                                                </button>
+                                            </div>
+                                        </div>
+                                    );
+                                })}
+
+                                {generatedDocs.length === 0 && (
+                                    <div className="p-8 text-center border-2 border-dashed border-gray-100 rounded-xl bg-gray-50/30 text-xs text-gray-400 font-medium">
+                                        No documents saved in this tenant vault yet. Try generating a Document first!
                                     </div>
-                                    <button
-                                        onClick={() => handleViewHistoryDoc(doc)}
-                                        className="px-3 py-1.5 bg-white hover:bg-primary-600 hover:text-white border border-gray-200 text-[9px] font-black uppercase tracking-widest rounded-lg text-gray-600 transition-all flex-shrink-0"
-                                    >
-                                        Load
-                                    </button>
-                                </div>
-                            ))}
-                            {generatedDocs.length === 0 && (
-                                <div className="p-6 text-center text-xs text-gray-400 font-medium">No documents saved in this tenant vault yet.</div>
-                            )}
+                                )}
+                            </div>
                         </div>
-                    </div>
+                    )}
+
+                    {/* Left Footer: Past History Archives (Only shown on generate and sign tabs to avoid repeating list) */}
+                    {activeTab !== 'manage' && (
+                        <div className="bg-white p-5 rounded-2xl border border-gray-200/50 shadow-sm">
+                            <h3 className="text-sm font-black text-gray-800 uppercase tracking-wider mb-3">Contracts & Vault Archive</h3>
+                            <div className="max-h-48 overflow-y-auto space-y-2">
+                                {generatedDocs.map(doc => (
+                                    <div key={doc.id} className="p-3 border border-gray-100 rounded-xl flex items-center justify-between bg-gray-50 hover:bg-primary-50/30 transition-colors">
+                                        <div className="truncate pr-2">
+                                            <p className="font-bold text-xs text-gray-800 truncate">{doc.documentType}</p>
+                                            <p className="text-[9px] text-gray-400 font-medium">{new Date(doc.createdAt).toLocaleDateString()} {new Date(doc.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</p>
+                                        </div>
+                                        <button
+                                            onClick={() => handleViewHistoryDoc(doc)}
+                                            className="px-3 py-1.5 bg-white hover:bg-primary-600 hover:text-white border border-gray-200 text-[9px] font-black uppercase tracking-widest rounded-lg text-gray-600 transition-all flex-shrink-0"
+                                        >
+                                            Load
+                                        </button>
+                                    </div>
+                                ))}
+                                {generatedDocs.length === 0 && (
+                                    <div className="p-6 text-center text-xs text-gray-400 font-medium">No documents saved in this tenant vault yet.</div>
+                                )}
+                            </div>
+                        </div>
+                    )}
                 </div>
 
                 {/* RIGHT SYSTEM PREVIEW / RESPONSE BENTO GRID: Column Span 7 */}
                 <div className="lg:col-span-7 space-y-6">
 
                     {/* Rendering AI Review / Analysis Report inside Preview area if requested */}
-                    {reviewReport && activeTab === 'review' && (
+                    {reviewReport && activeTab === 'manage' && (
                         <div className="bg-white p-5 rounded-2xl border border-primary-200 shadow-md bg-gradient-to-br from-white to-primary-50/10">
                             <div className="flex items-center justify-between border-b pb-4 mb-4">
                                 <div>
