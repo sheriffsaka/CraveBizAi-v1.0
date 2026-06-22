@@ -421,8 +421,11 @@ const DocumentTransformer: React.FC<DocumentTransformerProps> = ({ company, user
 
             if (!parsedDoc) {
                 const parts = textToUse.split(/\n\s*\n/).map(p => p.trim()).filter(Boolean);
-                const blocks: DocumentBlock[] = [
-                    {
+                const blocks: DocumentBlock[] = [];
+                
+                // Only include company header branding if there's no uploaded file
+                if (!uploadedFileName) {
+                    blocks.push({
                         id: 'hdr_l_' + Math.floor(Math.random() * 10000),
                         type: 'header',
                         content: {
@@ -432,19 +435,20 @@ const DocumentTransformer: React.FC<DocumentTransformerProps> = ({ company, user
                             phone: context.phone,
                             website: context.website
                         }
-                    },
-                    {
-                        id: 'meta_l_' + Math.floor(Math.random() * 10000),
-                        type: 'metadata',
-                        content: {
-                            documentTitle: uploadedFileName ? fileLabelClean(uploadedFileName) : "Assigned Signature Agreement",
-                            clientName: "Authorized Counterparty",
-                            preparedBy: user?.full_name || "Contract Admin",
-                            date: new Date().toLocaleDateString(),
-                            reference: "REF-" + Math.floor(Math.random() * 89999 + 10000)
-                        }
+                    });
+                }
+
+                blocks.push({
+                    id: 'meta_l_' + Math.floor(Math.random() * 10000),
+                    type: 'metadata',
+                    content: {
+                        documentTitle: uploadedFileName ? fileLabelClean(uploadedFileName) : "Assigned Signature Agreement",
+                        clientName: "Authorized Counterparty",
+                        preparedBy: user?.full_name || "Contract Admin",
+                        date: new Date().toLocaleDateString(),
+                        reference: "REF-" + Math.floor(Math.random() * 89999 + 10000)
                     }
-                ];
+                });
 
                 parts.forEach((part, index) => {
                     const lines = part.split('\n').map(l => l.trim()).filter(Boolean);
@@ -710,7 +714,6 @@ const DocumentTransformer: React.FC<DocumentTransformerProps> = ({ company, user
                     const parsedDoc: GeneratedDocument = {
                         documentType: "Uploaded Document",
                         blocks: [
-                            { id: 'hdr_up', type: 'header', content: { companyName: company?.name || 'Review Agency', address: company?.address || '', email: company?.email || '', phone: company?.phone || '', website: company?.website || '' } },
                             { id: 'meta_up', type: 'metadata', content: { documentTitle: fileLabelClean(uploadedFileName) || "Reviewed Agreement File", clientName: "Counterparty Client", preparedBy: user?.full_name || "Assigned Officer", date: new Date().toLocaleDateString(), reference: "REF-" + Math.floor(Math.random() * 89999 + 10000) } },
                             { id: 'p_up', type: 'paragraph', content: { text: targetText.substring(0, 5000) } }
                         ]

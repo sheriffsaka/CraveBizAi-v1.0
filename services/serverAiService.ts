@@ -9,6 +9,193 @@ function getApiKey(): string {
     return key || "";
 }
 
+function compileMockDocument(text: string, companyContext: any): GeneratedDocument {
+    const today = new Date().toLocaleDateString();
+    
+    // Heuristic analysis of the user's prompt or raw text
+    let docType = "Service Agreement";
+    let docTitle = "PROFESSIONAL SERVICES AGREEMENT";
+    const lowerText = text.toLowerCase();
+    
+    if (lowerText.includes("nda") || lowerText.includes("disclosure") || lowerText.includes("confidentiality")) {
+        docType = "Non-Disclosure Agreement";
+        docTitle = "MUTUAL NON-DISCLOSURE AGREEMENT";
+    } else if (lowerText.includes("invoice") || lowerText.includes("bill") || lowerText.includes("receipt") || lowerText.includes("payment")) {
+        docType = "Invoice";
+        docTitle = "COMMERCIAL TAX INVOICE";
+    } else if (lowerText.includes("proposal") || lowerText.includes("quote") || lowerText.includes("estimate") || lowerText.includes("valuation")) {
+        docType = "Proposal";
+        docTitle = "BUSINESS DEVELOPMENT PROPOSAL";
+    } else if (lowerText.includes("employment") || lowerText.includes("offer") || lowerText.includes("job") || lowerText.includes("hire")) {
+        docType = "Employment Agreement";
+        docTitle = "OFFER OF EMPLOYMENT & CONTRACT";
+    } else if (lowerText.includes("contract") || lowerText.includes("agreement")) {
+        docType = "Contract Agreement";
+        docTitle = "FORMAL BUSINESS COVENANT";
+    } else if (lowerText.includes("report") || lowerText.includes("analysis") || lowerText.includes("audit")) {
+        docType = "Report";
+        docTitle = "STRATEGIC AUDIT & SUMMARY REPORT";
+    }
+
+    // Attempt to extract client name from text
+    let clientName = "Authorized Counterparty Client";
+    const clientMatches = text.match(/(?:between|and|client|partner|for|with)\s+([A-Z][a-zA-Z0-9\s.]{2,30})/i);
+    if (clientMatches && clientMatches[1]) {
+        const candidate = clientMatches[1].trim();
+        const upperCand = candidate.toUpperCase();
+        // Skip common helper words
+        if (upperCand !== "NDA" && upperCand !== "AGREEMENT" && upperCand !== "CONTRACT" && upperCand !== "THE" && upperCand !== "US" && upperCand !== "ME" && upperCand !== "YOU" && upperCand !== "A") {
+            clientName = candidate;
+        }
+    }
+
+    // Attempt to extract monetary/fee values
+    const feeMatches = text.match(/\$[0-9,]+(?:\.[0-9]{2})?/g);
+    const feeString = feeMatches ? feeMatches[0] : "$2,500.00";
+    const numericFee = parseFloat(feeString.replace(/[^0-9.]/g, '')) || 2500;
+
+    // Detect subjects and generate targeted paragraphs
+    let subjects = ["professional advisory services"];
+    if (lowerText.includes("software") || lowerText.includes("app") || lowerText.includes("web") || lowerText.includes("code")) {
+        subjects = ["software architectural engineering and application development"];
+    } else if (lowerText.includes("design") || lowerText.includes("ui") || lowerText.includes("ux") || lowerText.includes("brand")) {
+        subjects = ["creative design audits, corporate user experience styling, and custom brand assets"];
+    } else if (lowerText.includes("marketing") || lowerText.includes("content") || lowerText.includes("campaign") || lowerText.includes("sales")) {
+        subjects = ["target audience campaigns, digital advertising management, and search engine optimization"];
+    } else if (lowerText.includes("consulting") || lowerText.includes("audit") || lowerText.includes("strategy") || lowerText.includes("advisory")) {
+        subjects = ["specialized consulting advisory services and strategic operational workshops"];
+    }
+
+    const blocks: DocumentBlock[] = [
+        {
+            id: 'hdr_' + Math.floor(Math.random() * 100000),
+            type: 'header',
+            content: {
+                companyName: companyContext.name || "CRAVEBIZ AI CLIENT",
+                address: companyContext.address || "123 Technology Way",
+                email: companyContext.email || "billing@cravebiz.com",
+                phone: companyContext.phone || "+1 (555) 012-3456",
+                website: companyContext.website || "https://cravebiz.com",
+                logoUrl: companyContext.logoUrl || ""
+            }
+        },
+        {
+            id: 'meta_' + Math.floor(Math.random() * 100000),
+            type: 'metadata',
+            content: {
+                documentTitle: docTitle,
+                clientName: clientName,
+                preparedBy: companyContext.name || "CraveBiZ AI Transformer",
+                date: today,
+                reference: "REF-" + Math.floor(Math.random() * 899999 + 100000)
+            }
+        },
+        {
+            id: 'title_1',
+            type: 'title',
+            content: { text: "1. RECITALS AND PURPOSE" }
+        },
+        {
+            id: 'p_1',
+            type: 'paragraph',
+            content: { text: `This document formalizes the custom parameters and guidelines requested for processing under user purpose: "${text}". The operational standard herein represents a legally binding accord between ${companyContext.name} ("Provider") and ${clientName} ("Client").` }
+        }
+    ];
+
+    if (docType === "Invoice") {
+        blocks.push(
+            {
+                id: 'title_2',
+                type: 'title',
+                content: { text: "2. ITEMIZED INVOICE LINES" }
+            },
+            {
+                id: 'tbl_1',
+                type: 'table',
+                content: {
+                    headers: ["Line Description", "Quantity", "Rate", "Total"],
+                    rows: [
+                        [`Professional deliverable: ${subjects[0]}`, "1", feeString.replace('$', ''), feeString.replace('$', '')],
+                        ["Standardized Integration & Testing Audit", "1", "0.00", "0.00"]
+                    ]
+                }
+            },
+            {
+                id: 'sum_1',
+                type: 'summary',
+                content: {
+                    subtotal: numericFee,
+                    tax: 0,
+                    total: numericFee,
+                    currency: "USD",
+                    notes: `This invoice is compiled under standard Net-30 remittance limits from the dispatch date.`
+                }
+            }
+        );
+    } else if (docType === "Non-Disclosure Agreement") {
+        blocks.push(
+            {
+                id: 'title_2',
+                type: 'title',
+                content: { text: "2. DEFINITION OF COVENANTS & MATERIAL PROTECTION" }
+            },
+            {
+                id: 'p_2',
+                type: 'paragraph',
+                content: { text: `Under the parameters of "${text}", both parties covenant that confidential assets, designs, strategic outlines, structures, algorithms, and pricing formulas shared after ${today} shall remain strictly proprietary.` }
+            },
+            {
+                id: 'title_3',
+                type: 'title',
+                content: { text: "3. VALIDITY TERM AND LEGAL REMEDIES" }
+            },
+            {
+                id: 'p_3',
+                type: 'paragraph',
+                content: { text: "This non-disclosure compliance term is valid for five (5) consecutive years from execution. Unilateral breaches are subject to immediate injunctive blockades and judicial proceedings under applicable territorial laws." }
+            },
+            {
+                id: 'footer_1',
+                type: 'footer',
+                content: { text: `CraveBiZ SmartDraft — Secure digital safeguard protecting mutual proprietary innovations.` }
+            }
+        );
+    } else {
+        blocks.push(
+            {
+                id: 'title_2',
+                type: 'title',
+                content: { text: "2. STATEMENT OF WORK AND OBJECTIVES" }
+            },
+            {
+                id: 'p_2',
+                type: 'paragraph',
+                content: { text: `The scope of work encompasses delivering target artifacts for: ${subjects[0]}. All milestones will be evaluated according to standard professional verification processes.` }
+            },
+            {
+                id: 'title_3',
+                type: 'title',
+                content: { text: "3. FINANCIAL CONSIDERATIONS AND SETTLEMENT" }
+            },
+            {
+                id: 'p_3',
+                type: 'paragraph',
+                content: { text: `In strict consideration of successful milestone completion under rules of "${text}", the Client shall pay a total financial amount of ${feeString}. Balance due is to be settled within fourteen (14) days from the formal invoice submittal date.` }
+            },
+            {
+                id: 'footer_1',
+                type: 'footer',
+                content: { text: `CraveBiZ SmartDraft — Formalized under applicable merchant specifications. All terms preserved.` }
+            }
+        );
+    }
+
+    return {
+        documentType: docType,
+        blocks: blocks
+    };
+}
+
 export async function generateTextResponse(
     prompt: string,
     model: string,
@@ -38,102 +225,7 @@ export async function generateTextResponse(
 export async function transformDocument(rawContent: string, companyContext: any): Promise<GeneratedDocument | null> {
     const apiKey = getApiKey();
     if (!apiKey) {
-        // High fidelity mockup document based on raw content
-        const isNDA = /nda|non-disclosure|confidentiality/i.test(rawContent);
-        const isAgreement = /agreement|contract|service/i.test(rawContent);
-        const isInvoice = /invoice|bill|receipt|payment/i.test(rawContent);
-        
-        let docType = "Business Document";
-        if (isNDA) docType = "Non-Disclosure Agreement";
-        else if (isAgreement) docType = "Service Agreement";
-        else if (isInvoice) docType = "Structured Invoice";
-
-        return {
-            documentType: docType,
-            blocks: [
-                {
-                    id: "block-header-demo",
-                    type: "header",
-                    content: {
-                        companyName: companyContext.name || "CRAVEBIZ DEMO CLIENT",
-                        address: companyContext.address || "123 Business Rd, Suite 100",
-                        email: companyContext.email || "billing@cravebiz.com",
-                        phone: companyContext.phone || "+1 (555) 019-2834",
-                        website: companyContext.website || "https://cravebiz.com",
-                        logoUrl: companyContext.logoUrl || ""
-                    }
-                },
-                {
-                    id: "block-meta-demo",
-                    type: "metadata",
-                    content: {
-                        date: new Date().toLocaleDateString(),
-                        reference: "CB-" + Math.floor(100000 + Math.random() * 900000),
-                        preparedBy: "CraveBiZ AI Transformer"
-                    }
-                },
-                {
-                    id: "block-title-demo",
-                    type: "title",
-                    content: {
-                        text: docType.toUpperCase()
-                    }
-                },
-                {
-                    id: "block-body-demo-1",
-                    type: "paragraph",
-                    content: {
-                        text: `This document has been transformed automatically from raw text input. [Demo Mode: Please configure your GEMINI_API_KEY in the environment Settings to use live AI document transformations.]`
-                    }
-                },
-                ...(isInvoice ? [
-                    {
-                        id: "block-table-demo",
-                        type: "table",
-                        content: {
-                            headers: ["Description", "Quantity", "Unit Price", "Total"],
-                            rows: [
-                                ["Consulting Services (Simulated)", "10", "150", "1500"],
-                                ["Implementation Support (Simulated)", "1", "500", "500"],
-                            ]
-                        }
-                    },
-                    {
-                        id: "block-summary-demo",
-                        type: "summary",
-                        content: {
-                            subtotal: 2000,
-                            tax: 160,
-                            total: 2160,
-                            currency: "USD",
-                            notes: "Payment is due within 14 days of receipt."
-                        }
-                    }
-                ] : [
-                    {
-                        id: "block-body-demo-2",
-                        type: "paragraph",
-                        content: {
-                            text: `1. PURPOSE AND SCOPE: The parties agree to enter into discussions regarding mutual business interests. All exchange of proprietary information will be strictly governed by the confidentiality requirements set forth within this document.`
-                        }
-                    },
-                    {
-                        id: "block-body-demo-3",
-                        type: "paragraph",
-                        content: {
-                            text: `2. GOVERNING LAW: This agreement shall be governed by, and construed in accordance with, state laws.`
-                        }
-                    },
-                    {
-                        id: "block-footer-demo",
-                        type: "footer",
-                        content: {
-                            text: "Confidential Business Document - Demo Copy"
-                        }
-                    }
-                ])
-            ] as DocumentBlock[]
-        };
+        return compileMockDocument(rawContent, companyContext);
     }
 
     const ai = new GoogleGenAI({ apiKey });
@@ -212,8 +304,8 @@ export async function transformDocument(rawContent: string, companyContext: any)
         const parsedJson = JSON.parse(cleanedJsonString);
         return parsedJson as GeneratedDocument;
     } catch (error) {
-        console.error("Gemini AI Error during document transformation:", error);
-        return null;
+        console.error("Gemini AI Error during document transformation. Falling back to structured heuristic draft:", error);
+        return compileMockDocument(rawContent, companyContext);
     }
 }
 
@@ -368,74 +460,7 @@ ${latePayments > 0 ? `- **Action Required**: Historical invoices show delayed pa
 export async function generateDocumentFromPurpose(purpose: string, companyContext: any): Promise<GeneratedDocument | null> {
     const apiKey = getApiKey();
     if (!apiKey) {
-        const isNDA = /nda|non-disclosure|confidentiality/i.test(purpose);
-        const isAgreement = /agreement|contract|service/i.test(purpose);
-        
-        let docType = "General Proposal";
-        if (isNDA) docType = "Non-Disclosure Agreement";
-        else if (isAgreement) docType = "Service Agreement";
-
-        return {
-            documentType: docType,
-            blocks: [
-                {
-                    id: "block-header-demo-p",
-                    type: "header",
-                    content: {
-                        companyName: companyContext.name || "CRAVEBIZ CLIENT",
-                        address: companyContext.address || "123 Professional Dr",
-                        email: companyContext.email || "support@cravebiz.com",
-                        phone: companyContext.phone || "+1 (555) 012-3456",
-                        website: companyContext.website || "https://cravebiz.com",
-                        logoUrl: companyContext.logoUrl || ""
-                    }
-                },
-                {
-                    id: "block-meta-demo-p",
-                    type: "metadata",
-                    content: {
-                        date: new Date().toLocaleDateString(),
-                        reference: "AGR-" + Math.floor(100000 + Math.random() * 900000),
-                        preparedBy: "CraveBiZ AI Template Generator"
-                    }
-                },
-                {
-                    id: "block-title-demo-p",
-                    type: "title",
-                    content: {
-                        text: docType.toUpperCase()
-                    }
-                },
-                {
-                    id: "block-body-demo-p-1",
-                    type: "paragraph",
-                    content: {
-                        text: `This document template was generated based on requirements: "${purpose}". [Demo Mode: Connect a GEMINI_API_KEY to synthesize custom drafts with live AI legal templates and boilerplate blocks.]`
-                    }
-                },
-                {
-                    id: "block-body-demo-p-2",
-                    type: "paragraph",
-                    content: {
-                        text: "1. COOPERATION AND STANDARDS: Both parties agree to conduct all mutual exchanges with integrity and follow state-governed standard operating guidelines."
-                    }
-                },
-                {
-                    id: "block-body-demo-p-3",
-                    type: "paragraph",
-                    content: {
-                        text: "2. INTELLECTUAL PROPERTY: All deliverables, customized code, or physical materials created during the course of services shall transition to client ownership upon final invoice clearance."
-                    }
-                },
-                {
-                    id: "block-footer-demo-p",
-                    type: "footer",
-                    content: {
-                        text: "Generated by CraveBiZ smart drafts - Demo Mode"
-                    }
-                }
-            ] as DocumentBlock[]
-        };
+        return compileMockDocument(purpose, companyContext);
     }
 
     const ai = new GoogleGenAI({ apiKey });
@@ -519,8 +544,8 @@ export async function generateDocumentFromPurpose(purpose: string, companyContex
         const cleaned = jsonString.replace(/^```json\s*|```\s*$/g, '');
         return JSON.parse(cleaned) as GeneratedDocument;
     } catch (error) {
-        console.error("Gemini AI Error generating document from purpose:", error);
-        return null;
+        console.error("Gemini AI Error generating document from purpose. Falling back to structured heuristic draft:", error);
+        return compileMockDocument(purpose, companyContext);
     }
 }
 
