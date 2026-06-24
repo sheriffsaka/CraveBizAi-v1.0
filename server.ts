@@ -1,6 +1,5 @@
 import express from "express";
 import path from "path";
-import { createServer as createViteServer } from "vite";
 import {
     generateTextResponse,
     transformDocument,
@@ -102,13 +101,15 @@ app.post("/api/ai/invoice-insight", async (req, res) => {
 // Vite Dev Server / Static Hosting setup (only when not on Vercel)
 if (!process.env.VERCEL) {
     if (process.env.NODE_ENV !== "production") {
-        createViteServer({
-            server: { middlewareMode: true },
-            appType: "spa",
-        }).then((vite) => {
-            app.use(vite.middlewares);
-            app.listen(PORT, "0.0.0.0", () => {
-                console.log(`Server starting on port ${PORT} with environment ${process.env.NODE_ENV || 'development'}`);
+        import("vite").then(({ createServer }) => {
+            createServer({
+                server: { middlewareMode: true },
+                appType: "spa",
+            }).then((vite) => {
+                app.use(vite.middlewares);
+                app.listen(PORT, "0.0.0.0", () => {
+                    console.log(`Server starting on port ${PORT} with environment ${process.env.NODE_ENV || 'development'}`);
+                });
             });
         });
     } else {
