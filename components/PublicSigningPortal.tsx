@@ -305,9 +305,11 @@ export default function PublicSigningPortal({ docId, prefilledRecipient, onBackT
                 );
             case 'paragraph':
                 return (
-                    <p className="text-xs text-gray-600 leading-relaxed font-medium mb-4 whitespace-pre-wrap" key={id}>
-                        {content.text}
-                    </p>
+                    <p 
+                        className="text-xs text-gray-600 leading-relaxed font-medium mb-4 whitespace-pre-wrap" 
+                        key={id}
+                        dangerouslySetInnerHTML={{ __html: content.text || '' }}
+                    />
                 );
             case 'table':
                 return (

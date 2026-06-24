@@ -394,8 +394,30 @@ const DocumentTransformer: React.FC<DocumentTransformerProps> = ({ company, user
                 if (savedId) {
                     setEditingDocId(savedId);
                     
-                    // Generate Direct Recipient Link
-                    const signingUrl = `${window.location.origin}/?docId=${savedId}&recipient=${encodeURIComponent(requestEmail.trim())}`;
+                    // Prepare lightweight payload for URL hash (robust fallback)
+                    const payload = {
+                        t: nextDoc.documentType,
+                        b: nextDoc.blocks.map(b => ({
+                            i: b.id,
+                            t: b.type,
+                            c: b.content
+                        })),
+                        s: nextDoc.signatures || []
+                    };
+                    
+                    let encodedData = '';
+                    try {
+                        const jsonStr = JSON.stringify(payload);
+                        const utf8Str = unescape(encodeURIComponent(jsonStr));
+                        encodedData = btoa(utf8Str);
+                    } catch (e) {
+                        console.warn("Could not encode doc data in URL hash:", e);
+                    }
+                    
+                    const hashSuffix = encodedData ? `#data=${encodeURIComponent(encodedData)}` : '';
+                    
+                    // Generate Direct Recipient Link with hash payload suffix
+                    const signingUrl = `${window.location.origin}/?docId=${savedId}&recipient=${encodeURIComponent(requestEmail.trim())}${hashSuffix}`;
                     
                     // Pre-fill email mailto client Link
                     const plainSubject = `Action Required: Secure Electronic Signature Requested for Agreement`;
@@ -411,11 +433,6 @@ const DocumentTransformer: React.FC<DocumentTransformerProps> = ({ company, user
                     setSavedEmailBody(plainBody);
                     setLatestRequestedEmail(requestEmail.trim());
                     setIsRequestSuccessModalOpen(true);
-                    
-                    // Trigger mailto composer dynamically after a short delay
-                    setTimeout(() => {
-                        window.location.href = mailtoUrl;
-                    }, 400);
                 }
             });
         }
@@ -715,22 +732,44 @@ const DocumentTransformer: React.FC<DocumentTransformerProps> = ({ company, user
             reader.onload = async (event) => {
                 try {
                     const arrayBuffer = event.target?.result as ArrayBuffer;
-                    // @ts-ignore
-                    const result = await mammoth.extractRawText({ arrayBuffer });
-                    const extractedText = result.value;
-                    setRawText(extractedText);
-                    setReviewText(extractedText);
-                    
-                    const parts = extractedText.split(/\n\s*\n/).map(p => p.trim()).filter(Boolean);
+                    let extractedText = '';
                     const blocks: DocumentBlock[] = [];
 
-                    parts.forEach((part, index) => {
-                        blocks.push({
-                            id: `p_l_${index}`,
-                            type: 'paragraph',
-                            content: { text: part }
+                    try {
+                        // @ts-ignore
+                        const result = await mammoth.convertToHtml({ arrayBuffer });
+                        const htmlValue = result.value || '';
+                        extractedText = htmlValue;
+                        
+                        // Split HTML nicely by paragraph tags to keep logical layout blocks
+                        const htmlParts = htmlValue.split('</p>').map(p => p.trim() + (p.trim() ? '</p>' : '')).filter(Boolean);
+                        htmlParts.forEach((part, index) => {
+                            if (part.replace(/<[^>]*>/g, '').trim() || part.includes('<img') || part.includes('<table')) {
+                                blocks.push({
+                                    id: `p_l_${index}`,
+                                    type: 'paragraph',
+                                    content: { text: part }
+                                });
+                            }
                         });
-                    });
+                    } catch (htmlErr) {
+                        console.warn("Mammoth HTML conversion failed, falling back to raw text:", htmlErr);
+                        // @ts-ignore
+                        const result = await mammoth.extractRawText({ arrayBuffer });
+                        extractedText = result.value;
+                        
+                        const parts = extractedText.split(/\n\s*\n/).map(p => p.trim()).filter(Boolean);
+                        parts.forEach((part, index) => {
+                            blocks.push({
+                                id: `p_l_${index}`,
+                                type: 'paragraph',
+                                content: { text: part }
+                            });
+                        });
+                    }
+                    
+                    setRawText(extractedText);
+                    setReviewText(extractedText);
 
                     const parsedDoc: GeneratedDocument = {
                         documentType: fileLabelClean(file.name) || "Uploaded Document",
@@ -2216,6 +2255,8 @@ ${company?.name || 'CraveBiZ Vendor'}`;
                         <div className="grid grid-cols-2 gap-3 pt-2">
                             <a
                                 href={savedMailtoUrl}
+                                target="_blank"
+                                rel="noopener noreferrer"
                                 className="py-2.5 bg-indigo-50 hover:bg-indigo-100 text-indigo-700 text-xs font-black uppercase tracking-widest rounded-xl transition-all border border-indigo-200/40 flex items-center justify-center gap-1.5 active:scale-95 text-center"
                             >
                                 <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M3 8l7.89 5.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" /></svg>
