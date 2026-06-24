@@ -24,6 +24,14 @@ const EditableBlock: React.FC<EditableBlockProps> = ({ as: Component = 'span', v
     }
   };
   
+  const formatNewlines = (str: string) => {
+    if (!str) return '';
+    if (str.includes('<br') || str.includes('<p') || str.includes('<div')) {
+      return str;
+    }
+    return str.replace(/\n/g, '<br />');
+  };
+
   return React.createElement(Component, {
     ref: elementRef,
     className: `${className} focus:outline-none focus:bg-yellow-100/50 focus:ring-2 focus:ring-yellow-400 rounded-sm px-1 -mx-1`,
@@ -31,7 +39,7 @@ const EditableBlock: React.FC<EditableBlockProps> = ({ as: Component = 'span', v
     suppressContentEditableWarning: true,
     onBlur: handleBlur,
     onFocus: () => setIsEditing(true),
-    dangerouslySetInnerHTML: { __html: value }
+    dangerouslySetInnerHTML: { __html: formatNewlines(value) }
   });
 };
 

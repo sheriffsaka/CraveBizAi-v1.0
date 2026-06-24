@@ -24,6 +24,7 @@ export default function PublicSigningPortal({ docId, prefilledRecipient, onBackT
     const [selectedCursiveStyle, setSelectedCursiveStyle] = useState(0);
     const [uploadedSigUrl, setUploadedSigUrl] = useState<string | null>(null);
     const [drawnSigUrl, setDrawnSigUrl] = useState<string | null>(null);
+    const [redirectCountdown, setRedirectCountdown] = useState(5);
 
     // Canvas drawing signature mechanics
     const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -45,6 +46,24 @@ export default function PublicSigningPortal({ docId, prefilledRecipient, onBackT
             }
         };
     }, []);
+
+    // Countdown and redirect effect after successful signature
+    useEffect(() => {
+        if (!isSignedSuccess) return;
+        
+        const interval = setInterval(() => {
+            setRedirectCountdown(prev => {
+                if (prev <= 1) {
+                    clearInterval(interval);
+                    if (onBackToLogin) onBackToLogin();
+                    return 0;
+                }
+                return prev - 1;
+            });
+        }, 1000);
+        
+        return () => clearInterval(interval);
+    }, [isSignedSuccess, onBackToLogin]);
 
     // Load document on init
     useEffect(() => {
@@ -441,23 +460,44 @@ export default function PublicSigningPortal({ docId, prefilledRecipient, onBackT
                 {/* Right Side: Signing Panel Status & Actions (Column span 4) */}
                 <div className="lg:col-span-4 space-y-6">
                     {isSignedSuccess ? (
-                        <div className="bg-emerald-50 border border-emerald-100 p-6 rounded-[2.5rem] shadow-md space-y-4">
-                            <div className="w-12 h-12 bg-emerald-500 text-white rounded-2xl flex items-center justify-center text-lg shadow-sm">✓</div>
-                            <div className="space-y-1">
-                                <h3 className="text-lg font-black text-emerald-900 uppercase tracking-tight">Execution Completed</h3>
-                                <p className="text-xs text-emerald-700 leading-relaxed font-semibold">
-                                    Your secure e-signature has been successfully applied and stored back in the CraveBiZ smart document directory.
+                        <div className="bg-emerald-50 border border-emerald-100 p-6 rounded-[2.5rem] shadow-xl space-y-5 animate-scale-up">
+                            <div className="flex items-center gap-3">
+                                <div className="w-12 h-12 bg-emerald-500 text-white rounded-2xl flex items-center justify-center text-lg shadow-md animate-bounce">✓</div>
+                                <div>
+                                    <h3 className="text-sm font-black text-emerald-950 uppercase tracking-tight">Execution Completed</h3>
+                                    <p className="text-[10px] text-emerald-700 font-bold uppercase tracking-wider">Secured via CraveBiZ SmartDocs</p>
+                                </div>
+                            </div>
+                            
+                            <p className="text-xs text-emerald-900 leading-relaxed font-semibold">
+                                Your secure e-signature has been successfully applied and stored back in the CraveBiZ smart document directory.
+                            </p>
+
+                            {/* Promotional Advertisement */}
+                            <div className="p-4 bg-white/70 rounded-2xl border border-emerald-100/50 space-y-2.5 shadow-sm">
+                                <span className="text-[9px] font-black uppercase tracking-widest text-indigo-600 bg-indigo-50 px-2.5 py-0.5 rounded-full">Sponsored Ad</span>
+                                <h4 className="text-xs font-black text-gray-900 leading-tight">Create Beautiful Invoices & Agreements in Seconds with CraveBiZ AI</h4>
+                                <ul className="text-[10px] text-gray-500 space-y-1 font-semibold leading-normal">
+                                    <li className="flex items-start gap-1">✨ <strong>AI Billing:</strong> Generate automated invoicing and billing streams.</li>
+                                    <li className="flex items-start gap-1">📄 <strong>DocSignify:</strong> Drag, drop, and request signatures on legal deeds.</li>
+                                    <li className="flex items-start gap-1">⚡ <strong>Vault Security:</strong> High-grade SME payment protection and analytics.</li>
+                                </ul>
+                                <p className="text-[10px] text-indigo-700 font-extrabold pt-0.5">Explore CraveBiZ today - It's 100% free!</p>
+                            </div>
+
+                            <div className="text-center bg-emerald-100/40 p-3 rounded-2xl border border-emerald-200/30">
+                                <p className="text-xs text-emerald-950 font-bold">
+                                    Redirecting to CraveBiZ homepage in <span className="font-black text-sm text-emerald-700 font-mono animate-pulse">{redirectCountdown}</span> seconds...
                                 </p>
                             </div>
-                            <div className="pt-2 border-t border-emerald-100 text-[10px] font-mono text-emerald-600 leading-relaxed">
-                                Tokenized contract hash: SHA-{docId.toUpperCase().slice(0, 12)}
-                            </div>
+
                             {onBackToLogin && (
                                 <button
                                     onClick={onBackToLogin}
-                                    className="w-full py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-black uppercase tracking-widest rounded-xl transition-all shadow"
+                                    className="w-full py-3 bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-black uppercase tracking-widest rounded-xl transition-all shadow-md active:scale-95 flex items-center justify-center gap-2"
                                 >
-                                    Proceed to Main System
+                                    Explore CraveBiZ AI Now
+                                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M13 7l5 5m0 0l-5 5m5-5H6" /></svg>
                                 </button>
                             )}
                         </div>

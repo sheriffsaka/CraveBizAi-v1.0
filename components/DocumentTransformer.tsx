@@ -297,6 +297,8 @@ const DocumentTransformer: React.FC<DocumentTransformerProps> = ({ company, user
     const [savedSigningUrl, setSavedSigningUrl] = useState('');
     const [savedMailtoUrl, setSavedMailtoUrl] = useState('');
     const [latestRequestedEmail, setLatestRequestedEmail] = useState('');
+    const [savedEmailSubject, setSavedEmailSubject] = useState('');
+    const [savedEmailBody, setSavedEmailBody] = useState('');
 
     const triggerToast = (msg: string) => {
         setToastMessage(msg);
@@ -396,12 +398,17 @@ const DocumentTransformer: React.FC<DocumentTransformerProps> = ({ company, user
                     const signingUrl = `${window.location.origin}/?docId=${savedId}&recipient=${encodeURIComponent(requestEmail.trim())}`;
                     
                     // Pre-fill email mailto client Link
-                    const subject = encodeURIComponent(`Action Required: Secure Electronic Signature Requested for Agreement`);
-                    const body = encodeURIComponent(`Hello,\n\nYou have been requested to review and electronic-sign the following agreement: ${nextDoc.documentType}.\n\nPlease click the secure e-sign link below to view, sign, and submit your signature back to the sender:\n\n${signingUrl}\n\nThank you,\nCraveBiZ SmartDocs Secures`);
+                    const plainSubject = `Action Required: Secure Electronic Signature Requested for Agreement`;
+                    const plainBody = `Hello,\n\nYou have been requested to review and electronic-sign the following agreement: ${nextDoc.documentType}.\n\nPlease click the secure e-sign link below to view, sign, and submit your signature back to the sender:\n\n${signingUrl}\n\nThank you,\nCraveBiZ SmartDocs Secures`;
+                    
+                    const subject = encodeURIComponent(plainSubject);
+                    const body = encodeURIComponent(plainBody);
                     const mailtoUrl = `mailto:${requestEmail.trim()}?subject=${subject}&body=${body}`;
                     
                     setSavedSigningUrl(signingUrl);
                     setSavedMailtoUrl(mailtoUrl);
+                    setSavedEmailSubject(plainSubject);
+                    setSavedEmailBody(plainBody);
                     setLatestRequestedEmail(requestEmail.trim());
                     setIsRequestSuccessModalOpen(true);
                     
@@ -2176,6 +2183,33 @@ ${company?.name || 'CraveBiZ Vendor'}`;
                                 >
                                     Copy Link
                                 </button>
+                            </div>
+                        </div>
+
+                        <div className="space-y-1.5 pt-1">
+                            <div className="flex justify-between items-center">
+                                <label className="text-[10px] font-black uppercase tracking-wider text-gray-400 block">Or Copy Email Invitation Template</label>
+                                <button
+                                    onClick={() => {
+                                        const fullTemplate = `Subject: ${savedEmailSubject}\n\n${savedEmailBody}`;
+                                        navigator.clipboard.writeText(fullTemplate);
+                                        triggerToast("Full email template successfully copied to clipboard!");
+                                    }}
+                                    className="text-[10px] text-indigo-600 hover:text-indigo-800 font-black uppercase tracking-wider flex items-center gap-1"
+                                >
+                                    <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M8 5H6a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2v-1M8 5a2 2 0 002 2h2a2 2 0 002-2M8 5a2 2 0 012-2h2a2 2 0 012 2m0 0h2a2 2 0 012 2v3m2 4H10m0 0l3-3m-3 3l3 3" /></svg>
+                                    Copy Template
+                                </button>
+                            </div>
+                            <div className="border border-gray-200/80 rounded-2xl bg-gray-50/50 p-3.5 space-y-2.5 text-left max-h-48 overflow-y-auto border-dashed">
+                                <div className="text-[10px]">
+                                    <span className="font-black text-gray-400 uppercase tracking-wider">Subject:</span>
+                                    <p className="font-bold text-gray-800 mt-0.5 border-b border-gray-150 pb-1.5">{savedEmailSubject}</p>
+                                </div>
+                                <div className="text-[10px]">
+                                    <span className="font-black text-gray-400 uppercase tracking-wider">Message:</span>
+                                    <p className="font-semibold text-gray-600 mt-1 whitespace-pre-wrap leading-relaxed select-all font-mono text-[9px] bg-white p-2 rounded-xl border border-gray-100">{savedEmailBody}</p>
+                                </div>
                             </div>
                         </div>
 
