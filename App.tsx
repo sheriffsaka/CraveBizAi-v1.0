@@ -21,6 +21,7 @@ import SentReceiptsList from './components/SentReceiptsList';
 import AdminDashboard from './components/AdminDashboard';
 import DocumentTransformer from './components/DocumentTransformer';
 import PaymentIntelligence from './components/PaymentIntelligence';
+import PublicSigningPortal from './components/PublicSigningPortal';
 import { api, supabase } from './lib/api';
 import { generateRenewalInvoiceSuggestion } from './services/aiGenerationService';
 import { Invoice, Client, Service, Company, User, TenantData, InvoiceStatus, AllTenantsData, GeneratedDocument } from './types';
@@ -40,6 +41,13 @@ const stringifyError = (err: any): string => {
 };
 
 export default function App() {
+  const [publicDocId, setPublicDocId] = useState<string | null>(() => {
+    return new URLSearchParams(window.location.search).get('docId');
+  });
+  const [publicRecipient, setPublicRecipient] = useState<string | null>(() => {
+    return new URLSearchParams(window.location.search).get('recipient');
+  });
+
   const [activePage, setActivePage] = useState<Page>('dashboard');
   const [isLoading, setIsLoading] = useState(true);
   const [isDataSyncing, setIsDataSyncing] = useState(false);
@@ -60,6 +68,20 @@ export default function App() {
   const [resetEmail, setResetEmail] = useState('');
   const [resetToken, setResetToken] = useState('');
   const isMounted = useRef(true);
+
+  if (publicDocId) {
+    return (
+      <PublicSigningPortal 
+        docId={publicDocId} 
+        prefilledRecipient={publicRecipient || undefined}
+        onBackToLogin={() => {
+          window.history.replaceState({}, document.title, window.location.pathname);
+          setPublicDocId(null);
+          setPublicRecipient(null);
+        }}
+      />
+    );
+  }
 
   const pageTitles: { [key in Page]: string } = {
     dashboard: 'Dashboard', invoices: 'Invoices', clients: 'Clients', services: 'Services',
@@ -350,12 +372,22 @@ export default function App() {
       case 'dashboard': return <Dashboard invoices={invoices} clients={clients} setActivePage={navigateTo} onViewInvoice={(id) => { setSelectedInvoiceId(id); navigateTo('invoice-detail'); }} onEditInvoice={handleEditInvoiceAction} onGenerateRenewal={handleGenerateRenewal} />;
       case 'document-transformer': return <DocumentTransformer company={activeCompany} user={currentUser} generatedDocs={generatedDocs} onSaveDoc={async (doc, id) => { 
           try {
+              let saved;
               if (id) {
-                  await api.updateGeneratedDoc(activeTenantId!, id, doc);
+                  saved = await api.updateGeneratedDoc(activeTenantId!, id, doc);
               } else {
-                  await api.saveGeneratedDoc(activeTenantId!, doc); 
+                  saved = await api.saveGeneratedDoc(activeTenantId!, doc); 
               }
               await forceSyncData(activeTenantId!); 
+              return saved?.id;
+          } catch (e) {
+              setSyncError(stringifyError(e));
+              return undefined;
+          }
+      }} onDeleteDoc={async (id) => {
+          try {
+              await api.deleteGeneratedDoc(activeTenantId!, id);
+              await forceSyncData(activeTenantId!);
           } catch (e) {
               setSyncError(stringifyError(e));
           }

@@ -58,7 +58,8 @@ interface DocumentTransformerProps {
     company: Company | null;
     user: User | null;
     generatedDocs: StoredGeneratedDoc[];
-    onSaveDoc: (doc: GeneratedDocument, id?: string) => void;
+    onSaveDoc: (doc: GeneratedDocument, id?: string) => Promise<string | undefined>;
+    onDeleteDoc: (id: string) => Promise<void>;
 }
 
 const TEMPLATES = [
@@ -235,7 +236,7 @@ function compileDocumentOffline(purpose: string, companyContext: any): Generated
     };
 }
 
-const DocumentTransformer: React.FC<DocumentTransformerProps> = ({ company, user, generatedDocs, onSaveDoc }) => {
+const DocumentTransformer: React.FC<DocumentTransformerProps> = ({ company, user, generatedDocs, onSaveDoc, onDeleteDoc }) => {
     // Tab State: generate (Purpose-made), sign (E-Signature), manage (Workspace Archive)
     const [activeTab, setActiveTab] = useState<'generate' | 'sign' | 'manage'>('generate');
     const [useLocalCompiler, setUseLocalCompiler] = useState(false);
@@ -292,6 +293,10 @@ const DocumentTransformer: React.FC<DocumentTransformerProps> = ({ company, user
     const [requestEmail, setRequestEmail] = useState('');
     const [toastMessage, setToastMessage] = useState<string | null>(null);
     const [isDocumentSubmitted, setIsDocumentSubmitted] = useState(false);
+    const [isRequestSuccessModalOpen, setIsRequestSuccessModalOpen] = useState(false);
+    const [savedSigningUrl, setSavedSigningUrl] = useState('');
+    const [savedMailtoUrl, setSavedMailtoUrl] = useState('');
+    const [latestRequestedEmail, setLatestRequestedEmail] = useState('');
 
     const triggerToast = (msg: string) => {
         setToastMessage(msg);
@@ -330,7 +335,9 @@ const DocumentTransformer: React.FC<DocumentTransformerProps> = ({ company, user
                 signatures: updated
             };
             setGeneratedDoc(nextDoc);
-            onSaveDoc(nextDoc, editingDocId || undefined);
+            onSaveDoc(nextDoc, editingDocId || undefined).then(savedId => {
+                if (savedId) setEditingDocId(savedId);
+            });
         }
 
         // Reset fields & close
@@ -380,15 +387,37 @@ const DocumentTransformer: React.FC<DocumentTransformerProps> = ({ company, user
                 signatures: updated
             };
             setGeneratedDoc(nextDoc);
-            onSaveDoc(nextDoc, editingDocId || undefined);
+            
+            onSaveDoc(nextDoc, editingDocId || undefined).then(savedId => {
+                if (savedId) {
+                    setEditingDocId(savedId);
+                    
+                    // Generate Direct Recipient Link
+                    const signingUrl = `${window.location.origin}/?docId=${savedId}&recipient=${encodeURIComponent(requestEmail.trim())}`;
+                    
+                    // Pre-fill email mailto client Link
+                    const subject = encodeURIComponent(`Action Required: Secure Electronic Signature Requested for Agreement`);
+                    const body = encodeURIComponent(`Hello,\n\nYou have been requested to review and electronic-sign the following agreement: ${nextDoc.documentType}.\n\nPlease click the secure e-sign link below to view, sign, and submit your signature back to the sender:\n\n${signingUrl}\n\nThank you,\nCraveBiZ SmartDocs Secures`);
+                    const mailtoUrl = `mailto:${requestEmail.trim()}?subject=${subject}&body=${body}`;
+                    
+                    setSavedSigningUrl(signingUrl);
+                    setSavedMailtoUrl(mailtoUrl);
+                    setLatestRequestedEmail(requestEmail.trim());
+                    setIsRequestSuccessModalOpen(true);
+                    
+                    // Trigger mailto composer dynamically after a short delay
+                    setTimeout(() => {
+                        window.location.href = mailtoUrl;
+                    }, 400);
+                }
+            });
         }
 
-        const signeeName = signatories[requestingSigIndex]?.name || 'the recipient';
         setIsRequestModalOpen(false);
         setRequestingSigIndex(null);
         setRequestEmail('');
 
-        triggerToast(`Secure signature request dispatch success! Document link sent to ${requestEmail}.`);
+        triggerToast(`Secure signature request dispatch success! Preparing links and mailto client...`);
     };
 
     // Print & Layout references
@@ -445,7 +474,6 @@ const DocumentTransformer: React.FC<DocumentTransformerProps> = ({ company, user
         setGeneratedDoc(finalDoc);
         setSignatories(finalDoc.signatures);
         setEditingDocId(null);
-        onSaveDoc(finalDoc);
     };
 
     // Synchronize company defaults
@@ -991,7 +1019,9 @@ const DocumentTransformer: React.FC<DocumentTransformerProps> = ({ company, user
                 signatures: updatedSignatories
             };
             setGeneratedDoc(nextDoc);
-            onSaveDoc(nextDoc, editingDocId || undefined);
+            onSaveDoc(nextDoc, editingDocId || undefined).then(savedId => {
+                if (savedId) setEditingDocId(savedId);
+            });
         }
 
         setIsSignModalOpen(false);
@@ -1062,7 +1092,9 @@ ${company?.name || 'CraveBiZ Vendor'}`;
         const nextDoc = { ...generatedDoc, blocks: updatedBlocks };
         setGeneratedDoc(nextDoc);
         // Auto-save any inline updates to our active working copy
-        onSaveDoc({ ...nextDoc, signatures: signatories }, editingDocId || undefined);
+        onSaveDoc({ ...nextDoc, signatures: signatories }, editingDocId || undefined).then(savedId => {
+            if (savedId) setEditingDocId(savedId);
+        });
     };
 
     const handleSaveCurrentDocument = () => {
@@ -1071,8 +1103,12 @@ ${company?.name || 'CraveBiZ Vendor'}`;
             ...generatedDoc,
             signatures: signatories
         };
-        onSaveDoc(savedDoc, editingDocId || undefined);
-        alert('Your document changes and signature configurations have been securely saved to the CraveBiz SmartDocs Archive Vault!');
+        onSaveDoc(savedDoc, editingDocId || undefined).then(savedId => {
+            if (savedId) {
+                setEditingDocId(savedId);
+                triggerToast("Document progress successfully saved to Vault!");
+            }
+        });
     };
 
     const renderBlock = (block: DocumentBlock) => {
@@ -1466,7 +1502,7 @@ ${company?.name || 'CraveBiZ Vendor'}`;
                                                 </p>
                                             </div>
 
-                                            <div className="grid grid-cols-2 gap-2">
+                                            <div className="grid grid-cols-3 gap-2">
                                                 <button
                                                     onClick={() => handleViewHistoryDoc(doc)}
                                                     className="py-2 bg-white text-gray-700 hover:text-indigo-600 border border-gray-200 text-[10px] font-black uppercase tracking-widest rounded-lg transition-all flex items-center justify-center gap-1 shadow-sm"
@@ -1489,12 +1525,31 @@ ${company?.name || 'CraveBiZ Vendor'}`;
                                                             .join('\n\n');
                                                         handleAnalyzeText(fullTextLines || doc.documentType);
                                                     }}
-                                                    className="py-2 bg-gray-800 text-white hover:bg-gray-900 text-[10px] font-black uppercase tracking-widest rounded-lg transition-all flex items-center justify-center gap-1 shadow-sm"
+                                                    className="py-2 bg-gray-800 text-white hover:bg-gray-901 text-[10px] font-black uppercase tracking-widest rounded-lg transition-all flex items-center justify-center gap-1 shadow-sm"
                                                 >
                                                     <svg className="w-3.5 h-3.5 text-indigo-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z" />
+                                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="1.5" d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z" />
                                                     </svg>
                                                     AI Audit
+                                                </button>
+
+                                                <button
+                                                    onClick={async () => {
+                                                        if (window.confirm("Are you sure you want to permanently delete this document from your vault? This cannot be undone.")) {
+                                                            await onDeleteDoc(doc.id);
+                                                            if (editingDocId === doc.id) {
+                                                                setGeneratedDoc(null);
+                                                                setEditingDocId(null);
+                                                            }
+                                                            triggerToast("Document permanently purged from vault.");
+                                                        }
+                                                    }}
+                                                    className="py-2 bg-red-50 hover:bg-red-500 text-red-600 hover:text-white border border-red-100 text-[10px] font-black uppercase tracking-widest rounded-lg transition-all flex items-center justify-center gap-1 shadow-sm font-sans"
+                                                >
+                                                    <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                                                    </svg>
+                                                    Delete
                                                 </button>
                                             </div>
                                         </div>
@@ -1521,12 +1576,32 @@ ${company?.name || 'CraveBiZ Vendor'}`;
                                             <p className="font-bold text-xs text-gray-800 truncate">{doc.documentType}</p>
                                             <p className="text-[9px] text-gray-400 font-medium">{new Date(doc.createdAt).toLocaleDateString()} {new Date(doc.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</p>
                                         </div>
-                                        <button
-                                            onClick={() => handleViewHistoryDoc(doc)}
-                                            className="px-3 py-1.5 bg-white hover:bg-primary-600 hover:text-white border border-gray-200 text-[9px] font-black uppercase tracking-widest rounded-lg text-gray-600 transition-all flex-shrink-0"
-                                        >
-                                            Load
-                                        </button>
+                                        <div className="flex items-center gap-1.5 flex-shrink-0">
+                                            <button
+                                                onClick={() => handleViewHistoryDoc(doc)}
+                                                className="px-3 py-1.5 bg-white hover:bg-primary-600 hover:text-white border border-gray-200 text-[9px] font-black uppercase tracking-widest rounded-lg text-gray-600 transition-all flex-shrink-0"
+                                            >
+                                                Load
+                                            </button>
+                                            <button
+                                                onClick={async () => {
+                                                    if (window.confirm("Are you sure you want to permanently delete this document from your vault? This cannot be undone.")) {
+                                                        await onDeleteDoc(doc.id);
+                                                        if (editingDocId === doc.id) {
+                                                            setGeneratedDoc(null);
+                                                            setEditingDocId(null);
+                                                        }
+                                                        triggerToast("Document permanently purged from vault.");
+                                                    }
+                                                }}
+                                                className="px-2 py-1.5 bg-red-50 hover:bg-red-500 text-red-600 hover:text-white border border-red-100 text-[9px] font-black uppercase tracking-widest rounded-lg transition-all flex-shrink-0"
+                                                title="Delete document"
+                                            >
+                                                <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                                                </svg>
+                                            </button>
+                                        </div>
                                     </div>
                                 ))}
                                 {generatedDocs.length === 0 && (
@@ -1686,7 +1761,13 @@ ${company?.name || 'CraveBiZ Vendor'}`;
                                     <div className="flex-1 overflow-y-auto" style={{ maxHeight: '42rem' }}>
                                         <div ref={documentRef} className="p-10 bg-white max-w-[210mm] mx-auto min-h-[297mm]">
                                             <div className="space-y-4">
-                                                {generatedDoc.blocks.map(block => <div key={block.id}>{renderBlock(block)}</div>)}
+                                                {generatedDoc.blocks
+                                                    .filter(block => {
+                                                        const isUploaded = !!uploadedFileName || generatedDoc.documentType.toLowerCase().includes('uploaded') || generatedDoc.documentType.toLowerCase().includes('reviewed');
+                                                        return !isUploaded || block.type !== 'header';
+                                                    })
+                                                    .map(block => <div key={block.id}>{renderBlock(block)}</div>)
+                                                }
                                             </div>
 
                                             {/* Feature ii: Dynamic E-Signatures Board rendered inside A4 Simulation */}
@@ -2119,6 +2200,75 @@ ${company?.name || 'CraveBiZ Vendor'}`;
                             >
                                 <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 19l9 2-9-18-9 18 9-2zm0 0v-8" /></svg>
                                 Send Request
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            )}
+
+            {/* Request Signature Success & Fallback Modal */}
+            {isRequestSuccessModalOpen && (
+                <div className="fixed inset-0 z-[110] flex items-center justify-center p-4 bg-gray-950/75 backdrop-blur-sm animate-fade-in">
+                    <div className="bg-white rounded-3xl max-w-md w-full overflow-hidden shadow-2xl border border-gray-100 p-6 space-y-4 animate-scale-up">
+                        <div className="flex justify-between items-start">
+                            <div>
+                                <h3 className="text-sm font-black text-gray-950 uppercase tracking-tight flex items-center gap-1.5">
+                                    <svg className="w-5 h-5 text-emerald-500 animate-bounce" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
+                                    Document Portal Invitation Ready!
+                                </h3>
+                                <p className="text-[10px] text-gray-400 font-semibold uppercase tracking-wider mt-0.5">Secured Counterparty Handshake</p>
+                            </div>
+                            <button
+                                onClick={() => setIsRequestSuccessModalOpen(false)}
+                                className="p-1 hover:bg-gray-100 rounded-lg text-gray-400 hover:text-gray-800 transition-all"
+                            >
+                                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M6 18L18 6M6 6l12 12" /></svg>
+                            </button>
+                        </div>
+
+                        <div className="p-4 bg-emerald-50/50 border border-emerald-100/60 rounded-2xl space-y-2 text-xs">
+                            <p className="text-emerald-950 font-medium leading-relaxed">
+                                We generated a premium secure signing link for **{latestRequestedEmail}**.
+                            </p>
+                            <p className="text-gray-500 text-[11px] leading-relaxed">
+                                Your device's native mail client was automatically triggered to compose a prefilled signature invite email containing this unique link. 
+                            </p>
+                        </div>
+
+                        <div className="space-y-1">
+                            <label className="text-[10px] font-black uppercase tracking-wider text-gray-400 block">Copy Shareable Signing Portal Link</label>
+                            <div className="flex gap-2">
+                                <input
+                                    type="text"
+                                    value={savedSigningUrl}
+                                    readOnly
+                                    className="flex-1 px-3 py-2 border border-gray-200 rounded-xl text-[11px] font-mono select-all bg-gray-50 text-gray-600 focus:outline-none"
+                                />
+                                <button
+                                    onClick={() => {
+                                        navigator.clipboard.writeText(savedSigningUrl);
+                                        triggerToast("Secure Signing link successfully copied to clipboard.");
+                                    }}
+                                    className="px-3.5 bg-primary-600 hover:bg-primary-700 text-white text-[10px] font-black uppercase tracking-wider rounded-xl transition-all shadow-sm active:scale-95 flex items-center justify-center whitespace-nowrap"
+                                >
+                                    Copy Link
+                                </button>
+                            </div>
+                        </div>
+
+                        <div className="grid grid-cols-2 gap-3 pt-2">
+                            <a
+                                href={savedMailtoUrl}
+                                className="py-2.5 bg-indigo-50 hover:bg-indigo-100 text-indigo-700 text-xs font-black uppercase tracking-widest rounded-xl transition-all border border-indigo-200/40 flex items-center justify-center gap-1.5 active:scale-95 text-center"
+                            >
+                                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M3 8l7.89 5.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" /></svg>
+                                Resend Email
+                            </a>
+                            <button
+                                onClick={() => setIsRequestSuccessModalOpen(false)}
+                                className="py-2.5 bg-gray-900 hover:bg-gray-950 text-white text-xs font-black uppercase tracking-widest rounded-xl transition-all shadow-md active:scale-95"
+                            >
+                                Dismiss
                             </button>
                         </div>
                     </div>

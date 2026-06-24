@@ -1,6 +1,6 @@
 
 import { createClient } from '@supabase/supabase-js';
-import { Invoice, Client, Service, Company, User, InvoiceStatus, BankAccount, InvoiceItem, InvoiceFrequency, GeneratedDocument, StoredGeneratedDoc, DocumentBlock } from '../types';
+import { Invoice, Client, Service, Company, User, InvoiceStatus, BankAccount, InvoiceItem, InvoiceFrequency, GeneratedDocument, StoredGeneratedDoc, DocumentBlock, SignatureInfo } from '../types';
 
 const SUPABASE_URL = 'https://dfqvgezjhudmnlyeycju.supabase.co';
 const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImRmcXZnZXpqaHVkbW5seWV5Y2p1Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjYyNDAyOTMsImV4cCI6MjA4MTgxNjI5M30.8VsHsDpychdSMJmrfnmkxi5ed8CygwErX3-RkVPXkUI';
@@ -665,6 +665,131 @@ class CraveBizApi {
       }
       localStorage.setItem(localKey, JSON.stringify(list));
       return fallbackDoc;
+    }
+  }
+
+  async deleteGeneratedDoc(companyId: string, id: string): Promise<void> {
+    try {
+      const { error } = await supabase.from('generated_documents').delete().eq('id', id);
+      if (error) throw error;
+    } catch (e) {
+      console.warn("Supabase delete failed for generated_documents, deleting from local storage fallback:", e);
+    }
+    
+    // Always clean from localStorage
+    const localKey = `cravebiz_docs_${companyId}`;
+    const savedListRaw = localStorage.getItem(localKey);
+    if (savedListRaw) {
+      try {
+        let list: StoredGeneratedDoc[] = JSON.parse(savedListRaw);
+        list = list.filter(d => d.id !== id);
+        localStorage.setItem(localKey, JSON.stringify(list));
+      } catch {
+        // Ignored
+      }
+    }
+  }
+
+  async getPublicDoc(id: string): Promise<StoredGeneratedDoc | null> {
+    try {
+      const { data, error } = await supabase.from('generated_documents').select('*').eq('id', id).maybeSingle();
+      if (error) throw error;
+      if (data) {
+        let blocks: DocumentBlock[] = [];
+        let signatures: any[] = [];
+        if (data.content) {
+          if (Array.isArray(data.content)) {
+            blocks = data.content;
+          } else if (typeof data.content === 'object') {
+            blocks = (data.content as any).blocks || [];
+            signatures = (data.content as any).signatures || [];
+          }
+        }
+        return {
+          id: data.id,
+          companyId: data.company_id,
+          createdAt: data.created_at,
+          documentType: data.document_type,
+          blocks,
+          signatures
+        };
+      }
+    } catch (e) {
+      console.warn("Public fetch failed:", e);
+    }
+    
+    // Fallback to search across all company localStorage keys
+    for (let i = 0; i < localStorage.length; i++) {
+      const key = localStorage.key(i);
+      if (key && key.startsWith('cravebiz_docs_')) {
+        try {
+          const list: StoredGeneratedDoc[] = JSON.parse(localStorage.getItem(key) || '[]');
+          const found = list.find(d => d.id === id);
+          if (found) return found;
+        } catch {
+          // Ignore
+        }
+      }
+    }
+    return null;
+  }
+
+  async savePublicDocSignature(id: string, updatedSignatures: SignatureInfo[]): Promise<boolean> {
+    try {
+      const doc = await this.getPublicDoc(id);
+      if (!doc) return false;
+      
+      const contentPayload = {
+        blocks: doc.blocks,
+        signatures: updatedSignatures
+      };
+      
+      const { error } = await supabase.from('generated_documents')
+        .update({
+          content: contentPayload
+        })
+        .eq('id', id);
+        
+      if (error) throw error;
+      
+      // Update in localStorage if cached
+      for (let i = 0; i < localStorage.length; i++) {
+        const key = localStorage.key(i);
+        if (key && key.startsWith('cravebiz_docs_')) {
+          try {
+            let list: StoredGeneratedDoc[] = JSON.parse(localStorage.getItem(key) || '[]');
+            const idx = list.findIndex(d => d.id === id);
+            if (idx > -1) {
+              list[idx].signatures = updatedSignatures;
+              localStorage.setItem(key, JSON.stringify(list));
+              break;
+            }
+          } catch {
+            // Ignore
+          }
+        }
+      }
+      return true;
+    } catch (e) {
+      console.warn("API savePublicDocSignature failed, fallback update to local arrays:", e);
+      // Fallback update in local storage only
+      for (let i = 0; i < localStorage.length; i++) {
+        const key = localStorage.key(i);
+        if (key && key.startsWith('cravebiz_docs_')) {
+          try {
+            let list: StoredGeneratedDoc[] = JSON.parse(localStorage.getItem(key) || '[]');
+            const idx = list.findIndex(d => d.id === id);
+            if (idx > -1) {
+              list[idx].signatures = updatedSignatures;
+              localStorage.setItem(key, JSON.stringify(list));
+              return true;
+            }
+          } catch {
+            // Ignore
+          }
+        }
+      }
+      return false;
     }
   }
 }

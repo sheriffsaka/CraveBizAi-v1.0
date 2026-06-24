@@ -1,5 +1,37 @@
 import { GoogleGenAI, Type } from "@google/genai";
 import { GeneratedDocument, Invoice, InvoiceItem, DocumentReviewResult, DocumentBlock, DocumentBlockType } from "../types";
+import fs from "fs";
+import path from "path";
+
+// Dynamically load environment variables from local .env or .env.example files as a fallback
+function loadEnvFiles() {
+    for (const filename of [".env", ".env.example"]) {
+        const filePath = path.join(process.cwd(), filename);
+        if (fs.existsSync(filePath)) {
+            try {
+                const content = fs.readFileSync(filePath, "utf-8");
+                const lines = content.split(/\r?\n/);
+                for (const line of lines) {
+                    const trimmed = line.trim();
+                    if (!trimmed || trimmed.startsWith("#")) continue;
+                    const index = trimmed.indexOf("=");
+                    if (index > -1) {
+                        const key = trimmed.substring(0, index).trim();
+                        const value = trimmed.substring(index + 1).trim().replace(/^["']|["']$/g, "");
+                        if (key && value && !process.env[key]) {
+                            process.env[key] = value;
+                        }
+                    }
+                }
+            } catch (err) {
+                console.error(`Error loading env file ${filename}:`, err);
+            }
+        }
+    }
+}
+
+// Execute environment loading
+loadEnvFiles();
 
 function getApiKey(): string {
     const key = process.env.GEMINI_API_KEY || process.env.API_KEY;
@@ -7,6 +39,18 @@ function getApiKey(): string {
         console.warn("WARNING: Neither GEMINI_API_KEY nor API_KEY is set in environment.");
     }
     return key || "";
+}
+
+function getGeminiClient(): GoogleGenAI {
+    const apiKey = getApiKey();
+    return new GoogleGenAI({
+        apiKey,
+        httpOptions: {
+            headers: {
+                'User-Agent': 'aistudio-build',
+            }
+        }
+    });
 }
 
 function compileMockDocument(text: string, companyContext: any): GeneratedDocument {
@@ -207,7 +251,7 @@ export async function generateTextResponse(
     }
 
     try {
-        const ai = new GoogleGenAI({ apiKey });
+        const ai = getGeminiClient();
         const config = systemInstruction ? { systemInstruction } : {};
 
         const response = await ai.models.generateContent({
@@ -228,7 +272,7 @@ export async function transformDocument(rawContent: string, companyContext: any)
         return compileMockDocument(rawContent, companyContext);
     }
 
-    const ai = new GoogleGenAI({ apiKey });
+    const ai = getGeminiClient();
     const model = 'gemini-3.5-flash'; // Optimized to ensure fast responsive delivery
 
     const systemInstruction = `You are an intelligent document transformation engine. Your task is to analyze raw, unstructured text and reformat it into a professional, structured business document in JSON format based on the provided schema.
@@ -346,7 +390,7 @@ export async function generateRenewalInvoiceSuggestion(clientId: string, expirin
         return programmaticSuggestion;
     }
 
-    const ai = new GoogleGenAI({ apiKey });
+    const ai = getGeminiClient();
     const model = 'gemini-3.5-flash';
 
     const systemInstruction = `You are an intelligent billing assistant. Your task is to analyze expiring service items for a client and suggest a renewal invoice.
@@ -430,7 +474,7 @@ ${latePayments > 0 ? `- **Action Required**: Historical invoices show delayed pa
 2. **Transition Option**: Move client onto automatic credit pre-authorizations or monthly retainers.`;
     }
 
-    const ai = new GoogleGenAI({ apiKey });
+    const ai = getGeminiClient();
     const model = 'gemini-3.5-flash';
 
     const systemInstruction = `You are a financial analyst. Analyze the client's payment history and service coverage.
@@ -463,7 +507,7 @@ export async function generateDocumentFromPurpose(purpose: string, companyContex
         return compileMockDocument(purpose, companyContext);
     }
 
-    const ai = new GoogleGenAI({ apiKey });
+    const ai = getGeminiClient();
     const model = 'gemini-3.5-flash';
 
     const systemInstruction = `You are an expert corporate lawyer and document preparer. Your task is to generate a professional business document (like a Contract, Service Agreement, NDA, Proposal, Quote, or Invoice) based entirely on the user's stated purpose/requirements.
@@ -572,7 +616,7 @@ export async function reviewDocumentContent(documentText: string): Promise<Docum
         };
     }
 
-    const ai = new GoogleGenAI({ apiKey });
+    const ai = getGeminiClient();
     const model = 'gemini-3.5-flash';
 
     const systemInstruction = `You are an elite legal and compliance officer. Review the provided business document or text and deliver a structured compliance analysis.
@@ -640,8 +684,8 @@ This document exhibits well-structured invoicing elements with standard payment 
 3. **Connect Gemini API Key**: Go to Settings in the AI Studio sidebar and supply a valid \`GEMINI_API_KEY\` to enable high-fidelity automated analysis powered by **Gemini 3.5 Pro / Flash** LLMs.`;
     }
 
-    const ai = new GoogleGenAI({ apiKey });
-    const modelName = complex ? 'gemini-3.5-pro' : 'gemini-3.5-flash';
+    const ai = getGeminiClient();
+    const modelName = complex ? 'gemini-3.1-pro-preview' : 'gemini-3.5-flash';
 
     try {
         const response = await ai.models.generateContent({
