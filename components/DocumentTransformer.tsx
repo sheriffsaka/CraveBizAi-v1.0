@@ -556,7 +556,7 @@ const DocumentTransformer: React.FC<DocumentTransformerProps> = ({ company, user
                 const parts = textToUse.split(/\n\s*\n/).map(p => p.trim()).filter(Boolean);
                 const blocks: DocumentBlock[] = [];
                 
-                // Only include company header branding if there's no uploaded file
+                // Only include company header branding and metadata if there's no uploaded file
                 if (!uploadedFileName) {
                     blocks.push({
                         id: 'hdr_l_' + Math.floor(Math.random() * 10000),
@@ -569,23 +569,23 @@ const DocumentTransformer: React.FC<DocumentTransformerProps> = ({ company, user
                             website: context.website
                         }
                     });
-                }
 
-                blocks.push({
-                    id: 'meta_l_' + Math.floor(Math.random() * 10000),
-                    type: 'metadata',
-                    content: {
-                        documentTitle: uploadedFileName ? fileLabelClean(uploadedFileName) : "Assigned Signature Agreement",
-                        clientName: "Authorized Counterparty",
-                        preparedBy: user?.full_name || "Contract Admin",
-                        date: new Date().toLocaleDateString(),
-                        reference: "REF-" + Math.floor(Math.random() * 89999 + 10000)
-                    }
-                });
+                    blocks.push({
+                        id: 'meta_l_' + Math.floor(Math.random() * 10000),
+                        type: 'metadata',
+                        content: {
+                            documentTitle: "Assigned Signature Agreement",
+                            clientName: "Authorized Counterparty",
+                            preparedBy: user?.full_name || "Contract Admin",
+                            date: new Date().toLocaleDateString(),
+                            reference: "REF-" + Math.floor(Math.random() * 89999 + 10000)
+                        }
+                    });
+                }
 
                 parts.forEach((part, index) => {
                     const lines = part.split('\n').map(l => l.trim()).filter(Boolean);
-                    if (lines.length === 1 && lines[0].length < 100 && (index === 0 || lines[0] === lines[0].toUpperCase())) {
+                    if (!uploadedFileName && lines.length === 1 && lines[0].length < 100 && (index === 0 || lines[0] === lines[0].toUpperCase())) {
                         blocks.push({
                             id: `title_l_${index}`,
                             type: 'title',
@@ -600,11 +600,13 @@ const DocumentTransformer: React.FC<DocumentTransformerProps> = ({ company, user
                     }
                 });
 
-                blocks.push({
-                    id: 'footer_l',
-                    type: 'footer',
-                    content: { text: "Prepared and formatted locally via CraveBiZ Secure eSign offline module." }
-                });
+                if (!uploadedFileName) {
+                    blocks.push({
+                        id: 'footer_l',
+                        type: 'footer',
+                        content: { text: "Prepared and formatted locally via CraveBiZ Secure eSign offline module." }
+                    });
+                }
 
                 parsedDoc = {
                     documentType: uploadedFileName ? fileLabelClean(uploadedFileName) : "Local Agreement",
@@ -672,54 +674,15 @@ const DocumentTransformer: React.FC<DocumentTransformerProps> = ({ company, user
                     setRawText(extractedText);
                     setReviewText(extractedText);
                     
-                    const context = getCompanyContext();
                     const parts = extractedText.split(/\n\s*\n/).map(p => p.trim()).filter(Boolean);
-                    const blocks: DocumentBlock[] = [
-                        {
-                            id: 'hdr_l_' + Math.floor(Math.random() * 10000),
-                            type: 'header',
-                            content: {
-                                companyName: context.name,
-                                address: context.address,
-                                email: context.email,
-                                phone: context.phone,
-                                website: context.website
-                            }
-                        },
-                        {
-                            id: 'meta_l_' + Math.floor(Math.random() * 10000),
-                            type: 'metadata',
-                            content: {
-                                documentTitle: fileLabelClean(file.name) || "Assigned Signature Agreement",
-                                clientName: "Authorized Counterparty",
-                                preparedBy: user?.full_name || "Contract Admin",
-                                date: new Date().toLocaleDateString(),
-                                reference: "REF-" + Math.floor(Math.random() * 89999 + 10000)
-                            }
-                        }
-                    ];
+                    const blocks: DocumentBlock[] = [];
 
                     parts.forEach((part, index) => {
-                        const lines = part.split('\n').map(l => l.trim()).filter(Boolean);
-                        if (lines.length === 1 && lines[0].length < 100 && (index === 0 || lines[0] === lines[0].toUpperCase())) {
-                            blocks.push({
-                                id: `title_l_${index}`,
-                                type: 'title',
-                                content: { text: lines[0] }
-                            });
-                        } else {
-                            blocks.push({
-                                id: `p_l_${index}`,
-                                type: 'paragraph',
-                                content: { text: part }
-                            });
-                        }
-                    });
-
-                    blocks.push({
-                        id: 'footer_l',
-                        type: 'footer',
-                        content: { text: "Prepared and formatted locally via CraveBiZ Secure eSign offline module." }
+                        blocks.push({
+                            id: `p_l_${index}`,
+                            type: 'paragraph',
+                            content: { text: part }
+                        });
                     });
 
                     const parsedDoc: GeneratedDocument = {
@@ -751,54 +714,15 @@ const DocumentTransformer: React.FC<DocumentTransformerProps> = ({ company, user
                     setRawText(extractedText);
                     setReviewText(extractedText);
                     
-                    const context = getCompanyContext();
                     const parts = extractedText.split(/\n\s*\n/).map(p => p.trim()).filter(Boolean);
-                    const blocks: DocumentBlock[] = [
-                        {
-                            id: 'hdr_l_' + Math.floor(Math.random() * 10000),
-                            type: 'header',
-                            content: {
-                                companyName: context.name,
-                                address: context.address,
-                                email: context.email,
-                                phone: context.phone,
-                                website: context.website
-                            }
-                        },
-                        {
-                            id: 'meta_l_' + Math.floor(Math.random() * 10000),
-                            type: 'metadata',
-                            content: {
-                                documentTitle: fileLabelClean(file.name) || "Assigned Signature Agreement",
-                                clientName: "Authorized Counterparty",
-                                preparedBy: user?.full_name || "Contract Admin",
-                                date: new Date().toLocaleDateString(),
-                                reference: "REF-" + Math.floor(Math.random() * 89999 + 10000)
-                            }
-                        }
-                    ];
+                    const blocks: DocumentBlock[] = [];
 
                     parts.forEach((part, index) => {
-                        const lines = part.split('\n').map(l => l.trim()).filter(Boolean);
-                        if (lines.length === 1 && lines[0].length < 100 && (index === 0 || lines[0] === lines[0].toUpperCase())) {
-                            blocks.push({
-                                id: `title_l_${index}`,
-                                type: 'title',
-                                content: { text: lines[0] }
-                            });
-                        } else {
-                            blocks.push({
-                                id: `p_l_${index}`,
-                                type: 'paragraph',
-                                content: { text: part }
-                            });
-                        }
-                    });
-
-                    blocks.push({
-                        id: 'footer_l',
-                        type: 'footer',
-                        content: { text: "Prepared and formatted locally via CraveBiZ Secure eSign offline module." }
+                        blocks.push({
+                            id: `p_l_${index}`,
+                            type: 'paragraph',
+                            content: { text: part }
+                        });
                     });
 
                     const parsedDoc: GeneratedDocument = {
@@ -847,7 +771,6 @@ const DocumentTransformer: React.FC<DocumentTransformerProps> = ({ company, user
                     const parsedDoc: GeneratedDocument = {
                         documentType: "Uploaded Document",
                         blocks: [
-                            { id: 'meta_up', type: 'metadata', content: { documentTitle: fileLabelClean(uploadedFileName) || "Reviewed Agreement File", clientName: "Counterparty Client", preparedBy: user?.full_name || "Assigned Officer", date: new Date().toLocaleDateString(), reference: "REF-" + Math.floor(Math.random() * 89999 + 10000) } },
                             { id: 'p_up', type: 'paragraph', content: { text: targetText.substring(0, 5000) } }
                         ]
                     };
@@ -1150,7 +1073,7 @@ ${company?.name || 'CraveBiZ Vendor'}`;
             case 'title':
                 return <EditableBlock as="h3" value={(content as any).text || ''} onUpdate={val => handleUpdateBlock(id, { text: val })} className="text-base font-bold text-gray-800 mt-6 mb-3 border-b-2 border-gray-100 pb-1 uppercase tracking-wider" />;
             case 'paragraph':
-                return <EditableBlock as="p" value={(content as any).text || ''} onUpdate={val => handleUpdateBlock(id, { text: val })} className="text-xs text-gray-600 leading-relaxed mb-3 whitespace-pre-line" />;
+                return <EditableBlock as="p" value={(content as any).text || ''} onUpdate={val => handleUpdateBlock(id, { text: val })} className="text-xs text-gray-600 leading-relaxed mb-3 whitespace-pre-wrap" />;
             case 'table':
                 const table = content as TableBlock;
                 return (

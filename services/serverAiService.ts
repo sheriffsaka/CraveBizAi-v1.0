@@ -47,6 +47,19 @@ function getApiKey(): string {
     return key;
 }
 
+export function checkApiKeyStatus() {
+    const rawKey = process.env.GEMINI_API_KEY || process.env.API_KEY || "";
+    const key = getApiKey();
+    return {
+        configured: !!key,
+        keyLength: key.length,
+        preview: key ? `${key.substring(0, 6)}...${key.substring(Math.max(0, key.length - 4))}` : "",
+        source: process.env.GEMINI_API_KEY ? "GEMINI_API_KEY" : (process.env.API_KEY ? "API_KEY" : "None"),
+        hasWhitespace: rawKey.length !== rawKey.trim().length,
+        hasQuotes: (rawKey.startsWith('"') && rawKey.endsWith('"')) || (rawKey.startsWith("'") && rawKey.endsWith("'"))
+    };
+}
+
 function getGeminiClient(): GoogleGenAI {
     const apiKey = getApiKey();
     return new GoogleGenAI({ apiKey });

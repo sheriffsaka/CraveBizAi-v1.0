@@ -7,7 +7,8 @@ import {
     generateClientPaymentHealthReport,
     generateDocumentFromPurpose,
     reviewDocumentContent,
-    generateInvoiceInsight
+    generateInvoiceInsight,
+    checkApiKeyStatus
 } from "./services/serverAiService";
 
 const app = express();
@@ -18,7 +19,12 @@ app.use(express.json());
 
 // API Routes for GenAI Operations
 app.get("/api/health", (req, res) => {
-    res.json({ status: "ok" });
+    res.json({ 
+        status: "ok",
+        environment: process.env.NODE_ENV || "development",
+        vercel: !!process.env.VERCEL,
+        geminiConfig: checkApiKeyStatus()
+    });
 });
 
 app.post("/api/ai/text-response", async (req, res) => {
