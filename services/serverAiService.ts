@@ -34,27 +34,27 @@ function loadEnvFiles() {
 loadEnvFiles();
 
 function getApiKey(): string {
-    const key = process.env.GEMINI_API_KEY || process.env.API_KEY;
+    let key = process.env.GEMINI_API_KEY || process.env.API_KEY;
     if (!key) {
         console.warn("WARNING: Neither GEMINI_API_KEY nor API_KEY is set in environment.");
+        return "";
     }
-    return key || "";
+    key = key.trim();
+    // Strip wrapping quotes if present (common issue in custom environments)
+    if ((key.startsWith('"') && key.endsWith('"')) || (key.startsWith("'") && key.endsWith("'"))) {
+        key = key.substring(1, key.length - 1).trim();
+    }
+    return key;
 }
 
 function getGeminiClient(): GoogleGenAI {
     const apiKey = getApiKey();
-    return new GoogleGenAI({
-        apiKey,
-        httpOptions: {
-            headers: {
-                'User-Agent': 'aistudio-build',
-            }
-        }
-    });
+    return new GoogleGenAI({ apiKey });
 }
 
 function compileMockDocument(text: string, companyContext: any): GeneratedDocument {
     const today = new Date().toLocaleDateString();
+    const ctx = companyContext || {};
     
     // Heuristic analysis of the user's prompt or raw text
     let docType = "Service Agreement";
@@ -115,12 +115,12 @@ function compileMockDocument(text: string, companyContext: any): GeneratedDocume
             id: 'hdr_' + Math.floor(Math.random() * 100000),
             type: 'header',
             content: {
-                companyName: companyContext.name || "CRAVEBIZ AI CLIENT",
-                address: companyContext.address || "123 Technology Way",
-                email: companyContext.email || "billing@cravebiz.com",
-                phone: companyContext.phone || "+1 (555) 012-3456",
-                website: companyContext.website || "https://cravebiz.com",
-                logoUrl: companyContext.logoUrl || ""
+                companyName: ctx.name || "CRAVEBIZ AI CLIENT",
+                address: ctx.address || "123 Technology Way",
+                email: ctx.email || "billing@cravebiz.com",
+                phone: ctx.phone || "+1 (555) 012-3456",
+                website: ctx.website || "https://cravebiz.com",
+                logoUrl: ctx.logoUrl || ""
             }
         },
         {
@@ -129,7 +129,7 @@ function compileMockDocument(text: string, companyContext: any): GeneratedDocume
             content: {
                 documentTitle: docTitle,
                 clientName: clientName,
-                preparedBy: companyContext.name || "CraveBiZ AI Transformer",
+                preparedBy: ctx.name || "CraveBiZ AI Transformer",
                 date: today,
                 reference: "REF-" + Math.floor(Math.random() * 899999 + 100000)
             }
@@ -142,7 +142,7 @@ function compileMockDocument(text: string, companyContext: any): GeneratedDocume
         {
             id: 'p_1',
             type: 'paragraph',
-            content: { text: `This document formalizes the custom parameters and guidelines requested for processing under user purpose: "${text}". The operational standard herein represents a legally binding accord between ${companyContext.name} ("Provider") and ${clientName} ("Client").` }
+            content: { text: `This document formalizes the custom parameters and guidelines requested for processing under user purpose: "${text}". The operational standard herein represents a legally binding accord between ${ctx.name || "Provider"} ("Provider") and ${clientName} ("Client").` }
         }
     ];
 
@@ -268,8 +268,9 @@ export async function generateTextResponse(
 
 export async function transformDocument(rawContent: string, companyContext: any): Promise<GeneratedDocument | null> {
     const apiKey = getApiKey();
+    const ctx = companyContext || {};
     if (!apiKey) {
-        return compileMockDocument(rawContent, companyContext);
+        return compileMockDocument(rawContent, ctx);
     }
 
     const ai = getGeminiClient();
@@ -286,7 +287,7 @@ export async function transformDocument(rawContent: string, companyContext: any)
     - Auto-generate a reference/invoice number if one is not present.
     - Ensure all monetary values are numbers, not strings.`;
 
-    const prompt = `Here is the raw content to transform:\n\n---\n${rawContent}\n---\n\nHere is the context for the company generating this document:\nCompany Name: ${companyContext.name}\nAddress: ${companyContext.address}\nEmail: ${companyContext.email}\nPhone: ${companyContext.phone}\nWebsite: ${companyContext.website}\n\nPlease analyze the raw content and generate a structured JSON document based on the schema.`;
+    const prompt = `Here is the raw content to transform:\n\n---\n${rawContent}\n---\n\nHere is the context for the company generating this document:\nCompany Name: ${ctx.name || "CRAVEBIZ AI CLIENT"}\nAddress: ${ctx.address || ""}\nEmail: ${ctx.email || ""}\nPhone: ${ctx.phone || ""}\nWebsite: ${ctx.website || ""}\n\nPlease analyze the raw content and generate a structured JSON document based on the schema.`;
 
     const schema = {
         type: Type.OBJECT,
@@ -343,13 +344,16 @@ export async function transformDocument(rawContent: string, companyContext: any)
             },
         });
 
-        const jsonString = response.text.trim();
+        const jsonString = response.text ? response.text.trim() : "";
+        if (!jsonString) {
+            throw new Error("Received empty text response from Gemini API");
+        }
         const cleanedJsonString = jsonString.replace(/^```json\s*|```\s*$/g, '');
         const parsedJson = JSON.parse(cleanedJsonString);
         return parsedJson as GeneratedDocument;
     } catch (error) {
         console.error("Gemini AI Error during document transformation. Falling back to structured heuristic draft:", error);
-        return compileMockDocument(rawContent, companyContext);
+        return compileMockDocument(rawContent, ctx);
     }
 }
 
@@ -503,8 +507,9 @@ ${latePayments > 0 ? `- **Action Required**: Historical invoices show delayed pa
 
 export async function generateDocumentFromPurpose(purpose: string, companyContext: any): Promise<GeneratedDocument | null> {
     const apiKey = getApiKey();
+    const ctx = companyContext || {};
     if (!apiKey) {
-        return compileMockDocument(purpose, companyContext);
+        return compileMockDocument(purpose, ctx);
     }
 
     const ai = getGeminiClient();
@@ -522,12 +527,12 @@ export async function generateDocumentFromPurpose(purpose: string, companyContex
     const prompt = `Generate a business document based on this purpose: "${purpose}".
     
     Here is the company context that MUST be placed in the header block:
-    Company Name: ${companyContext.name}
-    Address: ${companyContext.address}
-    Email: ${companyContext.email}
-    Phone: ${companyContext.phone}
-    Website: ${companyContext.website}
-    Logo URL: ${companyContext.logoUrl || ''}
+    Company Name: ${ctx.name || "CRAVEBIZ AI CLIENT"}
+    Address: ${ctx.address || ""}
+    Email: ${ctx.email || ""}
+    Phone: ${ctx.phone || ""}
+    Website: ${ctx.website || ""}
+    Logo URL: ${ctx.logoUrl || ''}
     
     Use the schema to structure the generated document content.`;
 
@@ -584,12 +589,15 @@ export async function generateDocumentFromPurpose(purpose: string, companyContex
                 responseSchema: schema
             },
         });
-        const jsonString = response.text.trim();
+        const jsonString = response.text ? response.text.trim() : "";
+        if (!jsonString) {
+            throw new Error("Received empty text response from Gemini API");
+        }
         const cleaned = jsonString.replace(/^```json\s*|```\s*$/g, '');
         return JSON.parse(cleaned) as GeneratedDocument;
     } catch (error) {
         console.error("Gemini AI Error generating document from purpose. Falling back to structured heuristic draft:", error);
-        return compileMockDocument(purpose, companyContext);
+        return compileMockDocument(purpose, ctx);
     }
 }
 
@@ -661,7 +669,10 @@ export async function reviewDocumentContent(documentText: string): Promise<Docum
                 responseSchema: schema
             },
         });
-        const jsonString = response.text.trim();
+        const jsonString = response.text ? response.text.trim() : "";
+        if (!jsonString) {
+            throw new Error("Received empty text response from Gemini API");
+        }
         const cleaned = jsonString.replace(/^```json\s*|```\s*$/g, '');
         return JSON.parse(cleaned) as DocumentReviewResult;
     } catch (error) {
