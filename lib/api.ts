@@ -1087,5 +1087,274 @@ class CraveBizApi {
       return true;
     }
   }
+
+  // ==========================================================================
+  // NEW DOCSIGNIFY CORE API MODULE
+  // ==========================================================================
+
+  async uploadDocSignifyFile(fileName: string, base64Data: string, fileType: string): Promise<string> {
+    try {
+      // 1. Try uploading to Supabase Storage first if configured
+      try {
+        const cleanBase64 = base64Data.replace(/^data:[^;]+;base64,/, "");
+        const binaryString = atob(cleanBase64);
+        const bytes = new Uint8Array(binaryString.length);
+        for (let i = 0; i < binaryString.length; i++) {
+          bytes[i] = binaryString.charCodeAt(i);
+        }
+        const blob = new Blob([bytes], { type: fileType });
+        const filePath = `${crypto.randomUUID()}_${fileName}`;
+        
+        const { data, error } = await supabase.storage.from('documents').upload(filePath, blob, {
+          contentType: fileType,
+          upsert: true
+        });
+        
+        if (!error && data) {
+          const { data: urlData } = supabase.storage.from('documents').getPublicUrl(filePath);
+          if (urlData?.publicUrl) {
+            return urlData.publicUrl;
+          }
+        }
+      } catch (storageErr) {
+        console.warn("Supabase Storage upload failed, falling back to local server:", storageErr);
+      }
+
+      // 2. Fall back to local Express server file upload
+      const response = await fetch("/api/signify/upload-file", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ fileName, fileType, base64Data })
+      });
+      if (!response.ok) {
+        throw new Error("Local server file upload failed");
+      }
+      const data = await response.json();
+      return data.fileUrl;
+    } catch (err: any) {
+      console.error("uploadDocSignifyFile error:", err);
+      throw err;
+    }
+  }
+
+  async createDocSignifyDocument(
+    docId: string,
+    title: string,
+    originalFileUrl: string,
+    ownerId: string,
+    fileType: string,
+    fileName: string,
+    signatories: { name: string; email: string; role: DbDocumentSignatory['role'] }[]
+  ): Promise<{ document: DbDocument; signatories: DbDocumentSignatory[] }> {
+    try {
+      // 1. Try insert into Supabase tables if they exist
+      try {
+        const documentData = {
+          id: docId,
+          title,
+          original_file_url: originalFileUrl,
+          signed_file_url: null,
+          owner_id: ownerId,
+          status: 'pending',
+          created_at: new Date().toISOString()
+        };
+        const { error: docError } = await supabase.from('documents').insert([documentData]);
+        
+        if (!docError) {
+          const signatoriesData = signatories.map(sig => ({
+            id: crypto.randomUUID(),
+            document_id: docId,
+            name: sig.name,
+            email: sig.email,
+            role: sig.role,
+            token: crypto.randomUUID().replace(/-/g, ''),
+            status: 'pending',
+            signed_at: null
+          }));
+          
+          const { error: sigError } = await supabase.from('document_signatories').insert(signatoriesData);
+          if (!sigError) {
+            return { document: documentData as DbDocument, signatories: signatoriesData as DbDocumentSignatory[] };
+          }
+        }
+      } catch (dbErr) {
+        console.warn("Supabase tables not configured or failed, using local server fallback:", dbErr);
+      }
+
+      // 2. Local Express fallback
+      const response = await fetch("/api/signify/documents", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ id: docId, title, originalFileUrl, ownerId, fileType, fileName, signatories })
+      });
+      if (!response.ok) {
+        throw new Error("Failed to register document on local server");
+      }
+      const data = await response.json();
+      return { document: data.document, signatories: data.signatories };
+    } catch (err: any) {
+      console.error("createDocSignifyDocument error:", err);
+      throw err;
+    }
+  }
+
+  async getDocSignifyDocument(docId: string): Promise<{ document: DbDocument; signatories: DbDocumentSignatory[]; signatures: DbDocumentSignature[] }> {
+    try {
+      // 1. Try Supabase
+      try {
+        const { data: document, error: docError } = await supabase.from('documents').select('*').eq('id', docId).single();
+        if (!docError && document) {
+          const { data: signatories } = await supabase.from('document_signatories').select('*').eq('document_id', docId);
+          const { data: signatures } = await supabase.from('document_signatures').select('*').eq('document_id', docId);
+          return {
+            document: document as DbDocument,
+            signatories: (signatories || []) as DbDocumentSignatory[],
+            signatures: (signatures || []) as DbDocumentSignature[]
+          };
+        }
+      } catch (dbErr) {
+        console.warn("Supabase fetch failed, trying local fallback:", dbErr);
+      }
+
+      // 2. Local Express fallback
+      const response = await fetch(`/api/signify/documents/${docId}`);
+      if (!response.ok) {
+        throw new Error("Failed to retrieve document details");
+      }
+      return await response.json();
+    } catch (err: any) {
+      console.error("getDocSignifyDocument error:", err);
+      throw err;
+    }
+  }
+
+  async getDocSignifyDocumentByToken(token: string): Promise<{ document: DbDocument; signatory: DbDocumentSignatory; signatories: DbDocumentSignatory[]; signatures: DbDocumentSignature[] } | null> {
+    try {
+      // 1. Try Supabase
+      try {
+        const { data: signatory, error: sigError } = await supabase.from('document_signatories').select('*').eq('token', token).single();
+        if (!sigError && signatory) {
+          const docId = signatory.document_id;
+          const { data: document } = await supabase.from('documents').select('*').eq('id', docId).single();
+          const { data: signatories } = await supabase.from('document_signatories').select('*').eq('document_id', docId);
+          const { data: signatures } = await supabase.from('document_signatures').select('*').eq('document_id', docId);
+          return {
+            document: document as DbDocument,
+            signatory: signatory as DbDocumentSignatory,
+            signatories: (signatories || []) as DbDocumentSignatory[],
+            signatures: (signatures || []) as DbDocumentSignature[]
+          };
+        }
+      } catch (dbErr) {
+        console.warn("Supabase validation failed, trying local fallback:", dbErr);
+      }
+
+      // 2. Local Express fallback
+      const response = await fetch(`/api/signify/token-validation?token=${token}`);
+      if (!response.ok) {
+        return null;
+      }
+      return await response.json();
+    } catch (err: any) {
+      console.error("getDocSignifyDocumentByToken error:", err);
+      return null;
+    }
+  }
+
+  async addDocSignifySignature(signature: Omit<DbDocumentSignature, 'id' | 'created_at'>): Promise<DbDocumentSignature> {
+    try {
+      // 1. Try Supabase
+      try {
+        const signatureData = {
+          id: crypto.randomUUID(),
+          document_id: signature.document_id,
+          signatory_id: signature.signatory_id,
+          page_number: signature.page_number,
+          x_position: signature.x_position,
+          y_position: signature.y_position,
+          signature_type: signature.signature_type,
+          signature_image_url: signature.signature_image_url,
+          created_at: new Date().toISOString()
+        };
+        const { error } = await supabase.from('document_signatures').insert([signatureData]);
+        if (!error) {
+          return signatureData as DbDocumentSignature;
+        }
+      } catch (dbErr) {
+        console.warn("Supabase signature insert failed, trying local fallback:", dbErr);
+      }
+
+      // 2. Local Express fallback
+      const response = await fetch("/api/signify/signatures", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(signature)
+      });
+      if (!response.ok) {
+        throw new Error("Failed to add signature on local server");
+      }
+      const data = await response.json();
+      return data.signature;
+    } catch (err: any) {
+      console.error("addDocSignifySignature error:", err);
+      throw err;
+    }
+  }
+
+  async updateDocSignifySignatoryStatus(signatoryId: string, status: 'signed' | 'declined', signatures: DbDocumentSignature[]): Promise<{ document: DbDocument; signatory: DbDocumentSignatory }> {
+    try {
+      // 1. Try Supabase
+      try {
+        const { error: sigError } = await supabase.from('document_signatories')
+          .update({ status, signed_at: status === 'signed' ? new Date().toISOString() : null })
+          .eq('id', signatoryId);
+          
+        if (!sigError) {
+          const { data: signatory } = await supabase.from('document_signatories').select('*').eq('id', signatoryId).single();
+          const docId = signatory.document_id;
+          
+          // Check other signatories to update document status if needed
+          const { data: signatories } = await supabase.from('document_signatories').select('*').eq('document_id', docId);
+          const totalToSign = (signatories || []).filter((s: any) => s.role !== 'owner').length;
+          const signedCount = (signatories || []).filter((s: any) => s.role !== 'owner' && s.status === 'signed').length;
+          
+          let docStatus = 'pending';
+          if (status === 'declined') {
+            docStatus = 'declined';
+          } else if (signedCount === totalToSign) {
+            docStatus = 'completed';
+          } else if (signedCount > 0) {
+            docStatus = 'partially_signed';
+          }
+          
+          await supabase.from('documents').update({ status: docStatus }).eq('id', docId);
+          const { data: document } = await supabase.from('documents').select('*').eq('id', docId).single();
+          
+          return {
+            document: document as DbDocument,
+            signatory: signatory as DbDocumentSignatory
+          };
+        }
+      } catch (dbErr) {
+        console.warn("Supabase status update failed, trying local fallback:", dbErr);
+      }
+
+      // 2. Local Express fallback
+      const response = await fetch(`/api/signify/signatories/${signatoryId}/status`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ status, signatures })
+      });
+      if (!response.ok) {
+        throw new Error("Failed to update status on local server");
+      }
+      const data = await response.json();
+      return { document: data.document, signatory: data.signatory };
+    } catch (err: any) {
+      console.error("updateDocSignifySignatoryStatus error:", err);
+      throw err;
+    }
+  }
 }
 export const api = CraveBizApi.getInstance();
+

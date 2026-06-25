@@ -47,6 +47,9 @@ export default function App() {
   const [publicRecipient, setPublicRecipient] = useState<string | null>(() => {
     return new URLSearchParams(window.location.search).get('recipient');
   });
+  const [publicToken, setPublicToken] = useState<string | null>(() => {
+    return new URLSearchParams(window.location.search).get('token');
+  });
 
   const [activePage, setActivePage] = useState<Page>('dashboard');
   const [isLoading, setIsLoading] = useState(true);
@@ -69,10 +72,11 @@ export default function App() {
   const [resetToken, setResetToken] = useState('');
   const isMounted = useRef(true);
 
-  if (publicDocId) {
+  if (publicToken || publicDocId) {
     return (
       <PublicSigningPortal 
-        docId={publicDocId} 
+        docId={publicDocId || undefined} 
+        token={publicToken || undefined}
         prefilledRecipient={publicRecipient || undefined}
         onBackToLogin={() => {
           window.location.href = window.location.origin + window.location.pathname;
@@ -376,8 +380,28 @@ export default function App() {
               } else {
                   saved = await api.saveGeneratedDoc(activeTenantId!, doc); 
               }
+              const savedId = saved?.id;
+              if (savedId && (doc.originalFileBase64 || doc.originalFileUrl)) {
+                  // Synchronize with modern DocSignify database tables
+                  const signatoriesMapped = (doc.signatures || []).map((s: any) => ({
+                      name: s.name || 'Signatory',
+                      email: s.email || '',
+                      role: (s.signatoryType === 'Main' ? 'main_signatory' : s.signatoryType === 'Witness' ? 'witness' : 'additional_signatory') as DbDocumentSignatory['role']
+                  }));
+                  await api.createDocSignifyDocument(
+                      savedId,
+                      doc.documentType || 'Uploaded Agreement',
+                      doc.originalFileUrl || doc.originalFileBase64 || '',
+                      currentUser?.id || 'owner',
+                      doc.originalFileType || 'pdf',
+                      doc.originalFileName || 'document.pdf',
+                      signatoriesMapped
+                  ).catch(err => {
+                      console.warn("DocSignify tables sync warning:", err);
+                  });
+              }
               await forceSyncData(activeTenantId!); 
-              return saved?.id;
+              return savedId;
           } catch (e) {
               setSyncError(stringifyError(e));
               return undefined;

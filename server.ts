@@ -11,12 +11,18 @@ import {
     generateInvoiceInsight,
     checkApiKeyStatus
 } from "./services/serverAiService";
+import { SignifyService } from "./services/signifyService";
 
 const app = express();
 const PORT = 3000;
 
-// Body parsing middleware
-app.use(express.json());
+// Serve uploaded original and signed documents statically
+app.use("/uploads", express.static(path.join(process.cwd(), "uploads")));
+
+// Body parsing middleware (handling larger base64 uploads)
+app.use(express.json({ limit: '50mb' }));
+app.use(express.urlencoded({ limit: '50mb', extended: true }));
+
 
 const SIGNATURES_FILE = path.join(process.cwd(), "public_signatures.json");
 const DOCUMENTS_FILE = path.join(process.cwd(), "public_documents.json");
@@ -130,6 +136,147 @@ app.post("/api/public/documents", (req, res) => {
         res.status(500).json({ error: err.message || "Internal server error" });
     }
 });
+
+// ============================================================================
+// DOCSIGNIFY CONTROLLER ENDPOINTS
+// ============================================================================
+
+// 1. Save base64-encoded files exactly as uploaded to disk (PDF, DOCX, Images)
+app.post("/api/signify/upload-file", (req, res) => {
+    try {
+        const { fileName, fileType, base64Data } = req.body;
+        if (!fileName || !base64Data) {
+            return res.status(400).json({ error: "fileName and base64Data are required" });
+        }
+        
+        const fileInfo = SignifyService.saveUploadedFile(fileName, base64Data, fileType || "pdf");
+        res.json({
+            success: true,
+            fileUrl: fileInfo.fileUrl
+        });
+    } catch (err: any) {
+        console.error("DocSignify file upload error:", err);
+        res.status(500).json({ error: err.message || "Internal server error saving document" });
+    }
+});
+
+// 2. Create/register a document for signing
+app.post("/api/signify/documents", (req, res) => {
+    try {
+        const { id, title, originalFileUrl, ownerId, fileType, fileName, signatories } = req.body;
+        if (!id || !title || !originalFileUrl || !ownerId || !signatories) {
+            return res.status(400).json({ error: "Missing required fields for document creation" });
+        }
+        
+        const result = SignifyService.createDocument(id, title, originalFileUrl, ownerId, fileType || "pdf", fileName || "document.pdf", signatories);
+        res.json({
+            success: true,
+            document: result.document,
+            signatories: result.signatories
+        });
+    } catch (err: any) {
+        console.error("DocSignify document creation error:", err);
+        res.status(500).json({ error: err.message || "Internal server error" });
+    }
+});
+
+// 3. Retrieve document, signatories, and signatures for an ID
+app.get("/api/signify/documents/:id", (req, res) => {
+    try {
+        const result = SignifyService.getDocumentDetails(req.params.id);
+        if (!result.document) {
+            return res.status(404).json({ error: "Document not found" });
+        }
+        res.json(result);
+    } catch (err: any) {
+        console.error("DocSignify fetch document details error:", err);
+        res.status(500).json({ error: err.message || "Internal server error" });
+    }
+});
+
+// 4. Validate a token before loading the public signing portal
+app.get("/api/signify/token-validation", (req, res) => {
+    try {
+        const { token } = req.query;
+        if (!token || typeof token !== "string") {
+            return res.status(400).json({ error: "Secure token is required for validation" });
+        }
+        
+        const result = SignifyService.getDocumentByToken(token);
+        if (!result) {
+            return res.status(403).json({ error: "Invalid or expired secure signing token" });
+        }
+        
+        // Ensure signatory hasn't completed or declined yet (security requirement)
+        if (result.signatory.status === "signed") {
+            return res.json({
+                success: true,
+                alreadySigned: true,
+                document: result.document,
+                signatories: result.signatories
+            });
+        }
+        
+        res.json({
+            success: true,
+            ...result
+        });
+    } catch (err: any) {
+        console.error("DocSignify token validation error:", err);
+        res.status(500).json({ error: err.message || "Internal server error validating token" });
+    }
+});
+
+// 5. Add/place a signatory's signature details on screen
+app.post("/api/signify/signatures", (req, res) => {
+    try {
+        const { document_id, signatory_id, page_number, x_position, y_position, width, height, signature_type, signature_image_url } = req.body;
+        if (!document_id || !signatory_id || page_number === undefined || x_position === undefined || y_position === undefined || !signature_image_url) {
+            return res.status(400).json({ error: "Missing placement attributes for signature" });
+        }
+        
+        const signature = SignifyService.addSignature({
+            document_id,
+            signatory_id,
+            page_number,
+            x_position,
+            y_position,
+            width,
+            height,
+            signature_type,
+            signature_image_url
+        });
+        
+        res.json({
+            success: true,
+            signature
+        });
+    } catch (err: any) {
+        console.error("DocSignify add signature error:", err);
+        res.status(500).json({ error: err.message || "Internal server error" });
+    }
+});
+
+// 6. Finalize signature workflow and update status (and compile signed PDF if completed)
+app.post("/api/signify/signatories/:id/status", async (req, res) => {
+    try {
+        const { status, signatures } = req.body;
+        if (!status || !['signed', 'declined'].includes(status)) {
+            return res.status(400).json({ error: "Invalid status value. Must be 'signed' or 'declined'." });
+        }
+        
+        const result = await SignifyService.updateSignatoryStatus(req.params.id, status, signatures || []);
+        res.json({
+            success: true,
+            document: result.document,
+            signatory: result.signatory
+        });
+    } catch (err: any) {
+        console.error("DocSignify signatory status update error:", err);
+        res.status(500).json({ error: err.message || "Internal server error" });
+    }
+});
+
 
 app.post("/api/ai/text-response", async (req, res) => {
     try {

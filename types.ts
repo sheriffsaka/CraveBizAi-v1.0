@@ -190,3 +190,42 @@ export interface DocumentReviewResult {
   suggestions: string[];
   keyClauses: { name: string; content: string }[];
 }
+
+export interface DbDocument {
+  id: string;
+  title: string;
+  original_file_url: string;
+  signed_file_url: string | null;
+  owner_id: string;
+  status: 'pending' | 'partially_signed' | 'completed' | 'declined';
+  created_at: string;
+  file_type?: string; // e.g. pdf, docx, png, jpg, jpeg
+  file_name?: string;
+  // Fallback field to hold local data if needed
+  content_json?: any;
+}
+
+export interface DbDocumentSignatory {
+  id: string;
+  document_id: string;
+  name: string;
+  email: string;
+  role: 'owner' | 'main_signatory' | 'witness' | 'additional_signatory';
+  token: string;
+  status: 'pending' | 'signed' | 'declined';
+  signed_at: string | null;
+}
+
+export interface DbDocumentSignature {
+  id: string;
+  document_id: string;
+  signatory_id: string;
+  page_number: number;
+  x_position: number;
+  y_position: number;
+  width?: number;
+  height?: number;
+  signature_type: 'draw' | 'type' | 'upload';
+  signature_image_url: string; // signature image base64 or storage url
+  created_at: string;
+}

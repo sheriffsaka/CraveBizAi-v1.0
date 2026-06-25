@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useRef, useMemo } from 'react';
-import { StoredGeneratedDoc, DocumentBlock, SignatureInfo } from '../types';
+import { StoredGeneratedDoc, DocumentBlock, SignatureInfo, DbDocument, DbDocumentSignatory, DbDocumentSignature } from '../types';
 import { api } from '../lib/api';
+import { DocumentSignifyViewer } from './DocumentSignifyViewer';
 
 const base64ToUtf8 = (str: string): string => {
     try {
@@ -14,18 +15,26 @@ const base64ToUtf8 = (str: string): string => {
 };
 
 interface PublicSigningPortalProps {
-    docId: string;
+    docId?: string;
+    token?: string;
     prefilledRecipient?: string;
     onBackToLogin?: () => void;
 }
 
-export default function PublicSigningPortal({ docId, prefilledRecipient, onBackToLogin }: PublicSigningPortalProps) {
+export default function PublicSigningPortal({ docId, token, prefilledRecipient, onBackToLogin }: PublicSigningPortalProps) {
     const [loading, setLoading] = useState(true);
     const [document, setDocument] = useState<StoredGeneratedDoc | null>(null);
     const [signatories, setSignatories] = useState<SignatureInfo[]>([]);
     const [activeSigIndex, setActiveSigIndex] = useState<number | null>(null);
     const [error, setError] = useState<string | null>(null);
     const [isSignedSuccess, setIsSignedSuccess] = useState(false);
+
+    // Modern DB state
+    const [dbDoc, setDbDoc] = useState<DbDocument | null>(null);
+    const [dbSignatory, setDbSignatory] = useState<DbDocumentSignatory | null>(null);
+    const [dbSignatories, setDbSignatories] = useState<DbDocumentSignatory[]>([]);
+    const [dbSignatures, setDbSignatures] = useState<DbDocumentSignature[]>([]);
+    const [alreadySigned, setAlreadySigned] = useState(false);
 
     // Manual Email verification state
     const [userEmailInput, setUserEmailInput] = useState(prefilledRecipient || '');
@@ -66,29 +75,89 @@ export default function PublicSigningPortal({ docId, prefilledRecipient, onBackT
         };
     }, []);
 
-
-
-    // Load document on init
+    // Load document and validation on init
     useEffect(() => {
         async function fetchDoc() {
             setLoading(true);
             try {
-                const fetched = await api.getPublicDoc(docId);
-                if (fetched) {
-                    setDocument(fetched);
-                    setSignatories(fetched.signatures || []);
-                    
-                    // Match prefilled email signature slot
-                    if (prefilledRecipient && fetched.signatures) {
-                        const matchedIdx = fetched.signatures.findIndex(
-                            s => s.email?.trim().toLowerCase() === prefilledRecipient.trim().toLowerCase()
-                        );
-                        if (matchedIdx > -1) {
-                            setActiveSigIndex(matchedIdx);
+                if (token) {
+                    const data = await api.getDocSignifyDocumentByToken(token);
+                    if (data) {
+                        setDbDoc(data.document);
+                        setDbSignatory(data.signatory);
+                        setDbSignatories(data.signatories);
+                        setDbSignatures(data.signatures || []);
+                        
+                        // Map old legacy structures to make sure we don't break legacy page layouts
+                        const legacySigs = data.signatories.map(s => ({
+                            id: s.id,
+                            name: s.name,
+                            email: s.email,
+                            title: s.role.replace('_', ' ').toUpperCase(),
+                            signatoryType: s.role === 'main_signatory' ? 'Main' : s.role === 'witness' ? 'Witness' : 'Additional',
+                            isSigned: s.status === 'signed',
+                            value: '',
+                            type: 'draw' as const,
+                            date: s.signed_at || ''
+                        }));
+                        setSignatories(legacySigs);
+                        
+                        // Match index
+                        const activeIndex = data.signatories.findIndex(s => s.id === data.signatory.id);
+                        if (activeIndex > -1) {
+                            setActiveSigIndex(activeIndex);
+                        }
+
+                        // Check if already completed signing
+                        if (data.signatory.status === 'signed') {
+                            setAlreadySigned(true);
+                        }
+                    } else {
+                        setError("This secure signing link is invalid or has expired.");
+                    }
+                } else if (docId) {
+                    // Backwards compatible or ID-based loading
+                    const fetched = await api.getDocSignifyDocument(docId);
+                    if (fetched && fetched.document) {
+                        setDbDoc(fetched.document);
+                        setDbSignatories(fetched.signatories);
+                        setDbSignatures(fetched.signatures || []);
+                        
+                        const legacySigs = fetched.signatories.map(s => ({
+                            id: s.id,
+                            name: s.name,
+                            email: s.email,
+                            title: s.role.replace('_', ' ').toUpperCase(),
+                            signatoryType: s.role === 'main_signatory' ? 'Main' : s.role === 'witness' ? 'Witness' : 'Additional',
+                            isSigned: s.status === 'signed',
+                            value: '',
+                            type: 'draw' as const,
+                            date: s.signed_at || ''
+                        }));
+                        setSignatories(legacySigs);
+
+                        if (prefilledRecipient) {
+                            const activeIndex = fetched.signatories.findIndex(
+                                s => s.email.trim().toLowerCase() === prefilledRecipient.trim().toLowerCase()
+                            );
+                            if (activeIndex > -1) {
+                                setActiveSigIndex(activeIndex);
+                                setDbSignatory(fetched.signatories[activeIndex]);
+                                if (fetched.signatories[activeIndex].status === 'signed') {
+                                    setAlreadySigned(true);
+                                }
+                            }
+                        }
+                    } else {
+                        // Try old API fallback if modern document not found
+                        const oldDoc = await api.getPublicDoc(docId);
+                        if (oldDoc) {
+                            setDocument(oldDoc);
+                            setSignatories(oldDoc.signatures || []);
+                        } else {
+                            setError("Could not locate this agreement. Please verify your signature invite credentials.");
                         }
                     }
-                } else {
-                    setError("Could not locate this agreement. Please verify your signature invite credentials.");
                 }
             } catch (err: any) {
                 setError("Vault retrieval failed: " + (err.message || err));
@@ -97,10 +166,24 @@ export default function PublicSigningPortal({ docId, prefilledRecipient, onBackT
             }
         }
         fetchDoc();
-    }, [docId, prefilledRecipient]);
+    }, [docId, token, prefilledRecipient]);
 
     // Parse document details and signature progression overview
     const docOverview = useMemo(() => {
+        if (dbDoc) {
+            const totalSigs = dbSignatories.length;
+            const signedSigs = dbSignatories.filter(s => s.status === 'signed').length;
+            return {
+                title: dbDoc.filename || dbDoc.document_type || 'Uploaded Agreement',
+                company: 'DocSignify Secured',
+                date: dbDoc.created_at ? new Date(dbDoc.created_at).toLocaleDateString() : 'Recent',
+                client: '',
+                reference: dbDoc.id,
+                totalSigs,
+                signedSigs
+            };
+        }
+
         if (!document) return null;
         
         let title = document.documentType || 'Uploaded Agreement';
@@ -136,7 +219,7 @@ export default function PublicSigningPortal({ docId, prefilledRecipient, onBackT
             totalSigs,
             signedSigs
         };
-    }, [document, signatories]);
+    }, [dbDoc, dbSignatories, document, signatories]);
 
     // Match signature slot of the prefilled invited recipient
     const matchedSignatory = useMemo(() => {
@@ -267,7 +350,7 @@ export default function PublicSigningPortal({ docId, prefilledRecipient, onBackT
     };
 
     const handleApplySignature = async () => {
-        if (activeSigIndex === null) return;
+        if (activeSigIndex === null && !dbSignatory) return;
 
         let value = '';
         if (sigType === 'draw') {
@@ -297,13 +380,105 @@ export default function PublicSigningPortal({ docId, prefilledRecipient, onBackT
 
         const dateStr = new Date().toLocaleString();
 
+        let finalSigImage = value;
+        if (sigType === 'type') {
+            // Draw cursive text to a canvas to get a real transparent PNG data URL
+            const fontCanvas = window.document.createElement('canvas');
+            fontCanvas.width = 300;
+            fontCanvas.height = 100;
+            const ctx = fontCanvas.getContext('2d');
+            if (ctx) {
+                ctx.fillStyle = 'rgba(255, 255, 255, 0)'; // Transparent background
+                ctx.clearRect(0, 0, fontCanvas.width, fontCanvas.height);
+                const fonts = ["'Dancing Script', cursive", "'Great Vibes', cursive", "'Herr Von Muellerhoff', cursive", "'Homemade Apple', cursive"];
+                const fontStr = fonts[selectedCursiveStyle] || "'Dancing Script', cursive";
+                ctx.font = `bold 28px ${fontStr}`;
+                ctx.fillStyle = '#0f172a'; // Slate-900 ink
+                ctx.textAlign = 'center';
+                ctx.textBaseline = 'middle';
+                ctx.fillText(typedName, fontCanvas.width / 2, fontCanvas.height / 2);
+                finalSigImage = fontCanvas.toDataURL('image/png');
+            }
+        }
+
+        // Handle Modern Database flow
+        if (dbSignatory && dbDoc) {
+            setLoading(true);
+            try {
+                // Find existing signature template for this signatory
+                let targetSig = dbSignatures.find(s => s.signatory_id === dbSignatory.id);
+                if (!targetSig) {
+                    targetSig = {
+                        id: 'sig-' + Math.random().toString(36).substr(2, 9),
+                        document_id: dbDoc.id,
+                        signatory_id: dbSignatory.id,
+                        page_number: 1,
+                        x_position: 50,
+                        y_position: 85,
+                        width: 140,
+                        height: 60,
+                        signature_image_url: finalSigImage,
+                        signed_at: new Date().toISOString()
+                    };
+                } else {
+                    targetSig = {
+                        ...targetSig,
+                        signature_image_url: finalSigImage,
+                        signed_at: new Date().toISOString()
+                    };
+                }
+
+                // Call addDocSignifySignature
+                const savedSig = await api.addDocSignifySignature(
+                    targetSig.document_id,
+                    targetSig.signatory_id,
+                    targetSig.page_number,
+                    targetSig.x_position,
+                    targetSig.y_position,
+                    targetSig.width || 140,
+                    targetSig.height || 60,
+                    finalSigImage
+                );
+
+                if (savedSig) {
+                    const nextSigs = dbSignatures.filter(s => s.id !== targetSig.id);
+                    const updatedSigs = [...nextSigs, savedSig];
+                    setDbSignatures(updatedSigs);
+                    
+                    // Transition status to signed
+                    const updatedSignatories = await api.updateDocSignifySignatoryStatus(
+                        dbSignatory.id,
+                        'signed',
+                        updatedSigs
+                    );
+                    
+                    if (updatedSignatories) {
+                        setDbSignatories(updatedSignatories);
+                        const selfMatched = updatedSignatories.find(s => s.id === dbSignatory.id);
+                        if (selfMatched) setDbSignatory(selfMatched);
+                        setAlreadySigned(true);
+                        setIsSignedSuccess(true);
+                    }
+                } else {
+                    alert("Could not save the signature details. Please try again.");
+                }
+            } catch (err: any) {
+                alert("Error saving signature to DB: " + err.message);
+            } finally {
+                setLoading(false);
+            }
+            setIsSignModalOpen(false);
+            return;
+        }
+
+        // Legacy fallback
         const updatedSignatures = signatories.map((sig, idx) => {
             if (idx === activeSigIndex) {
                 return {
                     ...sig,
                     isSigned: true,
                     type: sigType,
-                    value: value,
+                    value: finalSigImage,
                     name: typedName || sig.name,
                     title: sigTitle || sig.title,
                     date: dateStr
@@ -318,7 +493,7 @@ export default function PublicSigningPortal({ docId, prefilledRecipient, onBackT
         // Save immediately back to the cloud/DB
         setLoading(true);
         try {
-            const success = await api.savePublicDocSignature(docId, updatedSignatures);
+            const success = await api.savePublicDocSignature(docId!, updatedSignatures);
             if (success) {
                 setIsSignedSuccess(true);
             } else {
@@ -486,50 +661,70 @@ export default function PublicSigningPortal({ docId, prefilledRecipient, onBackT
                             CraveBiZ Secure E-Sign Protocol
                         </span>
                         <span className="text-[10px] font-semibold text-gray-400 font-mono">
-                            ID: {document.id.substring(0, 8).toUpperCase()}
+                            ID: {(dbDoc?.id || document?.id || '').substring(0, 8).toUpperCase()}
                         </span>
                     </div>
 
-                    {document.originalFileBase64 ? (
-                        document.originalFileType === 'application/pdf' ? (
-                            <div className="w-full mb-6 border border-gray-200 rounded-2xl overflow-hidden bg-gray-50 shadow-sm">
-                                <div className="bg-gray-100 px-4 py-2 border-b border-gray-200 flex justify-between items-center">
-                                    <span className="text-xs font-bold text-gray-700 flex items-center gap-1.5">
-                                        <svg className="w-4 h-4 text-red-500" fill="currentColor" viewBox="0 0 20 20"><path d="M9 2a2 2 0 00-2 2v8a2 2 0 002 2h6a2 2 0 002-2V6l-4-4H9z"></path></svg>
-                                        Preserved Uploaded PDF ({document.originalFileName || 'original.pdf'})
-                                    </span>
-                                    <span className="text-[10px] font-semibold text-emerald-600 bg-emerald-50 px-2.5 py-1 rounded-full border border-emerald-100 uppercase tracking-wider">Original Format Intact</span>
-                                </div>
-                                <object
-                                    data={document.originalFileBase64}
-                                    type="application/pdf"
-                                    className="w-full h-[650px]"
-                                >
-                                    <iframe
-                                        src={document.originalFileBase64}
-                                        className="w-full h-[650px] border-0"
-                                        title="Preserved Document PDF Viewer"
-                                    />
-                                </object>
-                            </div>
-                        ) : (
-                            <div className="w-full mb-6 border border-gray-200 rounded-2xl overflow-hidden bg-white shadow-sm">
-                                <div className="bg-gray-50 px-4 py-2 border-b border-gray-200 flex justify-between items-center">
-                                    <span className="text-xs font-bold text-gray-700 flex items-center gap-1.5">
-                                        <svg className="w-4 h-4 text-blue-500" fill="currentColor" viewBox="0 0 20 20"><path d="M4 4a2 2 0 012-2h4.586A2 2 0 0112 2.586L15.414 6A2 2 0 0116 7.414V16a2 2 0 01-2 2H6a2 2 0 01-2-2V4z"></path></svg>
-                                        Preserved Uploaded Word Document ({document.originalFileName || 'original.docx'})
-                                    </span>
-                                    <span className="text-[10px] font-semibold text-emerald-600 bg-emerald-50 px-2.5 py-1 rounded-full border border-emerald-100 uppercase tracking-wider">Original Format Intact</span>
-                                </div>
-                                <div 
-                                    className="p-8 max-w-none text-gray-800 leading-relaxed overflow-y-auto whitespace-normal font-sans text-xs [&_table]:w-full [&_table]:border-collapse [&_table]:my-4 [&_th]:bg-gray-50 [&_th]:p-2 [&_th]:border [&_th]:border-gray-200 [&_th]:text-left [&_th]:font-bold [&_td]:p-2 [&_td]:border [&_td]:border-gray-100 [&_ul]:list-disc [&_ul]:pl-5 [&_ol]:list-decimal [&_ol]:pl-5 [&_p]:mb-3 [&_h1]:text-base [&_h1]:font-bold [&_h1]:mt-4 [&_h1]:mb-2 [&_h2]:text-sm [&_h2]:font-bold [&_h2]:mt-3 [&_h2]:mb-2"
-                                    style={{ maxHeight: '650px' }}
-                                    dangerouslySetInnerHTML={{ __html: base64ToUtf8(document.originalFileBase64 || '') }}
-                                />
-                            </div>
-                        )
+                    {dbDoc ? (
+                        <div className="w-full mb-6">
+                            <DocumentSignifyViewer
+                                fileUrl={dbDoc.original_file_url || dbDoc.original_file_base64 || ''}
+                                fileType={dbDoc.original_file_type || 'pdf'}
+                                signatures={dbSignatures}
+                                signatories={dbSignatories}
+                                activeSignatory={dbSignatory}
+                                readOnly={alreadySigned}
+                                onPlaceSignature={(placement) => {
+                                    if (dbSignatory && !alreadySigned) {
+                                        setTypedName(dbSignatory.name);
+                                        setSigTitle(dbSignatory.role.toUpperCase().replace('_', ' '));
+                                        setIsSignModalOpen(true);
+                                    }
+                                }}
+                            />
+                        </div>
+                    ) : document?.originalFileBase64 ? (
+                        <div className="w-full mb-6">
+                            <DocumentSignifyViewer
+                                fileUrl={document.originalFileBase64}
+                                fileType={document.originalFileType || 'pdf'}
+                                signatures={dbSignatures.length > 0 ? dbSignatures : signatories.map((s, idx) => ({
+                                    id: s.id || `sig-${idx}`,
+                                    document_id: docId || '',
+                                    signatory_id: s.id || `sig-${idx}`,
+                                    page_number: 1,
+                                    x_position: 50,
+                                    y_position: 80 + idx * 5,
+                                    width: 140,
+                                    height: 55,
+                                    signature_image_url: s.isSigned ? s.value : undefined
+                                }))}
+                                signatories={dbSignatories.length > 0 ? dbSignatories : signatories.map((s, idx) => ({
+                                    id: s.id || `sig-${idx}`,
+                                    document_id: docId || '',
+                                    name: s.name,
+                                    email: s.email || '',
+                                    role: s.signatoryType === 'Main' ? 'main_signatory' : s.signatoryType === 'Witness' ? 'witness' : 'additional_signatory',
+                                    status: s.isSigned ? 'signed' : 'pending'
+                                }))}
+                                activeSignatory={activeSigIndex !== null ? (dbSignatory || {
+                                    id: signatories[activeSigIndex]?.id || `sig-${activeSigIndex}`,
+                                    document_id: docId || '',
+                                    name: signatories[activeSigIndex]?.name,
+                                    email: signatories[activeSigIndex]?.email || '',
+                                    role: signatories[activeSigIndex]?.signatoryType === 'Main' ? 'main_signatory' : 'witness',
+                                    status: 'pending'
+                                }) : null}
+                                readOnly={activeSigIndex === null}
+                                onPlaceSignature={() => {
+                                    if (activeSigIndex !== null) {
+                                        setIsSignModalOpen(true);
+                                    }
+                                }}
+                            />
+                        </div>
                     ) : (
-                        document.blocks.map(block => renderBlock(block))
+                        document?.blocks.map(block => renderBlock(block))
                     )}
 
                     {/* Signatures Panel Inside Document */}

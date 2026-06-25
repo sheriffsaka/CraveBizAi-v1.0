@@ -3,9 +3,11 @@ import React, { useState, useRef, useEffect } from 'react';
 // @ts-ignore
 import mammoth from 'mammoth';
 import { transformDocument, generateDocumentFromPurpose, reviewDocumentContent } from '../services/aiGenerationService';
-import { GeneratedDocument, DocumentBlock, HeaderBlock, MetadataBlock, TableBlock, SummaryBlock, Company, User, StoredGeneratedDoc, DocumentReviewResult, SignatureInfo } from '../types';
+import { GeneratedDocument, DocumentBlock, HeaderBlock, MetadataBlock, TableBlock, SummaryBlock, Company, User, StoredGeneratedDoc, DocumentReviewResult, SignatureInfo, DbDocumentSignatory, DbDocumentSignature } from '../types';
 import EditableBlock from './EditableBlock';
 import Icon from './common/Icon';
+import { DocumentSignifyViewer } from './DocumentSignifyViewer';
+import { api } from '../lib/api';
 
 const utf8ToBase64 = (str: string): string => {
     try {
@@ -308,6 +310,7 @@ const DocumentTransformer: React.FC<DocumentTransformerProps> = ({ company, user
     const [newSigEmail, setNewSigEmail] = useState('');
     const [newSigType, setNewSigType] = useState<'Main' | 'Witness'>('Main');
     const [editingDocId, setEditingDocId] = useState<string | null>(null);
+    const [selectedSigIndexToPlace, setSelectedSigIndexToPlace] = useState<number | null>(0);
 
     const [isAddSignatoryModalOpen, setIsAddSignatoryModalOpen] = useState(false);
     const [isRequestModalOpen, setIsRequestModalOpen] = useState(false);
@@ -412,7 +415,7 @@ const DocumentTransformer: React.FC<DocumentTransformerProps> = ({ company, user
             };
             setGeneratedDoc(nextDoc);
             
-            onSaveDoc(nextDoc, editingDocId || undefined).then(savedId => {
+            onSaveDoc(nextDoc, editingDocId || undefined).then(async (savedId) => {
                 if (savedId) {
                     setEditingDocId(savedId);
                     
@@ -440,7 +443,22 @@ const DocumentTransformer: React.FC<DocumentTransformerProps> = ({ company, user
                     const hashSuffix = encodedData ? `#data=${encodeURIComponent(encodedData)}` : '';
                     
                     // Generate Direct Recipient Link with hash payload suffix
-                    const signingUrl = `${window.location.origin}/?docId=${savedId}&recipient=${encodeURIComponent(requestEmail.trim())}${hashSuffix}`;
+                    let signingUrl = `${window.location.origin}/?docId=${savedId}&recipient=${encodeURIComponent(requestEmail.trim())}${hashSuffix}`;
+                    
+                    try {
+                        // Attempt to locate modern secure token-based signing link
+                        const dbInfo = await api.getDocSignifyDocument(savedId);
+                        if (dbInfo && dbInfo.signatories) {
+                            const matchedSignatory = dbInfo.signatories.find(
+                                s => s.email.toLowerCase() === requestEmail.trim().toLowerCase()
+                            );
+                            if (matchedSignatory && matchedSignatory.token) {
+                                signingUrl = `${window.location.origin}/?token=${matchedSignatory.token}`;
+                            }
+                        }
+                    } catch (err) {
+                        console.warn("Could not retrieve secure token-based link, using fallback link:", err);
+                    }
                     
                     // Pre-fill email mailto client Link
                     const plainSubject = `Action Required: Secure Electronic Signature Requested for Agreement`;
@@ -710,71 +728,53 @@ const DocumentTransformer: React.FC<DocumentTransformerProps> = ({ company, user
     const processUploadedFile = (file: File) => {
         setUploadedFileName(file.name);
         setError(null);
-        
-        if (file.name.endsWith('.pdf') || file.type === 'application/pdf') {
-            setIsLoading(true);
-            const reader = new FileReader();
-            reader.onload = async (event) => {
+        setIsLoading(true);
+
+        const reader = new FileReader();
+        reader.onload = async (event) => {
+            try {
+                const base64Data = reader.result as string;
+                let originalFileUrl = '';
+                
+                // 1. Upload original file to secure server storage
                 try {
-                    const arrayBuffer = event.target?.result as ArrayBuffer;
-                    const extractedText = await extractTextFromPdf(arrayBuffer);
-                    setRawText(extractedText);
-                    setReviewText(extractedText);
-                    
-                    const parts = extractedText.split(/\n\s*\n/).map(p => p.trim()).filter(Boolean);
-                    const blocks: DocumentBlock[] = [];
-
-                    parts.forEach((part, index) => {
-                        blocks.push({
-                            id: `p_l_${index}`,
-                            type: 'paragraph',
-                            content: { text: part }
-                        });
-                    });
-
-                    // Read PDF as Base64 Data URL to preserve exact format in viewer
-                    const base64Reader = new FileReader();
-                    base64Reader.onload = () => {
-                        const parsedDoc: GeneratedDocument = {
-                            documentType: fileLabelClean(file.name) || "Uploaded Document",
-                            blocks,
-                            originalFileBase64: base64Reader.result as string,
-                            originalFileType: 'application/pdf',
-                            originalFileName: file.name
-                        };
-                        handleLoadNewDocument(parsedDoc);
-                    };
-                    base64Reader.readAsDataURL(file);
-                } catch (err: any) {
-                    console.error("PDF extraction error:", err);
-                    setError("Failed to extract text from PDF: " + err.message);
-                } finally {
-                    setIsLoading(false);
+                    const uploadRes = await api.uploadDocSignifyFile(file.name, base64Data, file.type);
+                    if (uploadRes && uploadRes.success) {
+                        originalFileUrl = uploadRes.url;
+                    }
+                } catch (uploadErr) {
+                    console.warn("Server upload failed, relying on secure inline base64:", uploadErr);
                 }
-            };
-            reader.readAsArrayBuffer(file);
-            return;
-        }
 
-        if (file.name.endsWith('.docx') || file.type === 'application/vnd.openxmlformats-officedocument.wordprocessingml.document') {
-            setIsLoading(true);
-            const reader = new FileReader();
-            reader.onload = async (event) => {
-                try {
-                    const arrayBuffer = event.target?.result as ArrayBuffer;
-                    let extractedText = '';
-                    const blocks: DocumentBlock[] = [];
-                    let docxHtml = '';
+                let extractedText = '';
+                let blocks: DocumentBlock[] = [];
+                let mimeType = file.type;
 
+                if (file.name.endsWith('.pdf') || file.type === 'application/pdf') {
+                    mimeType = 'application/pdf';
                     try {
-                        // @ts-ignore
+                        const arrayBuffer = await file.arrayBuffer();
+                        extractedText = await extractTextFromPdf(arrayBuffer);
+                        const parts = extractedText.split(/\n\s*\n/).map(p => p.trim()).filter(Boolean);
+                        parts.forEach((part, index) => {
+                            blocks.push({
+                                id: `p_l_${index}`,
+                                type: 'paragraph',
+                                content: { text: part }
+                            });
+                        });
+                    } catch (pdfErr) {
+                        console.warn("PDF text parsing warning:", pdfErr);
+                    }
+                } else if (file.name.endsWith('.docx') || file.type === 'application/vnd.openxmlformats-officedocument.wordprocessingml.document') {
+                    mimeType = 'docx-html';
+                    try {
+                        const arrayBuffer = await file.arrayBuffer();
                         const result = await mammoth.convertToHtml({ arrayBuffer });
-                        const htmlValue = result.value || '';
-                        extractedText = htmlValue;
-                        docxHtml = htmlValue;
+                        extractedText = result.value || '';
                         
-                        // Split HTML nicely by paragraph tags to keep logical layout blocks
-                        const htmlParts = htmlValue.split('</p>').map(p => p.trim() + (p.trim() ? '</p>' : '')).filter(Boolean);
+                        // Parse HTML into blocks for legacy previewers
+                        const htmlParts = extractedText.split('</p>').map(p => p.trim() + (p.trim() ? '</p>' : '')).filter(Boolean);
                         htmlParts.forEach((part, index) => {
                             if (part.replace(/<[^>]*>/g, '').trim() || part.includes('<img') || part.includes('<table')) {
                                 blocks.push({
@@ -784,47 +784,49 @@ const DocumentTransformer: React.FC<DocumentTransformerProps> = ({ company, user
                                 });
                             }
                         });
-                    } catch (htmlErr) {
-                        console.warn("Mammoth HTML conversion failed, falling back to raw text:", htmlErr);
-                        // @ts-ignore
-                        const result = await mammoth.extractRawText({ arrayBuffer });
-                        extractedText = result.value;
-                        docxHtml = `<p>${extractedText.split('\n').join('</p><p>')}</p>`;
-                        
-                        const parts = extractedText.split(/\n\s*\n/).map(p => p.trim()).filter(Boolean);
-                        parts.forEach((part, index) => {
-                            blocks.push({
-                                id: `p_l_${index}`,
-                                type: 'paragraph',
-                                content: { text: part }
-                            });
-                        });
+                    } catch (docxErr) {
+                        console.warn("DOCX rendering extraction warning:", docxErr);
                     }
-                    
-                    setRawText(extractedText);
-                    setReviewText(extractedText);
-
-                    const parsedDoc: GeneratedDocument = {
-                        documentType: fileLabelClean(file.name) || "Uploaded Document",
-                        blocks,
-                        originalFileBase64: utf8ToBase64(docxHtml),
-                        originalFileType: 'docx-html',
-                        originalFileName: file.name
-                    };
-
-                    handleLoadNewDocument(parsedDoc);
-                } catch (err: any) {
-                    console.error("Word Doc extraction error:", err);
-                    setError("Failed to extract text from Word document: " + err.message);
-                } finally {
-                    setIsLoading(false);
+                } else if (file.type.startsWith('image/')) {
+                    mimeType = file.type;
+                    extractedText = `Image document: ${file.name}`;
+                    blocks.push({
+                        id: 'img_block',
+                        type: 'paragraph',
+                        content: { text: `[Image Document Preview: ${file.name}]` }
+                    });
+                } else {
+                    throw new Error("Unsupported file format. Please upload PDF, DOCX, or Image (PNG/JPG/JPEG).");
                 }
-            };
-            reader.readAsArrayBuffer(file);
-            return;
-        }
 
-        setError("Unsupported file format. Please upload a PDF (.pdf) or Word (.docx) document.");
+                setRawText(extractedText);
+                setReviewText(extractedText);
+
+                const parsedDoc: GeneratedDocument = {
+                    documentType: fileLabelClean(file.name) || "Uploaded Document",
+                    blocks,
+                    originalFileBase64: base64Data,
+                    originalFileType: mimeType,
+                    originalFileName: file.name,
+                    originalFileUrl: originalFileUrl || base64Data
+                };
+
+                handleLoadNewDocument(parsedDoc);
+                triggerToast("File uploaded and secured into DocSignify storage!");
+            } catch (err: any) {
+                console.error("Document upload processing error:", err);
+                setError(err.message || "Failed to process uploaded file.");
+            } finally {
+                setIsLoading(false);
+            }
+        };
+
+        reader.onerror = () => {
+            setError("Failed to read file.");
+            setIsLoading(false);
+        };
+
+        reader.readAsDataURL(file);
     };
 
     const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -1723,43 +1725,61 @@ ${company?.name || 'CraveBiZ Vendor'}`;
                                         <div ref={documentRef} className="p-10 bg-white max-w-[210mm] mx-auto min-h-[297mm]">
                                             <div className="space-y-4">
                                                 {generatedDoc.originalFileBase64 ? (
-                                                    generatedDoc.originalFileType === 'application/pdf' ? (
-                                                        <div className="w-full mb-6 border border-gray-200 rounded-2xl overflow-hidden bg-gray-50 shadow-sm">
-                                                            <div className="bg-gray-100 px-4 py-2 border-b border-gray-200 flex justify-between items-center print-hidden">
-                                                                <span className="text-xs font-bold text-gray-700 flex items-center gap-1.5">
-                                                                    <svg className="w-4 h-4 text-red-500" fill="currentColor" viewBox="0 0 20 20"><path d="M9 2a2 2 0 00-2 2v8a2 2 0 002 2h6a2 2 0 002-2V6l-4-4H9z"></path></svg>
-                                                                    Preserved Uploaded PDF ({generatedDoc.originalFileName || 'original.pdf'})
-                                                                </span>
-                                                                <span className="text-[10px] font-semibold text-emerald-600 bg-emerald-50 px-2.5 py-1 rounded-full border border-emerald-100 uppercase tracking-wider">Original Format Intact</span>
-                                                            </div>
-                                                            <object
-                                                                data={generatedDoc.originalFileBase64}
-                                                                type="application/pdf"
-                                                                className="w-full h-[650px]"
-                                                            >
-                                                                <iframe
-                                                                    src={generatedDoc.originalFileBase64}
-                                                                    className="w-full h-[650px] border-0"
-                                                                    title="Preserved Document PDF Viewer"
-                                                                />
-                                                            </object>
-                                                        </div>
-                                                    ) : (
-                                                        <div className="w-full mb-6 border border-gray-200 rounded-2xl overflow-hidden bg-white shadow-sm">
-                                                            <div className="bg-gray-50 px-4 py-2 border-b border-gray-200 flex justify-between items-center print-hidden">
-                                                                <span className="text-xs font-bold text-gray-700 flex items-center gap-1.5">
-                                                                    <svg className="w-4 h-4 text-blue-500" fill="currentColor" viewBox="0 0 20 20"><path d="M4 4a2 2 0 012-2h4.586A2 2 0 0112 2.586L15.414 6A2 2 0 0116 7.414V16a2 2 0 01-2 2H6a2 2 0 01-2-2V4z"></path></svg>
-                                                                    Preserved Uploaded Word Document ({generatedDoc.originalFileName || 'original.docx'})
-                                                                </span>
-                                                                <span className="text-[10px] font-semibold text-emerald-600 bg-emerald-50 px-2.5 py-1 rounded-full border border-emerald-100 uppercase tracking-wider">Original Format Intact</span>
-                                                            </div>
-                                                            <div 
-                                                                className="p-8 max-w-none text-gray-800 leading-relaxed overflow-y-auto whitespace-normal font-sans text-xs [&_table]:w-full [&_table]:border-collapse [&_table]:my-4 [&_th]:bg-gray-50 [&_th]:p-2 [&_th]:border [&_th]:border-gray-200 [&_th]:text-left [&_th]:font-bold [&_td]:p-2 [&_td]:border [&_td]:border-gray-100 [&_ul]:list-disc [&_ul]:pl-5 [&_ol]:list-decimal [&_ol]:pl-5 [&_p]:mb-3 [&_h1]:text-base [&_h1]:font-bold [&_h1]:mt-4 [&_h1]:mb-2 [&_h2]:text-sm [&_h2]:font-bold [&_h2]:mt-3 [&_h2]:mb-2"
-                                                                style={{ maxHeight: '650px' }}
-                                                                dangerouslySetInnerHTML={{ __html: base64ToUtf8(generatedDoc.originalFileBase64 || '') }}
-                                                            />
-                                                        </div>
-                                                    )
+                                                    <div className="w-full mb-6">
+                                                        <DocumentSignifyViewer
+                                                            fileUrl={generatedDoc.originalFileUrl || generatedDoc.originalFileBase64}
+                                                            fileType={generatedDoc.originalFileType || 'pdf'}
+                                                            signatures={signatories.map((s, idx) => ({
+                                                                id: s.id || `sig-${idx}`,
+                                                                document_id: editingDocId || 'temp',
+                                                                signatory_id: s.id || `sig-${idx}`,
+                                                                page_number: s.page_number || 1,
+                                                                x_position: s.x_position !== undefined ? s.x_position : 50,
+                                                                y_position: s.y_position !== undefined ? s.y_position : (80 + idx * 5),
+                                                                width: s.width || 140,
+                                                                height: 55,
+                                                                signature_image_url: s.isSigned ? s.value : undefined
+                                                            }))}
+                                                            signatories={signatories.map((s, idx) => ({
+                                                                id: s.id || `sig-${idx}`,
+                                                                document_id: editingDocId || 'temp',
+                                                                name: s.name,
+                                                                email: s.email || '',
+                                                                role: (s.signatoryType === 'Main' ? 'main_signatory' : s.signatoryType === 'Witness' ? 'witness' : 'additional_signatory') as DbDocumentSignatory['role'],
+                                                                status: s.isSigned ? 'signed' : 'pending'
+                                                            }))}
+                                                            activeSignatory={selectedSigIndexToPlace !== null ? {
+                                                                id: signatories[selectedSigIndexToPlace]?.id || `sig-${selectedSigIndexToPlace}`,
+                                                                document_id: editingDocId || 'temp',
+                                                                name: signatories[selectedSigIndexToPlace]?.name || 'Creator',
+                                                                email: signatories[selectedSigIndexToPlace]?.email || '',
+                                                                role: (signatories[selectedSigIndexToPlace]?.signatoryType === 'Main' ? 'main_signatory' : 'witness') as DbDocumentSignatory['role'],
+                                                                status: 'pending'
+                                                            } : null}
+                                                            readOnly={false}
+                                                            onPlaceSignature={(placement) => {
+                                                                if (selectedSigIndexToPlace === null) return;
+                                                                const updated = signatories.map((sig, idx) => {
+                                                                    if (idx === selectedSigIndexToPlace) {
+                                                                        return {
+                                                                            ...sig,
+                                                                            page_number: placement.page_number,
+                                                                            x_position: placement.x_position,
+                                                                            y_position: placement.y_position,
+                                                                            width: placement.width || 140,
+                                                                            height: placement.height || 55
+                                                                        };
+                                                                    }
+                                                                    return sig;
+                                                                });
+                                                                setSignatories(updated);
+                                                                onSaveDoc({ ...generatedDoc, signatures: updated }, editingDocId || undefined).then(savedId => {
+                                                                    if (savedId) setEditingDocId(savedId);
+                                                                });
+                                                                triggerToast(`Positioned signature box for ${signatories[selectedSigIndexToPlace]?.name || 'Signer'}!`);
+                                                            }}
+                                                        />
+                                                    </div>
                                                 ) : (
                                                     generatedDoc.blocks
                                                         .filter(block => {
