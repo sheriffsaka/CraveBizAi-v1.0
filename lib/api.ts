@@ -443,7 +443,10 @@ class CraveBizApi {
   async syncDocumentToTables(companyId: string, docId: string, doc: GeneratedDocument, createdAt?: string): Promise<void> {
     const contentPayload = {
       blocks: doc.blocks,
-      signatures: doc.signatures || []
+      signatures: doc.signatures || [],
+      originalFileBase64: doc.originalFileBase64,
+      originalFileType: doc.originalFileType,
+      originalFileName: doc.originalFileName
     };
 
     // 1. Write to generated_documents (standard table)
@@ -503,7 +506,10 @@ class CraveBizApi {
         createdAt: createdAt || new Date().toISOString(),
         documentType: doc.documentType,
         blocks: doc.blocks,
-        signatures: doc.signatures || []
+        signatures: doc.signatures || [],
+        originalFileBase64: doc.originalFileBase64,
+        originalFileType: doc.originalFileType,
+        originalFileName: doc.originalFileName
       };
       await fetch('/api/public/documents', {
         method: 'POST',
@@ -529,12 +535,18 @@ class CraveBizApi {
         dbDocs = data.map(doc => {
           let blocks: DocumentBlock[] = [];
           let signatures: any[] = [];
+          let originalFileBase64: string | undefined = undefined;
+          let originalFileType: string | undefined = undefined;
+          let originalFileName: string | undefined = undefined;
           if (doc.content) {
             if (Array.isArray(doc.content)) {
               blocks = doc.content;
             } else if (typeof doc.content === 'object') {
               blocks = (doc.content as any).blocks || [];
               signatures = (doc.content as any).signatures || [];
+              originalFileBase64 = (doc.content as any).originalFileBase64;
+              originalFileType = (doc.content as any).originalFileType;
+              originalFileName = (doc.content as any).originalFileName;
             }
           }
           return {
@@ -543,7 +555,10 @@ class CraveBizApi {
             createdAt: doc.created_at,
             documentType: doc.document_type,
             blocks,
-            signatures
+            signatures,
+            originalFileBase64,
+            originalFileType,
+            originalFileName
           };
         });
       }
@@ -563,12 +578,18 @@ class CraveBizApi {
           dbDocs = data.map(doc => {
             let blocks: DocumentBlock[] = [];
             let signatures: any[] = [];
+            let originalFileBase64: string | undefined = undefined;
+            let originalFileType: string | undefined = undefined;
+            let originalFileName: string | undefined = undefined;
             if (doc.content) {
               if (Array.isArray(doc.content)) {
                 blocks = doc.content;
               } else if (typeof doc.content === 'object') {
                 blocks = (doc.content as any).blocks || [];
                 signatures = (doc.content as any).signatures || [];
+                originalFileBase64 = (doc.content as any).originalFileBase64;
+                originalFileType = (doc.content as any).originalFileType;
+                originalFileName = (doc.content as any).originalFileName;
               }
             }
             return {
@@ -577,7 +598,10 @@ class CraveBizApi {
               createdAt: doc.created_at || doc.created_at,
               documentType: doc.document_type || doc.title || 'Document',
               blocks,
-              signatures
+              signatures,
+              originalFileBase64,
+              originalFileType,
+              originalFileName
             };
           });
         }
@@ -772,12 +796,18 @@ class CraveBizApi {
       if (!error && data) {
         let blocks: DocumentBlock[] = [];
         let signatures: any[] = [];
+        let originalFileBase64: string | undefined = undefined;
+        let originalFileType: string | undefined = undefined;
+        let originalFileName: string | undefined = undefined;
         if (data.content) {
           if (Array.isArray(data.content)) {
             blocks = data.content;
           } else if (typeof data.content === 'object') {
             blocks = (data.content as any).blocks || [];
             signatures = (data.content as any).signatures || [];
+            originalFileBase64 = (data.content as any).originalFileBase64;
+            originalFileType = (data.content as any).originalFileType;
+            originalFileName = (data.content as any).originalFileName;
           }
         }
         fetchedDoc = {
@@ -786,7 +816,10 @@ class CraveBizApi {
           createdAt: data.created_at,
           documentType: data.document_type,
           blocks,
-          signatures
+          signatures,
+          originalFileBase64,
+          originalFileType,
+          originalFileName
         };
       }
     } catch (e) {
@@ -800,12 +833,18 @@ class CraveBizApi {
         if (!docError && docData) {
           let blocks: DocumentBlock[] = [];
           let signatures: any[] = [];
+          let originalFileBase64: string | undefined = undefined;
+          let originalFileType: string | undefined = undefined;
+          let originalFileName: string | undefined = undefined;
           if (docData.content) {
             if (Array.isArray(docData.content)) {
               blocks = docData.content;
             } else if (typeof docData.content === 'object') {
               blocks = (docData.content as any).blocks || [];
               signatures = (docData.content as any).signatures || [];
+              originalFileBase64 = (docData.content as any).originalFileBase64;
+              originalFileType = (docData.content as any).originalFileType;
+              originalFileName = (docData.content as any).originalFileName;
             }
           }
           
@@ -835,7 +874,10 @@ class CraveBizApi {
             createdAt: docData.created_at,
             documentType: docData.document_type || docData.title || 'Document',
             blocks,
-            signatures
+            signatures,
+            originalFileBase64,
+            originalFileType,
+            originalFileName
           };
         }
       } catch (e) {

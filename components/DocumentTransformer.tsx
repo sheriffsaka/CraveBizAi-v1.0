@@ -7,6 +7,28 @@ import { GeneratedDocument, DocumentBlock, HeaderBlock, MetadataBlock, TableBloc
 import EditableBlock from './EditableBlock';
 import Icon from './common/Icon';
 
+const utf8ToBase64 = (str: string): string => {
+    try {
+        return btoa(encodeURIComponent(str).replace(/%([0-9A-F]{2})/g, (match, p1) => {
+            return String.fromCharCode(parseInt(p1, 16));
+        }));
+    } catch (e) {
+        console.error("utf8ToBase64 error:", e);
+        return btoa(str);
+    }
+};
+
+const base64ToUtf8 = (str: string): string => {
+    try {
+        return decodeURIComponent(Array.prototype.map.call(atob(str), (c) => {
+            return '%' + ('00' + c.charCodeAt(0).toString(16)).slice(-2);
+        }).join(''));
+    } catch (e) {
+        console.error("base64ToUtf8 error:", e);
+        return atob(str);
+    }
+};
+
 const loadPdfJS = (): Promise<any> => {
     return new Promise((resolve, reject) => {
         if ((window as any).pdfjsLib) {
@@ -710,12 +732,19 @@ const DocumentTransformer: React.FC<DocumentTransformerProps> = ({ company, user
                         });
                     });
 
-                    const parsedDoc: GeneratedDocument = {
-                        documentType: fileLabelClean(file.name) || "Uploaded Document",
-                        blocks
+                    // Read PDF as Base64 Data URL to preserve exact format in viewer
+                    const base64Reader = new FileReader();
+                    base64Reader.onload = () => {
+                        const parsedDoc: GeneratedDocument = {
+                            documentType: fileLabelClean(file.name) || "Uploaded Document",
+                            blocks,
+                            originalFileBase64: base64Reader.result as string,
+                            originalFileType: 'application/pdf',
+                            originalFileName: file.name
+                        };
+                        handleLoadNewDocument(parsedDoc);
                     };
-
-                    handleLoadNewDocument(parsedDoc);
+                    base64Reader.readAsDataURL(file);
                 } catch (err: any) {
                     console.error("PDF extraction error:", err);
                     setError("Failed to extract text from PDF: " + err.message);
@@ -735,12 +764,14 @@ const DocumentTransformer: React.FC<DocumentTransformerProps> = ({ company, user
                     const arrayBuffer = event.target?.result as ArrayBuffer;
                     let extractedText = '';
                     const blocks: DocumentBlock[] = [];
+                    let docxHtml = '';
 
                     try {
                         // @ts-ignore
                         const result = await mammoth.convertToHtml({ arrayBuffer });
                         const htmlValue = result.value || '';
                         extractedText = htmlValue;
+                        docxHtml = htmlValue;
                         
                         // Split HTML nicely by paragraph tags to keep logical layout blocks
                         const htmlParts = htmlValue.split('</p>').map(p => p.trim() + (p.trim() ? '</p>' : '')).filter(Boolean);
@@ -758,6 +789,7 @@ const DocumentTransformer: React.FC<DocumentTransformerProps> = ({ company, user
                         // @ts-ignore
                         const result = await mammoth.extractRawText({ arrayBuffer });
                         extractedText = result.value;
+                        docxHtml = `<p>${extractedText.split('\n').join('</p><p>')}</p>`;
                         
                         const parts = extractedText.split(/\n\s*\n/).map(p => p.trim()).filter(Boolean);
                         parts.forEach((part, index) => {
@@ -774,7 +806,10 @@ const DocumentTransformer: React.FC<DocumentTransformerProps> = ({ company, user
 
                     const parsedDoc: GeneratedDocument = {
                         documentType: fileLabelClean(file.name) || "Uploaded Document",
-                        blocks
+                        blocks,
+                        originalFileBase64: utf8ToBase64(docxHtml),
+                        originalFileType: 'docx-html',
+                        originalFileName: file.name
                     };
 
                     handleLoadNewDocument(parsedDoc);
@@ -1687,13 +1722,52 @@ ${company?.name || 'CraveBiZ Vendor'}`;
                                     <div className="flex-1 overflow-y-auto" style={{ maxHeight: '42rem' }}>
                                         <div ref={documentRef} className="p-10 bg-white max-w-[210mm] mx-auto min-h-[297mm]">
                                             <div className="space-y-4">
-                                                {generatedDoc.blocks
-                                                    .filter(block => {
-                                                        const isUploaded = !!uploadedFileName || generatedDoc.documentType.toLowerCase().includes('uploaded') || generatedDoc.documentType.toLowerCase().includes('reviewed');
-                                                        return !isUploaded || block.type !== 'header';
-                                                    })
-                                                    .map(block => <div key={block.id}>{renderBlock(block)}</div>)
-                                                }
+                                                {generatedDoc.originalFileBase64 ? (
+                                                    generatedDoc.originalFileType === 'application/pdf' ? (
+                                                        <div className="w-full mb-6 border border-gray-200 rounded-2xl overflow-hidden bg-gray-50 shadow-sm">
+                                                            <div className="bg-gray-100 px-4 py-2 border-b border-gray-200 flex justify-between items-center print-hidden">
+                                                                <span className="text-xs font-bold text-gray-700 flex items-center gap-1.5">
+                                                                    <svg className="w-4 h-4 text-red-500" fill="currentColor" viewBox="0 0 20 20"><path d="M9 2a2 2 0 00-2 2v8a2 2 0 002 2h6a2 2 0 002-2V6l-4-4H9z"></path></svg>
+                                                                    Preserved Uploaded PDF ({generatedDoc.originalFileName || 'original.pdf'})
+                                                                </span>
+                                                                <span className="text-[10px] font-semibold text-emerald-600 bg-emerald-50 px-2.5 py-1 rounded-full border border-emerald-100 uppercase tracking-wider">Original Format Intact</span>
+                                                            </div>
+                                                            <object
+                                                                data={generatedDoc.originalFileBase64}
+                                                                type="application/pdf"
+                                                                className="w-full h-[650px]"
+                                                            >
+                                                                <iframe
+                                                                    src={generatedDoc.originalFileBase64}
+                                                                    className="w-full h-[650px] border-0"
+                                                                    title="Preserved Document PDF Viewer"
+                                                                />
+                                                            </object>
+                                                        </div>
+                                                    ) : (
+                                                        <div className="w-full mb-6 border border-gray-200 rounded-2xl overflow-hidden bg-white shadow-sm">
+                                                            <div className="bg-gray-50 px-4 py-2 border-b border-gray-200 flex justify-between items-center print-hidden">
+                                                                <span className="text-xs font-bold text-gray-700 flex items-center gap-1.5">
+                                                                    <svg className="w-4 h-4 text-blue-500" fill="currentColor" viewBox="0 0 20 20"><path d="M4 4a2 2 0 012-2h4.586A2 2 0 0112 2.586L15.414 6A2 2 0 0116 7.414V16a2 2 0 01-2 2H6a2 2 0 01-2-2V4z"></path></svg>
+                                                                    Preserved Uploaded Word Document ({generatedDoc.originalFileName || 'original.docx'})
+                                                                </span>
+                                                                <span className="text-[10px] font-semibold text-emerald-600 bg-emerald-50 px-2.5 py-1 rounded-full border border-emerald-100 uppercase tracking-wider">Original Format Intact</span>
+                                                            </div>
+                                                            <div 
+                                                                className="p-8 max-w-none text-gray-800 leading-relaxed overflow-y-auto whitespace-normal font-sans text-xs [&_table]:w-full [&_table]:border-collapse [&_table]:my-4 [&_th]:bg-gray-50 [&_th]:p-2 [&_th]:border [&_th]:border-gray-200 [&_th]:text-left [&_th]:font-bold [&_td]:p-2 [&_td]:border [&_td]:border-gray-100 [&_ul]:list-disc [&_ul]:pl-5 [&_ol]:list-decimal [&_ol]:pl-5 [&_p]:mb-3 [&_h1]:text-base [&_h1]:font-bold [&_h1]:mt-4 [&_h1]:mb-2 [&_h2]:text-sm [&_h2]:font-bold [&_h2]:mt-3 [&_h2]:mb-2"
+                                                                style={{ maxHeight: '650px' }}
+                                                                dangerouslySetInnerHTML={{ __html: base64ToUtf8(generatedDoc.originalFileBase64 || '') }}
+                                                            />
+                                                        </div>
+                                                    )
+                                                ) : (
+                                                    generatedDoc.blocks
+                                                        .filter(block => {
+                                                            const isUploaded = !!uploadedFileName || generatedDoc.documentType.toLowerCase().includes('uploaded') || generatedDoc.documentType.toLowerCase().includes('reviewed');
+                                                            return !isUploaded || block.type !== 'header';
+                                                        })
+                                                        .map(block => <div key={block.id}>{renderBlock(block)}</div>)
+                                                )}
                                             </div>
 
                                             {/* Feature ii: Dynamic E-Signatures Board rendered inside A4 Simulation */}

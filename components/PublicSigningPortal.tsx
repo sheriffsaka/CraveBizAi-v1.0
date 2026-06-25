@@ -2,6 +2,17 @@ import React, { useState, useEffect, useRef, useMemo } from 'react';
 import { StoredGeneratedDoc, DocumentBlock, SignatureInfo } from '../types';
 import { api } from '../lib/api';
 
+const base64ToUtf8 = (str: string): string => {
+    try {
+        return decodeURIComponent(Array.prototype.map.call(atob(str), (c) => {
+            return '%' + ('00' + c.charCodeAt(0).toString(16)).slice(-2);
+        }).join(''));
+    } catch (e) {
+        console.error("base64ToUtf8 error:", e);
+        return atob(str);
+    }
+};
+
 interface PublicSigningPortalProps {
     docId: string;
     prefilledRecipient?: string;
@@ -479,7 +490,47 @@ export default function PublicSigningPortal({ docId, prefilledRecipient, onBackT
                         </span>
                     </div>
 
-                    {document.blocks.map(block => renderBlock(block))}
+                    {document.originalFileBase64 ? (
+                        document.originalFileType === 'application/pdf' ? (
+                            <div className="w-full mb-6 border border-gray-200 rounded-2xl overflow-hidden bg-gray-50 shadow-sm">
+                                <div className="bg-gray-100 px-4 py-2 border-b border-gray-200 flex justify-between items-center">
+                                    <span className="text-xs font-bold text-gray-700 flex items-center gap-1.5">
+                                        <svg className="w-4 h-4 text-red-500" fill="currentColor" viewBox="0 0 20 20"><path d="M9 2a2 2 0 00-2 2v8a2 2 0 002 2h6a2 2 0 002-2V6l-4-4H9z"></path></svg>
+                                        Preserved Uploaded PDF ({document.originalFileName || 'original.pdf'})
+                                    </span>
+                                    <span className="text-[10px] font-semibold text-emerald-600 bg-emerald-50 px-2.5 py-1 rounded-full border border-emerald-100 uppercase tracking-wider">Original Format Intact</span>
+                                </div>
+                                <object
+                                    data={document.originalFileBase64}
+                                    type="application/pdf"
+                                    className="w-full h-[650px]"
+                                >
+                                    <iframe
+                                        src={document.originalFileBase64}
+                                        className="w-full h-[650px] border-0"
+                                        title="Preserved Document PDF Viewer"
+                                    />
+                                </object>
+                            </div>
+                        ) : (
+                            <div className="w-full mb-6 border border-gray-200 rounded-2xl overflow-hidden bg-white shadow-sm">
+                                <div className="bg-gray-50 px-4 py-2 border-b border-gray-200 flex justify-between items-center">
+                                    <span className="text-xs font-bold text-gray-700 flex items-center gap-1.5">
+                                        <svg className="w-4 h-4 text-blue-500" fill="currentColor" viewBox="0 0 20 20"><path d="M4 4a2 2 0 012-2h4.586A2 2 0 0112 2.586L15.414 6A2 2 0 0116 7.414V16a2 2 0 01-2 2H6a2 2 0 01-2-2V4z"></path></svg>
+                                        Preserved Uploaded Word Document ({document.originalFileName || 'original.docx'})
+                                    </span>
+                                    <span className="text-[10px] font-semibold text-emerald-600 bg-emerald-50 px-2.5 py-1 rounded-full border border-emerald-100 uppercase tracking-wider">Original Format Intact</span>
+                                </div>
+                                <div 
+                                    className="p-8 max-w-none text-gray-800 leading-relaxed overflow-y-auto whitespace-normal font-sans text-xs [&_table]:w-full [&_table]:border-collapse [&_table]:my-4 [&_th]:bg-gray-50 [&_th]:p-2 [&_th]:border [&_th]:border-gray-200 [&_th]:text-left [&_th]:font-bold [&_td]:p-2 [&_td]:border [&_td]:border-gray-100 [&_ul]:list-disc [&_ul]:pl-5 [&_ol]:list-decimal [&_ol]:pl-5 [&_p]:mb-3 [&_h1]:text-base [&_h1]:font-bold [&_h1]:mt-4 [&_h1]:mb-2 [&_h2]:text-sm [&_h2]:font-bold [&_h2]:mt-3 [&_h2]:mb-2"
+                                    style={{ maxHeight: '650px' }}
+                                    dangerouslySetInnerHTML={{ __html: base64ToUtf8(document.originalFileBase64 || '') }}
+                                />
+                            </div>
+                        )
+                    ) : (
+                        document.blocks.map(block => renderBlock(block))
+                    )}
 
                     {/* Signatures Panel Inside Document */}
                     <div className="mt-12 pt-8 border-t-2 border-dashed border-gray-200">

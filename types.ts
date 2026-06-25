@@ -172,6 +172,9 @@ export interface GeneratedDocument {
   documentType: string;
   blocks: DocumentBlock[];
   signatures?: SignatureInfo[];
+  originalFileBase64?: string;
+  originalFileType?: string;
+  originalFileName?: string;
 }
 
 export interface StoredGeneratedDoc extends GeneratedDocument {
