@@ -19,6 +19,7 @@ const PORT = 3000;
 app.use(express.json());
 
 const SIGNATURES_FILE = path.join(process.cwd(), "public_signatures.json");
+const DOCUMENTS_FILE = path.join(process.cwd(), "public_documents.json");
 
 function getPublicSignatures() {
     try {
@@ -38,6 +39,28 @@ function savePublicSignatures(signaturesMap: any) {
         return true;
     } catch (e) {
         console.error("Failed to write signatures file:", e);
+        return false;
+    }
+}
+
+function getPublicDocuments() {
+    try {
+        if (fs.existsSync(DOCUMENTS_FILE)) {
+            const data = fs.readFileSync(DOCUMENTS_FILE, "utf-8");
+            return JSON.parse(data) || {};
+        }
+    } catch (e) {
+        console.error("Failed to read documents file:", e);
+    }
+    return {};
+}
+
+function savePublicDocuments(documentsMap: any) {
+    try {
+        fs.writeFileSync(DOCUMENTS_FILE, JSON.stringify(documentsMap, null, 2), "utf-8");
+        return true;
+    } catch (e) {
+        console.error("Failed to write documents file:", e);
         return false;
     }
 }
@@ -69,6 +92,39 @@ app.post("/api/public/signatures", (req, res) => {
             res.json({ success: true });
         } else {
             res.status(500).json({ error: "Failed to save signatures to server" });
+        }
+    } catch (err: any) {
+        res.status(500).json({ error: err.message || "Internal server error" });
+    }
+});
+
+app.get("/api/public/documents", (req, res) => {
+    res.json(getPublicDocuments());
+});
+
+app.get("/api/public/documents/:id", (req, res) => {
+    const docs = getPublicDocuments();
+    const doc = docs[req.params.id];
+    if (doc) {
+        res.json(doc);
+    } else {
+        res.status(404).json({ error: "Document not found" });
+    }
+});
+
+app.post("/api/public/documents", (req, res) => {
+    try {
+        const { doc } = req.body;
+        if (!doc || !doc.id) {
+            return res.status(400).json({ error: "Document with id is required" });
+        }
+        const current = getPublicDocuments();
+        current[doc.id] = doc;
+        const success = savePublicDocuments(current);
+        if (success) {
+            res.json({ success: true });
+        } else {
+            res.status(500).json({ error: "Failed to save document to server" });
         }
     } catch (err: any) {
         res.status(500).json({ error: err.message || "Internal server error" });

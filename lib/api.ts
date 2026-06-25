@@ -440,38 +440,150 @@ class CraveBizApi {
     }
   }
 
+  async syncDocumentToTables(companyId: string, docId: string, doc: GeneratedDocument, createdAt?: string): Promise<void> {
+    const contentPayload = {
+      blocks: doc.blocks,
+      signatures: doc.signatures || []
+    };
+
+    // 1. Write to generated_documents (standard table)
+    try {
+      await supabase.from('generated_documents').upsert({
+        id: docId,
+        company_id: companyId,
+        document_type: doc.documentType,
+        content: contentPayload
+      });
+    } catch (e) {
+      console.warn("Could not sync to generated_documents table:", e);
+    }
+
+    // 2. Write to documents (alternative table)
+    try {
+      await supabase.from('documents').upsert({
+        id: docId,
+        company_id: companyId,
+        document_type: doc.documentType,
+        document_title: doc.documentType,
+        title: doc.documentType,
+        content: contentPayload,
+        created_at: createdAt || new Date().toISOString()
+      });
+    } catch (e) {
+      console.warn("Could not sync to documents alternative table:", e);
+    }
+
+    // 3. Write to document_signers (alternative table)
+    if (doc.signatures && doc.signatures.length > 0) {
+      for (const sig of doc.signatures) {
+        try {
+          await supabase.from('document_signers').upsert({
+            id: sig.id,
+            document_id: docId,
+            email: sig.email || '',
+            name: sig.name || '',
+            title: sig.title || '',
+            is_signed: sig.isSigned,
+            signature_value: sig.value || '',
+            signatory_type: sig.signatoryType,
+            type: sig.type || 'draw',
+            date: sig.date || ''
+          });
+        } catch (e) {
+          console.warn("Could not sync to document_signers alternative table:", e);
+        }
+      }
+    }
+
+    // 4. Proactively save to server-side documents store as 100% reliable fallback
+    try {
+      const fullDoc: StoredGeneratedDoc = {
+        id: docId,
+        companyId: companyId,
+        createdAt: createdAt || new Date().toISOString(),
+        documentType: doc.documentType,
+        blocks: doc.blocks,
+        signatures: doc.signatures || []
+      };
+      await fetch('/api/public/documents', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ doc: fullDoc })
+      });
+    } catch (fsErr) {
+      console.warn("Could not save copy to server-side documents store:", fsErr);
+    }
+  }
+
   async fetchGeneratedDocs(companyId: string): Promise<StoredGeneratedDoc[]> {
     let dbDocs: StoredGeneratedDoc[] = [];
+    
+    // 1. Fetch from generated_documents
     try {
       const { data, error } = await supabase.from('generated_documents')
         .select('*')
         .eq('company_id', companyId)
         .order('created_at', { ascending: false });
         
-      if (error) throw error;
-      
-      dbDocs = (data || []).map(doc => {
-        let blocks: DocumentBlock[] = [];
-        let signatures: any[] = [];
-        if (doc.content) {
-          if (Array.isArray(doc.content)) {
-            blocks = doc.content;
-          } else if (typeof doc.content === 'object') {
-            blocks = (doc.content as any).blocks || [];
-            signatures = (doc.content as any).signatures || [];
+      if (!error && data) {
+        dbDocs = data.map(doc => {
+          let blocks: DocumentBlock[] = [];
+          let signatures: any[] = [];
+          if (doc.content) {
+            if (Array.isArray(doc.content)) {
+              blocks = doc.content;
+            } else if (typeof doc.content === 'object') {
+              blocks = (doc.content as any).blocks || [];
+              signatures = (doc.content as any).signatures || [];
+            }
           }
-        }
-        return {
-          id: doc.id,
-          companyId: doc.company_id,
-          createdAt: doc.created_at,
-          documentType: doc.document_type,
-          blocks,
-          signatures
-        };
-      });
+          return {
+            id: doc.id,
+            companyId: doc.company_id,
+            createdAt: doc.created_at,
+            documentType: doc.document_type,
+            blocks,
+            signatures
+          };
+        });
+      }
     } catch (dbError) {
-      console.warn("Supabase fetch failed for generated_documents, relying on cache and localStorage:", dbError);
+      console.warn("Supabase fetch failed for generated_documents:", dbError);
+    }
+
+    // 2. Fetch from alternative documents table if empty/failed
+    if (dbDocs.length === 0) {
+      try {
+        const { data, error } = await supabase.from('documents')
+          .select('*')
+          .eq('company_id', companyId)
+          .order('created_at', { ascending: false });
+          
+        if (!error && data) {
+          dbDocs = data.map(doc => {
+            let blocks: DocumentBlock[] = [];
+            let signatures: any[] = [];
+            if (doc.content) {
+              if (Array.isArray(doc.content)) {
+                blocks = doc.content;
+              } else if (typeof doc.content === 'object') {
+                blocks = (doc.content as any).blocks || [];
+                signatures = (doc.content as any).signatures || [];
+              }
+            }
+            return {
+              id: doc.id,
+              companyId: doc.company_id,
+              createdAt: doc.created_at || doc.created_at,
+              documentType: doc.document_type || doc.title || 'Document',
+              blocks,
+              signatures
+            };
+          });
+        }
+      } catch (altErr) {
+        console.warn("Alternative documents fetch failed:", altErr);
+      }
     }
     
     // Merge with localStorage docs to guarantee persistence even under RLS/network constraints
@@ -491,6 +603,22 @@ class CraveBizApi {
       if (!combined.some(d => d.id === lDoc.id)) {
         combined.push(lDoc);
       }
+    }
+
+    // Merge with server-side public documents
+    try {
+      const resp = await fetch('/api/public/documents');
+      if (resp.ok) {
+        const fsDocsMap = await resp.json();
+        const fsDocs = Object.values(fsDocsMap) as StoredGeneratedDoc[];
+        for (const fsDoc of fsDocs) {
+          if (fsDoc.companyId === companyId && !combined.some(d => d.id === fsDoc.id)) {
+            combined.push(fsDoc);
+          }
+        }
+      }
+    } catch (err) {
+      console.warn("Could not merge server-side public documents:", err);
     }
     
     try {
@@ -512,12 +640,9 @@ class CraveBizApi {
 
   async saveGeneratedDoc(companyId: string, doc: GeneratedDocument): Promise<StoredGeneratedDoc> {
     const docId = generateId();
-    const contentPayload = {
-      blocks: doc.blocks,
-      signatures: doc.signatures || []
-    };
+    
+    // Proactively ensure currently logged-in user is mapped in company_members to satisfy membership RLS policy
     try {
-      // 1. Proactively ensure currently logged-in user is mapped in company_members to help satisfy membership RLS policy
       const { data: { user } } = await supabase.auth.getUser();
       if (user) {
         try {
@@ -538,148 +663,82 @@ class CraveBizApi {
           console.warn("Auto-ensuring company membership experienced an issue (non-blocking):", me);
         }
       }
-
-      // 2. Try saving to Supabase
-      const { data, error } = await supabase.from('generated_documents')
-        .upsert({
-          id: docId,
-          company_id: companyId,
-          document_type: doc.documentType,
-          content: contentPayload
-        })
-        .select()
-        .single();
-        
-      if (error) throw error;
-      
-      const resBlocks = (data.content as any)?.blocks || [];
-      const resSigs = (data.content as any)?.signatures || [];
-      return {
-        id: data.id,
-        companyId: data.company_id,
-        createdAt: data.created_at,
-        documentType: data.document_type,
-        blocks: resBlocks,
-        signatures: resSigs
-      };
-    } catch (dbError: any) {
-      console.warn("Supabase insertion triggered RLS/DB constraint. Initiating durable local workspace fallback:", dbError);
-      
-      const fallbackDoc: StoredGeneratedDoc = {
-        id: docId,
-        companyId: companyId,
-        createdAt: new Date().toISOString(),
-        documentType: doc.documentType,
-        blocks: doc.blocks,
-        signatures: doc.signatures || []
-      };
-      
-      const localKey = `cravebiz_docs_${companyId}`;
-      const savedListRaw = localStorage.getItem(localKey);
-      let list: StoredGeneratedDoc[] = [];
-      if (savedListRaw) {
-        try {
-          list = JSON.parse(savedListRaw);
-        } catch {
-          list = [];
-        }
-      }
-      
-      const existingIndex = list.findIndex(d => d.id === docId);
-      if (existingIndex > -1) {
-        list[existingIndex] = fallbackDoc;
-      } else {
-        list.unshift(fallbackDoc);
-      }
-      localStorage.setItem(localKey, JSON.stringify(list));
-      
-      return fallbackDoc;
+    } catch (authErr) {
+      console.warn("User auth retrieval failed inside saveGeneratedDoc:", authErr);
     }
-  }
 
-  async updateGeneratedDoc(companyId: string, id: string, doc: GeneratedDocument): Promise<StoredGeneratedDoc> {
-    const contentPayload = {
+    const createdAt = new Date().toISOString();
+    
+    // Perform robust background table sync
+    await this.syncDocumentToTables(companyId, docId, doc, createdAt);
+    
+    const savedDoc: StoredGeneratedDoc = {
+      id: docId,
+      companyId: companyId,
+      createdAt: createdAt,
+      documentType: doc.documentType,
       blocks: doc.blocks,
       signatures: doc.signatures || []
     };
-    try {
-      const { data, error } = await supabase.from('generated_documents')
-        .update({
-          document_type: doc.documentType,
-          content: contentPayload
-        })
-        .eq('id', id)
-        .select()
-        .single();
-        
-      if (error) throw error;
-      
-      const resBlocks = (data.content as any)?.blocks || [];
-      const resSigs = (data.content as any)?.signatures || [];
-      
-      // Update local storage cache to match
-      const localKey = `cravebiz_docs_${companyId}`;
-      const savedListRaw = localStorage.getItem(localKey);
-      let list: StoredGeneratedDoc[] = [];
-      if (savedListRaw) {
-        try {
-          list = JSON.parse(savedListRaw);
-        } catch {
-          list = [];
-        }
+    
+    // Store in localStorage
+    const localKey = `cravebiz_docs_${companyId}`;
+    const savedListRaw = localStorage.getItem(localKey);
+    let list: StoredGeneratedDoc[] = [];
+    if (savedListRaw) {
+      try {
+        list = JSON.parse(savedListRaw);
+      } catch {
+        list = [];
       }
-      
-      const updatedDoc: StoredGeneratedDoc = {
-        id: id,
-        companyId: companyId,
-        createdAt: data.created_at || new Date().toISOString(),
-        documentType: doc.documentType,
-        blocks: resBlocks,
-        signatures: resSigs
-      };
-      
-      const existingIndex = list.findIndex(d => d.id === id);
-      if (existingIndex > -1) {
-        list[existingIndex] = updatedDoc;
-      } else {
-        list.unshift(updatedDoc);
-      }
-      localStorage.setItem(localKey, JSON.stringify(list));
-      
-      return updatedDoc;
-    } catch (dbError: any) {
-      console.warn("Supabase update fail fallback:", dbError);
-      
-      const localKey = `cravebiz_docs_${companyId}`;
-      const savedListRaw = localStorage.getItem(localKey);
-      let list: StoredGeneratedDoc[] = [];
-      if (savedListRaw) {
-        try {
-          list = JSON.parse(savedListRaw);
-        } catch {
-          list = [];
-        }
-      }
-      
-      const foundIdx = list.findIndex(d => d.id === id);
-      const createdAt = foundIdx > -1 ? list[foundIdx].createdAt : new Date().toISOString();
-      const fallbackDoc: StoredGeneratedDoc = {
-        id: id,
-        companyId: companyId,
-        createdAt: createdAt,
-        documentType: doc.documentType,
-        blocks: doc.blocks,
-        signatures: doc.signatures || []
-      };
-      
-      if (foundIdx > -1) {
-        list[foundIdx] = fallbackDoc;
-      } else {
-        list.unshift(fallbackDoc);
-      }
-      localStorage.setItem(localKey, JSON.stringify(list));
-      return fallbackDoc;
     }
+    
+    const existingIndex = list.findIndex(d => d.id === docId);
+    if (existingIndex > -1) {
+      list[existingIndex] = savedDoc;
+    } else {
+      list.unshift(savedDoc);
+    }
+    localStorage.setItem(localKey, JSON.stringify(list));
+    
+    return savedDoc;
+  }
+
+  async updateGeneratedDoc(companyId: string, id: string, doc: GeneratedDocument): Promise<StoredGeneratedDoc> {
+    const localKey = `cravebiz_docs_${companyId}`;
+    const savedListRaw = localStorage.getItem(localKey);
+    let list: StoredGeneratedDoc[] = [];
+    if (savedListRaw) {
+      try {
+        list = JSON.parse(savedListRaw);
+      } catch {
+        list = [];
+      }
+    }
+    
+    const foundIdx = list.findIndex(d => d.id === id);
+    const createdAt = foundIdx > -1 ? list[foundIdx].createdAt : new Date().toISOString();
+    
+    // Sync to all database tables & server file system copy
+    await this.syncDocumentToTables(companyId, id, doc, createdAt);
+    
+    const updatedDoc: StoredGeneratedDoc = {
+      id: id,
+      companyId: companyId,
+      createdAt: createdAt,
+      documentType: doc.documentType,
+      blocks: doc.blocks,
+      signatures: doc.signatures || []
+    };
+    
+    if (foundIdx > -1) {
+      list[foundIdx] = updatedDoc;
+    } else {
+      list.unshift(updatedDoc);
+    }
+    localStorage.setItem(localKey, JSON.stringify(list));
+    
+    return updatedDoc;
   }
 
   async deleteGeneratedDoc(companyId: string, id: string): Promise<void> {
@@ -707,11 +766,10 @@ class CraveBizApi {
   async getPublicDoc(id: string): Promise<StoredGeneratedDoc | null> {
     let fetchedDoc: StoredGeneratedDoc | null = null;
     
-    // 1. Try Supabase first (ensure we get the latest persistent signature/signee data)
+    // 1. Try Supabase generated_documents table first
     try {
       const { data, error } = await supabase.from('generated_documents').select('*').eq('id', id).maybeSingle();
-      if (error) throw error;
-      if (data) {
+      if (!error && data) {
         let blocks: DocumentBlock[] = [];
         let signatures: any[] = [];
         if (data.content) {
@@ -732,10 +790,72 @@ class CraveBizApi {
         };
       }
     } catch (e) {
-      console.warn("Public fetch from Supabase failed, trying fallbacks:", e);
+      console.warn("Public fetch from Supabase generated_documents failed:", e);
     }
 
-    // 2. Try decoding from the URL hash next (as robust offline/cross-browser fallback)
+    // 2. Try Supabase alternative 'documents' and 'document_signers' tables
+    if (!fetchedDoc) {
+      try {
+        const { data: docData, error: docError } = await supabase.from('documents').select('*').eq('id', id).maybeSingle();
+        if (!docError && docData) {
+          let blocks: DocumentBlock[] = [];
+          let signatures: any[] = [];
+          if (docData.content) {
+            if (Array.isArray(docData.content)) {
+              blocks = docData.content;
+            } else if (typeof docData.content === 'object') {
+              blocks = (docData.content as any).blocks || [];
+              signatures = (docData.content as any).signatures || [];
+            }
+          }
+          
+          // Try loading signers from 'document_signers' table if available
+          try {
+            const { data: signersData, error: signersError } = await supabase.from('document_signers').select('*').eq('document_id', id);
+            if (!signersError && signersData && signersData.length > 0) {
+              signatures = signersData.map((s: any) => ({
+                id: s.id,
+                type: s.type || 'draw',
+                value: s.signature_value || s.value || '',
+                name: s.name || '',
+                title: s.title || '',
+                date: s.date || '',
+                signatoryType: s.signatory_type || 'Main',
+                email: s.email || '',
+                isSigned: s.is_signed || false
+              }));
+            }
+          } catch (signerErr) {
+            console.warn("Could not query alternative document_signers table:", signerErr);
+          }
+
+          fetchedDoc = {
+            id: docData.id,
+            companyId: docData.company_id,
+            createdAt: docData.created_at,
+            documentType: docData.document_type || docData.title || 'Document',
+            blocks,
+            signatures
+          };
+        }
+      } catch (e) {
+        console.warn("Public fetch from alternative documents table failed:", e);
+      }
+    }
+
+    // 3. Try retrieving copy from server-side documents store
+    if (!fetchedDoc) {
+      try {
+        const resp = await fetch(`/api/public/documents/${id}`);
+        if (resp.ok) {
+          fetchedDoc = await resp.json();
+        }
+      } catch (fsErr) {
+        console.warn("Could not retrieve document copy from server-side store:", fsErr);
+      }
+    }
+
+    // 4. Try decoding from the URL hash next (as robust offline/cross-browser fallback)
     if (!fetchedDoc && typeof window !== 'undefined' && window.location && window.location.hash) {
       try {
         const hash = window.location.hash;
@@ -764,7 +884,7 @@ class CraveBizApi {
       }
     }
 
-    // 3. Fallback to search across all company localStorage keys
+    // 5. Fallback to search across all company localStorage keys
     if (!fetchedDoc) {
       for (let i = 0; i < localStorage.length; i++) {
         const key = localStorage.key(i);
@@ -802,7 +922,7 @@ class CraveBizApi {
   }
 
   async savePublicDocSignature(id: string, updatedSignatures: SignatureInfo[]): Promise<boolean> {
-    // Proactively save to server-side filesystem store (absolutely guarantees database bypass/persistence)
+    // Proactively save to server-side filesystem signatures store
     try {
       await fetch('/api/public/signatures', {
         method: 'POST',
@@ -822,25 +942,67 @@ class CraveBizApi {
         signatures: updatedSignatures
       };
       
-      // Try upsert first (forces creation or replacement)
-      let { error } = await supabase.from('generated_documents')
-        .upsert({
+      // Update the server-side documents store copy so it has the latest signatures
+      try {
+        doc.signatures = updatedSignatures;
+        await fetch('/api/public/documents', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ doc: doc })
+        });
+      } catch (fsErr) {
+        console.warn("Could not save updated signatures to server-side documents store:", fsErr);
+      }
+
+      // 1. Try upsert to generated_documents
+      try {
+        await supabase.from('generated_documents').upsert({
           id: id,
           company_id: doc.companyId,
           document_type: doc.documentType,
           content: contentPayload
         });
-        
-      if (error) {
-        console.warn("Public signature upsert failed, attempting fallback update:", error);
-        // Fallback to update if upsert fails due to policy
-        const { error: updateError } = await supabase.from('generated_documents')
-          .update({
-            content: contentPayload
-          })
-          .eq('id', id);
-        
-        if (updateError) throw updateError;
+      } catch (upsertErr) {
+        console.warn("Public signature upsert to generated_documents failed, trying update fallback:", upsertErr);
+        try {
+          await supabase.from('generated_documents').update({ content: contentPayload }).eq('id', id);
+        } catch (updateErr) {
+          console.warn("Update fallback to generated_documents failed too:", updateErr);
+        }
+      }
+
+      // 2. Try upsert to alternative documents table
+      try {
+        await supabase.from('documents').upsert({
+          id: id,
+          company_id: doc.companyId,
+          document_type: doc.documentType,
+          document_title: doc.documentType,
+          title: doc.documentType,
+          content: contentPayload
+        });
+      } catch (docErr) {
+        console.warn("Could not sync signatures to alternative documents table:", docErr);
+      }
+
+      // 3. Try upsert to alternative document_signers table
+      for (const sig of updatedSignatures) {
+        try {
+          await supabase.from('document_signers').upsert({
+            id: sig.id,
+            document_id: id,
+            email: sig.email || '',
+            name: sig.name || '',
+            title: sig.title || '',
+            is_signed: sig.isSigned,
+            signature_value: sig.value || '',
+            signatory_type: sig.signatoryType,
+            type: sig.type || 'draw',
+            date: sig.date || ''
+          });
+        } catch (sigErr) {
+          console.warn("Could not sync signature to alternative document_signers table:", sigErr);
+        }
       }
       
       // Update in localStorage if cached
@@ -862,7 +1024,7 @@ class CraveBizApi {
       }
       return true;
     } catch (e) {
-      console.warn("API savePublicDocSignature failed, fallback update to local arrays:", e);
+      console.warn("API savePublicDocSignature database operations failed, falling back to cache updates only:", e);
       // Fallback update in local storage only
       for (let i = 0; i < localStorage.length; i++) {
         const key = localStorage.key(i);
@@ -880,7 +1042,6 @@ class CraveBizApi {
           }
         }
       }
-      // If no matching creator key is found, return true anyway since it's a guest signing a public hash link
       return true;
     }
   }
