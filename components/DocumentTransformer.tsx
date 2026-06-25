@@ -1220,23 +1220,6 @@ ${company?.name || 'CraveBiZ Vendor'}`;
                                 disabled={isLoading}
                             />
 
-                            {/* Local offline compiler toggle */}
-                            <div className="p-3 bg-gray-50 border border-gray-100 rounded-xl flex items-center justify-between">
-                                <div className="space-y-0.5">
-                                    <span className="text-xs font-bold text-gray-700 block">Offline Local Compiler</span>
-                                    <span className="text-[10px] text-gray-400 block font-medium">Bypass AI & compile instantly offline</span>
-                                </div>
-                                <label className="relative inline-flex items-center cursor-pointer">
-                                    <input 
-                                        type="checkbox" 
-                                        checked={useLocalCompiler}
-                                        onChange={(e) => setUseLocalCompiler(e.target.checked)}
-                                        className="sr-only peer" 
-                                    />
-                                    <div className="w-9 h-5 bg-gray-200 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-primary-600"></div>
-                                </label>
-                            </div>
-
                             {/* Template Suggestions Chips */}
                             <div>
                                 <span className="text-[10px] font-black uppercase text-gray-400 tracking-wider">Quick Launch Presets:</span>
@@ -1302,21 +1285,6 @@ ${company?.name || 'CraveBiZ Vendor'}`;
                                         </div>
                                     )}
                                 </div>
-
-                                <div className="flex items-center gap-1">
-                                    <div className="h-px bg-gray-100 flex-1"></div>
-                                    <span className="text-[9px] font-black uppercase text-gray-400 px-2 tracking-widest">Or raw text clauses</span>
-                                    <div className="h-px bg-gray-100 flex-1"></div>
-                                </div>
-
-                                <textarea
-                                    value={rawText}
-                                    onChange={(e) => setRawText(e.target.value)}
-                                    placeholder="Paste specific terms or legal clauses to prepare for signing..."
-                                    className="w-full h-44 p-3 border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-primary-500/30 text-xs font-medium placeholder-gray-400 bg-gray-50/50"
-                                    disabled={isLoading}
-                                    id="raw_text_clauses"
-                                />
 
                                 <button
                                     onClick={handlePrepareSignDocument}

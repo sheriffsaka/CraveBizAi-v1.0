@@ -527,7 +527,7 @@ class CraveBizApi {
 
       // 2. Try saving to Supabase
       const { data, error } = await supabase.from('generated_documents')
-        .insert({
+        .upsert({
           id: docId,
           company_id: companyId,
           document_type: doc.documentType,
@@ -774,13 +774,26 @@ class CraveBizApi {
         signatures: updatedSignatures
       };
       
-      const { error } = await supabase.from('generated_documents')
-        .update({
+      // Try upsert first (forces creation or replacement)
+      let { error } = await supabase.from('generated_documents')
+        .upsert({
+          id: id,
+          company_id: doc.companyId,
+          document_type: doc.documentType,
           content: contentPayload
-        })
-        .eq('id', id);
+        });
         
-      if (error) throw error;
+      if (error) {
+        console.warn("Public signature upsert failed, attempting fallback update:", error);
+        // Fallback to update if upsert fails due to policy
+        const { error: updateError } = await supabase.from('generated_documents')
+          .update({
+            content: contentPayload
+          })
+          .eq('id', id);
+        
+        if (updateError) throw updateError;
+      }
       
       // Update in localStorage if cached
       for (let i = 0; i < localStorage.length; i++) {
