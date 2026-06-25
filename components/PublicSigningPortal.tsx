@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useMemo } from 'react';
 import { StoredGeneratedDoc, DocumentBlock, SignatureInfo } from '../types';
 import { api } from '../lib/api';
 
@@ -15,6 +15,10 @@ export default function PublicSigningPortal({ docId, prefilledRecipient, onBackT
     const [activeSigIndex, setActiveSigIndex] = useState<number | null>(null);
     const [error, setError] = useState<string | null>(null);
     const [isSignedSuccess, setIsSignedSuccess] = useState(false);
+
+    // Manual Email verification state
+    const [userEmailInput, setUserEmailInput] = useState(prefilledRecipient || '');
+    const [emailMatchError, setEmailMatchError] = useState<string | null>(null);
 
     // Signature State
     const [isSignModalOpen, setIsSignModalOpen] = useState(false);
@@ -95,6 +99,78 @@ export default function PublicSigningPortal({ docId, prefilledRecipient, onBackT
         }
         fetchDoc();
     }, [docId, prefilledRecipient]);
+
+    // Parse document details and signature progression overview
+    const docOverview = useMemo(() => {
+        if (!document) return null;
+        
+        let title = document.documentType || 'Uploaded Agreement';
+        let company = 'CraveBiZ Client';
+        let date = document.createdAt ? new Date(document.createdAt).toLocaleDateString() : 'Recent';
+        let client = '';
+        let reference = '';
+
+        // Extract from metadata block if present
+        const metadataBlock = document.blocks.find(b => b.type === 'metadata');
+        if (metadataBlock && metadataBlock.content) {
+            if (metadataBlock.content.documentTitle) title = metadataBlock.content.documentTitle;
+            if (metadataBlock.content.date) date = metadataBlock.content.date;
+            if (metadataBlock.content.clientName) client = metadataBlock.content.clientName;
+            if (metadataBlock.content.reference) reference = metadataBlock.content.reference;
+        }
+
+        // Extract company from header block
+        const headerBlock = document.blocks.find(b => b.type === 'header');
+        if (headerBlock && headerBlock.content && headerBlock.content.companyName) {
+            company = headerBlock.content.companyName;
+        }
+
+        const totalSigs = signatories.length;
+        const signedSigs = signatories.filter(s => s.isSigned).length;
+
+        return {
+            title,
+            company,
+            date,
+            client,
+            reference,
+            totalSigs,
+            signedSigs
+        };
+    }, [document, signatories]);
+
+    // Match signature slot of the prefilled invited recipient
+    const matchedSignatory = useMemo(() => {
+        if (!prefilledRecipient || !signatories.length) return null;
+        const index = signatories.findIndex(
+            s => s.email?.trim().toLowerCase() === prefilledRecipient.trim().toLowerCase()
+        );
+        if (index > -1) {
+            return {
+                sig: signatories[index],
+                index: index
+            };
+        }
+        return null;
+    }, [prefilledRecipient, signatories]);
+
+    // Auto-open signature modal if prefilled recipient matched on load and is unsigned
+    useEffect(() => {
+        if (!loading && prefilledRecipient && signatories.length > 0) {
+            const matchedIdx = signatories.findIndex(
+                s => s.email?.trim().toLowerCase() === prefilledRecipient.trim().toLowerCase()
+            );
+            if (matchedIdx > -1) {
+                const sig = signatories[matchedIdx];
+                if (sig && !sig.isSigned) {
+                    setActiveSigIndex(matchedIdx);
+                    setTypedName(sig.name || '');
+                    setSigTitle(sig.title || 'Representative');
+                    setIsSignModalOpen(true);
+                }
+            }
+        }
+    }, [loading, prefilledRecipient, signatories]);
 
     // Canvas drawing helpers
     const getCoordinates = (e: React.MouseEvent<HTMLCanvasElement> | React.TouchEvent<HTMLCanvasElement>) => {
@@ -461,6 +537,56 @@ export default function PublicSigningPortal({ docId, prefilledRecipient, onBackT
 
                 {/* Right Side: Signing Panel Status & Actions (Column span 4) */}
                 <div className="lg:col-span-4 space-y-6">
+                    {/* Document Details Card */}
+                    {docOverview && (
+                        <div className="bg-white border border-gray-200/60 p-6 rounded-[2.5rem] shadow-xl space-y-4">
+                            <div className="flex items-center gap-2.5 pb-3 border-b border-gray-100">
+                                <div className="w-8 h-8 bg-indigo-50 text-indigo-600 rounded-xl flex items-center justify-center text-sm">
+                                    📋
+                                </div>
+                                <div>
+                                    <h4 className="text-[9px] font-black uppercase tracking-wider text-gray-400">Document Overview</h4>
+                                    <h3 className="text-xs font-black text-gray-800 line-clamp-1">{docOverview.title}</h3>
+                                </div>
+                            </div>
+
+                            <div className="space-y-3 text-xs">
+                                <div className="flex justify-between items-start gap-2">
+                                    <span className="text-gray-400 font-bold uppercase tracking-wider text-[9px]">Origin / Sender:</span>
+                                    <span className="font-extrabold text-gray-800 text-right">{docOverview.company}</span>
+                                </div>
+                                {docOverview.client && (
+                                    <div className="flex justify-between items-start gap-2">
+                                        <span className="text-gray-400 font-bold uppercase tracking-wider text-[9px]">Client Name:</span>
+                                        <span className="font-extrabold text-gray-700 text-right">{docOverview.client}</span>
+                                    </div>
+                                )}
+                                <div className="flex justify-between items-center">
+                                    <span className="text-gray-400 font-bold uppercase tracking-wider text-[9px]">Date Generated:</span>
+                                    <span className="font-mono text-gray-600">{docOverview.date}</span>
+                                </div>
+                                {docOverview.reference && (
+                                    <div className="flex justify-between items-center">
+                                        <span className="text-gray-400 font-bold uppercase tracking-wider text-[9px]">Reference:</span>
+                                        <span className="font-mono text-gray-500">{docOverview.reference}</span>
+                                    </div>
+                                )}
+                                <div className="pt-3 border-t border-gray-100 space-y-2">
+                                    <div className="flex justify-between items-center text-[9px] font-black text-gray-400 uppercase tracking-widest">
+                                        <span>Completion Status</span>
+                                        <span className="text-indigo-600 bg-indigo-50 px-2 py-0.5 rounded border border-indigo-100">{docOverview.signedSigs} of {docOverview.totalSigs} signed</span>
+                                    </div>
+                                    <div className="w-full bg-gray-100 h-2 rounded-full overflow-hidden">
+                                        <div 
+                                            className="bg-indigo-600 h-2 rounded-full transition-all duration-700 ease-out" 
+                                            style={{ width: `${((docOverview.signedSigs || 0) / (docOverview.totalSigs || 1)) * 100}%` }}
+                                        />
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    )}
+
                     {isSignedSuccess ? (
                         <div className="bg-emerald-50 border border-emerald-100 p-6 rounded-[2.5rem] shadow-xl space-y-5 animate-scale-up">
                             <div className="flex items-center gap-3">
@@ -504,55 +630,173 @@ export default function PublicSigningPortal({ docId, prefilledRecipient, onBackT
                             )}
                         </div>
                     ) : (
-                        <div className="bg-white border border-gray-200/60 p-6 rounded-[2.5rem] shadow-xl space-y-5">
-                            <div className="space-y-1">
-                                <h3 className="text-base font-black text-gray-800 uppercase tracking-tight flex items-center gap-1.5">
-                                    <svg className="w-4 h-4 text-indigo-600 animate-pulse" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
-                                    </svg>
-                                    Execute Agreement
-                                </h3>
-                                <p className="text-xs text-gray-500 font-medium leading-relaxed">
-                                    Read and confirm the terms of the agreement on the left panel, then choose your signature slot below to execute.
-                                </p>
-                            </div>
+                        <div className="space-y-6">
+                            {/* Personal Invitation Block */}
+                            {matchedSignatory ? (
+                                <div className="bg-gradient-to-br from-indigo-50/70 to-indigo-100/30 border-2 border-indigo-200/80 p-6 rounded-[2.5rem] shadow-xl space-y-4">
+                                    <div className="space-y-1">
+                                        <div className="inline-flex items-center gap-1.5 px-2.5 py-1 bg-indigo-100 text-indigo-700 text-[9px] font-black uppercase tracking-wider rounded-md border border-indigo-200/40">
+                                            ✨ Requested Signatory Slot
+                                        </div>
+                                        <h3 className="text-base font-black text-gray-900 tracking-tight mt-1">
+                                            Welcome, {matchedSignatory.sig.name}!
+                                        </h3>
+                                        <p className="text-xs text-gray-600 font-medium leading-relaxed">
+                                            You are invited to review and execute this document as the <strong className="text-indigo-900">{matchedSignatory.sig.signatoryType} Signatory</strong>.
+                                        </p>
+                                    </div>
 
-                            <div className="space-y-2">
-                                <label className="text-[10px] font-black uppercase tracking-wider text-gray-400">Identify Your Signature Slot</label>
-                                <div className="space-y-2">
-                                    {signatories.map((sig, idx) => (
-                                        <button
-                                            key={sig.id}
-                                            disabled={sig.isSigned}
-                                            onClick={() => handleOpenSignModalForIndex(idx)}
-                                            className={`w-full p-3.5 border rounded-2xl text-left transition-all relative flex flex-col justify-between ${
-                                                sig.isSigned 
-                                                    ? 'border-emerald-100 bg-emerald-50/20 opacity-70 cursor-not-allowed' 
-                                                    : 'border-gray-100 bg-gray-50/50 hover:bg-indigo-50/20 hover:border-indigo-200 active:scale-95'
-                                            }`}
-                                        >
-                                            <div className="text-xs w-[90%] font-extrabold text-gray-800 flex items-center justify-between">
-                                                <span className="truncate">{sig.name}</span>
-                                                {sig.isSigned ? (
-                                                    <span className="text-[9px] text-emerald-600 block">Signed</span>
-                                                ) : (
-                                                    <span className="text-[9px] text-indigo-600 hover:underline block font-black uppercase tracking-wider">Sign Now</span>
-                                                )}
+                                    <div className="p-4 bg-white rounded-2xl border border-indigo-100/80 shadow-sm space-y-3">
+                                        <div className="text-xs space-y-1">
+                                            <p className="text-[9px] font-black uppercase tracking-wider text-gray-400">Your Signature Slot Details</p>
+                                            <p className="font-extrabold text-gray-800 text-sm">{matchedSignatory.sig.name}</p>
+                                            <p className="text-[10px] text-indigo-600 font-bold uppercase tracking-wider">{matchedSignatory.sig.title}</p>
+                                            <p className="text-[10px] text-gray-400 font-mono">{matchedSignatory.sig.email}</p>
+                                        </div>
+
+                                        {matchedSignatory.sig.isSigned ? (
+                                            <div className="p-3 bg-emerald-50 text-emerald-800 rounded-xl border border-emerald-200/30 flex items-center gap-2">
+                                                <span className="text-lg">✓</span>
+                                                <div className="text-xs">
+                                                    <p className="font-extrabold">You signed successfully!</p>
+                                                    <p className="text-[9px] text-emerald-600 font-mono">{matchedSignatory.sig.date}</p>
+                                                </div>
                                             </div>
-                                            <span className="text-[10px] text-gray-400 font-bold uppercase tracking-wider mt-0.5">{sig.title}</span>
-                                        </button>
-                                    ))}
-                                </div>
-                            </div>
+                                        ) : (
+                                            <button
+                                                onClick={() => handleOpenSignModalForIndex(matchedSignatory.index)}
+                                                className="w-full py-3 bg-indigo-600 hover:bg-indigo-700 active:scale-95 text-white text-xs font-black uppercase tracking-widest rounded-xl transition-all shadow-md flex items-center justify-center gap-2 animate-pulse"
+                                            >
+                                                ✍️ Sign Your Part Now
+                                            </button>
+                                        )}
+                                    </div>
 
-                            {onBackToLogin && (
-                                <button
-                                    onClick={onBackToLogin}
-                                    className="w-full py-2.5 bg-gray-100 hover:bg-gray-200 text-gray-700 text-xs font-black uppercase tracking-widest rounded-xl transition-all block text-center"
-                                >
-                                    Log In as CRAVEBIZ User
-                                </button>
+                                    <div className="text-center pt-1">
+                                        <button
+                                            onClick={() => {
+                                                // Switch signatory by clearing recipient query parameter
+                                                const url = new URL(window.location.href);
+                                                url.searchParams.delete('recipient');
+                                                window.history.replaceState({}, window.document.title, url.toString());
+                                                window.location.reload();
+                                            }}
+                                            className="text-[10px] text-indigo-600 hover:underline font-black uppercase tracking-wider"
+                                        >
+                                            Not {matchedSignatory.sig.name}? Switch Signatory
+                                        </button>
+                                    </div>
+                                </div>
+                            ) : (
+                                <div className="bg-white border border-gray-200/60 p-6 rounded-[2.5rem] shadow-xl space-y-5">
+                                    <div className="space-y-1">
+                                        <h3 className="text-base font-black text-gray-800 uppercase tracking-tight flex items-center gap-1.5">
+                                            🔒 Identify Your Signature Slot
+                                        </h3>
+                                        <p className="text-xs text-gray-500 font-medium leading-relaxed">
+                                            Enter your email address to securely claim your signature slot, or select your slot from the checklist below.
+                                        </p>
+                                    </div>
+
+                                    {/* Email Verification Form */}
+                                    <div className="space-y-2 pt-1 border-t border-gray-50">
+                                        <label className="text-[10px] font-black uppercase tracking-wider text-gray-400">Invited Email Address</label>
+                                        <div className="flex gap-2">
+                                            <input
+                                                type="email"
+                                                placeholder="name@company.com"
+                                                value={userEmailInput}
+                                                onChange={(e) => {
+                                                    setUserEmailInput(e.target.value);
+                                                    setEmailMatchError(null);
+                                                }}
+                                                className="flex-1 px-3 py-2 border border-gray-200 rounded-xl focus:outline-none focus:border-indigo-500 text-xs font-semibold"
+                                            />
+                                            <button
+                                                onClick={() => {
+                                                    if (!userEmailInput.trim() || !userEmailInput.includes('@')) {
+                                                        setEmailMatchError("Please enter a valid email address.");
+                                                        return;
+                                                    }
+                                                    const matchedIdx = signatories.findIndex(
+                                                        s => s.email?.trim().toLowerCase() === userEmailInput.trim().toLowerCase()
+                                                    );
+                                                    if (matchedIdx > -1) {
+                                                        // Update URL and reload to trigger auto-open
+                                                        const url = new URL(window.location.href);
+                                                        url.searchParams.set('recipient', userEmailInput.trim());
+                                                        window.history.replaceState({}, window.document.title, url.toString());
+                                                        window.location.reload();
+                                                    } else {
+                                                        setEmailMatchError("No invitation found matching this email address.");
+                                                    }
+                                                }}
+                                                className="px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-xs font-black uppercase tracking-wider transition-colors active:scale-95"
+                                            >
+                                                Verify
+                                            </button>
+                                        </div>
+                                        {emailMatchError && (
+                                            <p className="text-[10px] text-red-500 font-semibold">{emailMatchError}</p>
+                                        )}
+                                    </div>
+                                </div>
                             )}
+
+                            {/* All Signature Slots */}
+                            <div className="bg-white border border-gray-200/60 p-6 rounded-[2.5rem] shadow-xl space-y-4">
+                                <label className="text-[10px] font-black uppercase tracking-widest text-gray-400 block border-b border-gray-50 pb-1.5">
+                                    All Agreement Signatories ({signatories.length})
+                                </label>
+                                <div className="space-y-2.5">
+                                    {signatories.map((sig, idx) => {
+                                        const isMySlot = matchedSignatory?.index === idx;
+                                        return (
+                                            <button
+                                                key={sig.id}
+                                                disabled={sig.isSigned}
+                                                onClick={() => handleOpenSignModalForIndex(idx)}
+                                                className={`w-full p-3.5 border rounded-2xl text-left transition-all relative flex flex-col justify-between ${
+                                                    sig.isSigned 
+                                                        ? 'border-emerald-100 bg-emerald-50/20 opacity-70 cursor-not-allowed' 
+                                                        : isMySlot
+                                                            ? 'border-indigo-300 bg-indigo-50/30 hover:bg-indigo-50/50 ring-2 ring-indigo-500/10'
+                                                            : 'border-gray-100 bg-gray-50/50 hover:bg-indigo-50/20 hover:border-indigo-200 active:scale-95'
+                                                }`}
+                                            >
+                                                <div className="text-xs w-full font-extrabold text-gray-800 flex items-center justify-between">
+                                                    <span className="truncate flex items-center gap-1.5">
+                                                        {sig.name}
+                                                        {isMySlot && (
+                                                            <span className="bg-indigo-100 text-indigo-700 text-[8px] font-black uppercase px-1.5 py-0.5 rounded">You</span>
+                                                        )}
+                                                    </span>
+                                                    {sig.isSigned ? (
+                                                        <span className="bg-emerald-50 border border-emerald-200/40 text-emerald-600 text-[8px] font-black uppercase tracking-wider px-2 py-0.5 rounded">Signed</span>
+                                                    ) : (
+                                                        <span className="text-[9px] text-indigo-600 font-black uppercase tracking-wider hover:underline">Sign Now</span>
+                                                    )}
+                                                </div>
+                                                <div className="flex justify-between items-center w-full mt-1.5 text-[10px]">
+                                                    <span className="text-gray-400 font-bold uppercase tracking-wider">{sig.title}</span>
+                                                    {sig.email && (
+                                                        <span className="font-mono text-gray-400 max-w-[140px] truncate">{sig.email}</span>
+                                                    )}
+                                                </div>
+                                            </button>
+                                        );
+                                    })}
+                                </div>
+
+                                {onBackToLogin && (
+                                    <button
+                                        onClick={onBackToLogin}
+                                        className="w-full mt-2 py-2.5 bg-gray-100 hover:bg-gray-200 text-gray-700 text-xs font-black uppercase tracking-widest rounded-xl transition-all block text-center"
+                                    >
+                                        Log In as CRAVEBIZ User
+                                    </button>
+                                )}
+                            </div>
                         </div>
                     )}
                 </div>
