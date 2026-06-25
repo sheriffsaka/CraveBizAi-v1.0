@@ -75,9 +75,7 @@ export default function App() {
         docId={publicDocId} 
         prefilledRecipient={publicRecipient || undefined}
         onBackToLogin={() => {
-          window.history.replaceState({}, document.title, window.location.pathname);
-          setPublicDocId(null);
-          setPublicRecipient(null);
+          window.location.href = window.location.origin + window.location.pathname;
         }}
       />
     );

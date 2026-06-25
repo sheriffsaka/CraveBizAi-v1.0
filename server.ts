@@ -1,5 +1,6 @@
 import express from "express";
 import path from "path";
+import fs from "fs";
 import {
     generateTextResponse,
     transformDocument,
@@ -17,6 +18,30 @@ const PORT = 3000;
 // Body parsing middleware
 app.use(express.json());
 
+const SIGNATURES_FILE = path.join(process.cwd(), "public_signatures.json");
+
+function getPublicSignatures() {
+    try {
+        if (fs.existsSync(SIGNATURES_FILE)) {
+            const data = fs.readFileSync(SIGNATURES_FILE, "utf-8");
+            return JSON.parse(data) || {};
+        }
+    } catch (e) {
+        console.error("Failed to read signatures file:", e);
+    }
+    return {};
+}
+
+function savePublicSignatures(signaturesMap: any) {
+    try {
+        fs.writeFileSync(SIGNATURES_FILE, JSON.stringify(signaturesMap, null, 2), "utf-8");
+        return true;
+    } catch (e) {
+        console.error("Failed to write signatures file:", e);
+        return false;
+    }
+}
+
 // API Routes for GenAI Operations
 app.get("/api/health", (req, res) => {
     res.json({ 
@@ -25,6 +50,29 @@ app.get("/api/health", (req, res) => {
         vercel: !!process.env.VERCEL,
         geminiConfig: checkApiKeyStatus()
     });
+});
+
+app.get("/api/public/signatures", (req, res) => {
+    res.json(getPublicSignatures());
+});
+
+app.post("/api/public/signatures", (req, res) => {
+    try {
+        const { docId, signatures } = req.body;
+        if (!docId || !signatures) {
+            return res.status(400).json({ error: "docId and signatures are required" });
+        }
+        const current = getPublicSignatures();
+        current[docId] = signatures;
+        const success = savePublicSignatures(current);
+        if (success) {
+            res.json({ success: true });
+        } else {
+            res.status(500).json({ error: "Failed to save signatures to server" });
+        }
+    } catch (err: any) {
+        res.status(500).json({ error: err.message || "Internal server error" });
+    }
 });
 
 app.post("/api/ai/text-response", async (req, res) => {

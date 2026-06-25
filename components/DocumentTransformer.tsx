@@ -397,6 +397,7 @@ const DocumentTransformer: React.FC<DocumentTransformerProps> = ({ company, user
                     // Prepare lightweight payload for URL hash (robust fallback)
                     const payload = {
                         t: nextDoc.documentType,
+                        c: nextDoc.companyId,
                         b: nextDoc.blocks.map(b => ({
                             i: b.id,
                             t: b.type,

@@ -493,6 +493,20 @@ class CraveBizApi {
       }
     }
     
+    try {
+      const resp = await fetch('/api/public/signatures');
+      if (resp.ok) {
+        const sigMap = await resp.json();
+        for (const doc of combined) {
+          if (sigMap[doc.id]) {
+            doc.signatures = sigMap[doc.id];
+          }
+        }
+      }
+    } catch (err) {
+      console.warn("Could not merge server-side public signatures:", err);
+    }
+    
     return combined.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
   }
 
@@ -691,6 +705,8 @@ class CraveBizApi {
   }
 
   async getPublicDoc(id: string): Promise<StoredGeneratedDoc | null> {
+    let fetchedDoc: StoredGeneratedDoc | null = null;
+    
     // 1. Try Supabase first (ensure we get the latest persistent signature/signee data)
     try {
       const { data, error } = await supabase.from('generated_documents').select('*').eq('id', id).maybeSingle();
@@ -706,7 +722,7 @@ class CraveBizApi {
             signatures = (data.content as any).signatures || [];
           }
         }
-        return {
+        fetchedDoc = {
           id: data.id,
           companyId: data.company_id,
           createdAt: data.created_at,
@@ -720,7 +736,7 @@ class CraveBizApi {
     }
 
     // 2. Try decoding from the URL hash next (as robust offline/cross-browser fallback)
-    if (typeof window !== 'undefined' && window.location && window.location.hash) {
+    if (!fetchedDoc && typeof window !== 'undefined' && window.location && window.location.hash) {
       try {
         const hash = window.location.hash;
         if (hash.includes('data=')) {
@@ -729,9 +745,9 @@ class CraveBizApi {
             const decodedData = decodeURIComponent(base64Match[1]);
             const jsonStr = decodeURIComponent(escape(atob(decodedData)));
             const payload = JSON.parse(jsonStr);
-            return {
+            fetchedDoc = {
               id: id,
-              companyId: 'public',
+              companyId: payload.c || 'public',
               createdAt: new Date().toISOString(),
               documentType: payload.t || 'Uploaded Document',
               blocks: (payload.b || []).map((b: any) => ({
@@ -749,22 +765,54 @@ class CraveBizApi {
     }
 
     // 3. Fallback to search across all company localStorage keys
-    for (let i = 0; i < localStorage.length; i++) {
-      const key = localStorage.key(i);
-      if (key && key.startsWith('cravebiz_docs_')) {
-        try {
-          const list: StoredGeneratedDoc[] = JSON.parse(localStorage.getItem(key) || '[]');
-          const found = list.find(d => d.id === id);
-          if (found) return found;
-        } catch {
-          // Ignore
+    if (!fetchedDoc) {
+      for (let i = 0; i < localStorage.length; i++) {
+        const key = localStorage.key(i);
+        if (key && key.startsWith('cravebiz_docs_')) {
+          try {
+            const list: StoredGeneratedDoc[] = JSON.parse(localStorage.getItem(key) || '[]');
+            const found = list.find(d => d.id === id);
+            if (found) {
+              fetchedDoc = found;
+              break;
+            }
+          } catch {
+            // Ignore
+          }
         }
       }
     }
-    return null;
+
+    if (fetchedDoc) {
+      // Overwrite signatures with server-side public signatures if available
+      try {
+        const resp = await fetch('/api/public/signatures');
+        if (resp.ok) {
+          const sigMap = await resp.json();
+          if (sigMap[fetchedDoc.id]) {
+            fetchedDoc.signatures = sigMap[fetchedDoc.id];
+          }
+        }
+      } catch (err) {
+        console.warn("Could not merge server-side public signatures:", err);
+      }
+    }
+
+    return fetchedDoc;
   }
 
   async savePublicDocSignature(id: string, updatedSignatures: SignatureInfo[]): Promise<boolean> {
+    // Proactively save to server-side filesystem store (absolutely guarantees database bypass/persistence)
+    try {
+      await fetch('/api/public/signatures', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ docId: id, signatures: updatedSignatures })
+      });
+    } catch (err) {
+      console.warn("Failed to push signature to server-side store:", err);
+    }
+
     try {
       const doc = await this.getPublicDoc(id);
       if (!doc) return false;
