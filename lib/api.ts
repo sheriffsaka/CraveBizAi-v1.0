@@ -691,7 +691,35 @@ class CraveBizApi {
   }
 
   async getPublicDoc(id: string): Promise<StoredGeneratedDoc | null> {
-    // Try decoding from the URL hash first (100% reliable offline/cross-browser fallback)
+    // 1. Try Supabase first (ensure we get the latest persistent signature/signee data)
+    try {
+      const { data, error } = await supabase.from('generated_documents').select('*').eq('id', id).maybeSingle();
+      if (error) throw error;
+      if (data) {
+        let blocks: DocumentBlock[] = [];
+        let signatures: any[] = [];
+        if (data.content) {
+          if (Array.isArray(data.content)) {
+            blocks = data.content;
+          } else if (typeof data.content === 'object') {
+            blocks = (data.content as any).blocks || [];
+            signatures = (data.content as any).signatures || [];
+          }
+        }
+        return {
+          id: data.id,
+          companyId: data.company_id,
+          createdAt: data.created_at,
+          documentType: data.document_type,
+          blocks,
+          signatures
+        };
+      }
+    } catch (e) {
+      console.warn("Public fetch from Supabase failed, trying fallbacks:", e);
+    }
+
+    // 2. Try decoding from the URL hash next (as robust offline/cross-browser fallback)
     if (typeof window !== 'undefined' && window.location && window.location.hash) {
       try {
         const hash = window.location.hash;
@@ -720,34 +748,7 @@ class CraveBizApi {
       }
     }
 
-    try {
-      const { data, error } = await supabase.from('generated_documents').select('*').eq('id', id).maybeSingle();
-      if (error) throw error;
-      if (data) {
-        let blocks: DocumentBlock[] = [];
-        let signatures: any[] = [];
-        if (data.content) {
-          if (Array.isArray(data.content)) {
-            blocks = data.content;
-          } else if (typeof data.content === 'object') {
-            blocks = (data.content as any).blocks || [];
-            signatures = (data.content as any).signatures || [];
-          }
-        }
-        return {
-          id: data.id,
-          companyId: data.company_id,
-          createdAt: data.created_at,
-          documentType: data.document_type,
-          blocks,
-          signatures
-        };
-      }
-    } catch (e) {
-      console.warn("Public fetch failed:", e);
-    }
-    
-    // Fallback to search across all company localStorage keys
+    // 3. Fallback to search across all company localStorage keys
     for (let i = 0; i < localStorage.length; i++) {
       const key = localStorage.key(i);
       if (key && key.startsWith('cravebiz_docs_')) {

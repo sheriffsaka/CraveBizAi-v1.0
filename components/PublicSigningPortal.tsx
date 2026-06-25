@@ -20,6 +20,11 @@ export default function PublicSigningPortal({ docId, prefilledRecipient, onBackT
     const [userEmailInput, setUserEmailInput] = useState(prefilledRecipient || '');
     const [emailMatchError, setEmailMatchError] = useState<string | null>(null);
 
+    // Guest self-adding signatory state
+    const [isAddingSelf, setIsAddingSelf] = useState(false);
+    const [selfName, setSelfName] = useState('');
+    const [selfTitle, setSelfTitle] = useState('Representative');
+
     // Signature State
     const [isSignModalOpen, setIsSignModalOpen] = useState(false);
     const [sigType, setSigType] = useState<'draw' | 'type' | 'upload'>('draw');
@@ -698,46 +703,130 @@ export default function PublicSigningPortal({ docId, prefilledRecipient, onBackT
                                         </p>
                                     </div>
 
-                                    {/* Email Verification Form */}
-                                    <div className="space-y-2 pt-1 border-t border-gray-50">
-                                        <label className="text-[10px] font-black uppercase tracking-wider text-gray-400">Invited Email Address</label>
-                                        <div className="flex gap-2">
-                                            <input
-                                                type="email"
-                                                placeholder="name@company.com"
-                                                value={userEmailInput}
-                                                onChange={(e) => {
-                                                    setUserEmailInput(e.target.value);
-                                                    setEmailMatchError(null);
-                                                }}
-                                                className="flex-1 px-3 py-2 border border-gray-200 rounded-xl focus:outline-none focus:border-indigo-500 text-xs font-semibold"
-                                            />
-                                            <button
-                                                onClick={() => {
-                                                    if (!userEmailInput.trim() || !userEmailInput.includes('@')) {
-                                                        setEmailMatchError("Please enter a valid email address.");
-                                                        return;
-                                                    }
-                                                    const matchedIdx = signatories.findIndex(
-                                                        s => s.email?.trim().toLowerCase() === userEmailInput.trim().toLowerCase()
-                                                    );
-                                                    if (matchedIdx > -1) {
-                                                        // Update URL and reload to trigger auto-open
-                                                        const url = new URL(window.location.href);
-                                                        url.searchParams.set('recipient', userEmailInput.trim());
-                                                        window.history.replaceState({}, window.document.title, url.toString());
-                                                        window.location.reload();
-                                                    } else {
-                                                        setEmailMatchError("No invitation found matching this email address.");
-                                                    }
-                                                }}
-                                                className="px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-xs font-black uppercase tracking-wider transition-colors active:scale-95"
-                                            >
-                                                Verify
-                                            </button>
-                                        </div>
-                                        {emailMatchError && (
-                                            <p className="text-[10px] text-red-500 font-semibold">{emailMatchError}</p>
+                                    {/* Email Verification / Self-registration Form */}
+                                    <div className="space-y-3 pt-1 border-t border-gray-100">
+                                        {isAddingSelf ? (
+                                            <div className="space-y-3 bg-indigo-50/40 p-4 rounded-2xl border border-indigo-100/40">
+                                                <p className="text-[11px] font-bold text-indigo-900 flex items-center gap-1">
+                                                    <span>👤</span> Onboard Yourself to Sign Now
+                                                </p>
+                                                <div className="space-y-2">
+                                                    <div>
+                                                        <label className="text-[9px] font-black uppercase tracking-wider text-gray-400 block mb-0.5">Your Full Name</label>
+                                                        <input
+                                                            type="text"
+                                                            placeholder="Jane Doe"
+                                                            value={selfName}
+                                                            onChange={e => setSelfName(e.target.value)}
+                                                            className="w-full px-3 py-1.5 border border-gray-200 rounded-xl text-xs font-semibold focus:border-indigo-500 focus:outline-none bg-white"
+                                                        />
+                                                    </div>
+                                                    <div>
+                                                        <label className="text-[9px] font-black uppercase tracking-wider text-gray-400 block mb-0.5">Your Corporate Title</label>
+                                                        <input
+                                                            type="text"
+                                                            placeholder="Counterparty Representative / Client"
+                                                            value={selfTitle}
+                                                            onChange={e => setSelfTitle(e.target.value)}
+                                                            className="w-full px-3 py-1.5 border border-gray-200 rounded-xl text-xs font-semibold focus:border-indigo-500 focus:outline-none bg-white"
+                                                        />
+                                                    </div>
+                                                </div>
+                                                <div className="flex gap-2 pt-1">
+                                                    <button
+                                                        onClick={() => {
+                                                            if (!selfName.trim()) {
+                                                                alert("Please enter your name.");
+                                                                return;
+                                                            }
+                                                            const newSig: SignatureInfo = {
+                                                                id: 'sig_' + Math.floor(Math.random() * 899999 + 100000),
+                                                                type: 'type',
+                                                                value: '',
+                                                                name: selfName.trim(),
+                                                                title: selfTitle.trim() || 'Representative',
+                                                                date: '',
+                                                                signatoryType: 'Main',
+                                                                email: userEmailInput.trim(),
+                                                                isSigned: false,
+                                                                isRequested: true
+                                                            };
+                                                            const updated = [...signatories, newSig];
+                                                            setSignatories(updated);
+                                                            setIsAddingSelf(false);
+                                                            setEmailMatchError(null);
+                                                            
+                                                            // Open sign modal for the newly added slot immediately!
+                                                            const newIdx = updated.length - 1;
+                                                            setActiveSigIndex(newIdx);
+                                                            setIsSignModalOpen(true);
+                                                        }}
+                                                        className="flex-1 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-xs font-black uppercase tracking-wider transition-all active:scale-95"
+                                                    >
+                                                        Add & Sign Now
+                                                    </button>
+                                                    <button
+                                                        onClick={() => setIsAddingSelf(false)}
+                                                        className="px-3 py-2 bg-gray-100 hover:bg-gray-200 text-gray-600 rounded-xl text-xs font-bold"
+                                                    >
+                                                        Cancel
+                                                    </button>
+                                                </div>
+                                            </div>
+                                        ) : (
+                                            <div className="space-y-2">
+                                                <label className="text-[10px] font-black uppercase tracking-wider text-gray-400">Invited Email Address</label>
+                                                <div className="flex gap-2">
+                                                    <input
+                                                        type="email"
+                                                        placeholder="name@company.com"
+                                                        value={userEmailInput}
+                                                        onChange={(e) => {
+                                                            setUserEmailInput(e.target.value);
+                                                            setEmailMatchError(null);
+                                                        }}
+                                                        className="flex-1 px-3 py-2 border border-gray-200 rounded-xl focus:outline-none focus:border-indigo-500 text-xs font-semibold bg-white"
+                                                    />
+                                                    <button
+                                                        onClick={() => {
+                                                            if (!userEmailInput.trim() || !userEmailInput.includes('@')) {
+                                                                setEmailMatchError("Please enter a valid email address.");
+                                                                return;
+                                                            }
+                                                            const matchedIdx = signatories.findIndex(
+                                                                s => s.email?.trim().toLowerCase() === userEmailInput.trim().toLowerCase()
+                                                            );
+                                                            if (matchedIdx > -1) {
+                                                                // Update URL and reload to trigger auto-open
+                                                                const url = new URL(window.location.href);
+                                                                url.searchParams.set('recipient', userEmailInput.trim());
+                                                                window.history.replaceState({}, window.document.title, url.toString());
+                                                                window.location.reload();
+                                                            } else {
+                                                                setEmailMatchError("No exact invitation found matching this email address.");
+                                                            }
+                                                        }}
+                                                        className="px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-xs font-black uppercase tracking-wider transition-colors active:scale-95"
+                                                    >
+                                                        Verify
+                                                    </button>
+                                                </div>
+                                                {emailMatchError && (
+                                                    <div className="p-3 bg-red-50 border border-red-100 rounded-xl space-y-1.5">
+                                                        <p className="text-[10px] text-red-600 font-bold">{emailMatchError}</p>
+                                                        <button
+                                                            onClick={() => {
+                                                                setSelfName('');
+                                                                setSelfTitle('Representative');
+                                                                setIsAddingSelf(true);
+                                                            }}
+                                                            className="text-[10px] text-indigo-700 hover:underline font-black uppercase tracking-wider flex items-center gap-1"
+                                                        >
+                                                            ➕ Click here to add yourself as a signatory
+                                                        </button>
+                                                    </div>
+                                                )}
+                                            </div>
                                         )}
                                     </div>
                                 </div>

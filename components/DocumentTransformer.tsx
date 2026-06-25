@@ -1382,26 +1382,14 @@ ${company?.name || 'CraveBiZ Vendor'}`;
                                         ))}
                                     </div>
 
-                                    {/* Action button immediately shown AFTER owner (first signatory) signs */}
-                                    {signatories[0]?.isSigned ? (
-                                        <button
-                                            onClick={() => setIsAddSignatoryModalOpen(true)}
-                                            className="w-full py-3 bg-primary-600 hover:bg-primary-700 text-white text-xs font-black uppercase tracking-widest rounded-xl shadow-md hover:shadow-lg hover:scale-[1.01] active:scale-95 transition-all flex items-center justify-center gap-2"
-                                            id="add_signatory_btn"
-                                        >
-                                            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 9v3m0 0v3m0-3h3m-3 0H9m12 0a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
-                                            Add Signatory
-                                        </button>
-                                    ) : (
-                                        <div className="p-3.5 bg-amber-50/50 border border-amber-200 rounded-xl text-center">
-                                            <p className="text-[10px] text-amber-800 font-bold leading-relaxed">
-                                                🔒 Onboard Additional Signatories
-                                            </p>
-                                            <p className="text-[9px] text-amber-600 font-medium mt-0.5">
-                                                Please sign the document slot as the owner first. After your official sign-off, you can add and route slots to counterparties.
-                                            </p>
-                                        </div>
-                                    )}
+                                    <button
+                                        onClick={() => setIsAddSignatoryModalOpen(true)}
+                                        className="w-full py-3 bg-primary-600 hover:bg-primary-700 text-white text-xs font-black uppercase tracking-widest rounded-xl shadow-md hover:shadow-lg hover:scale-[1.01] active:scale-95 transition-all flex items-center justify-center gap-2"
+                                        id="add_signatory_btn"
+                                    >
+                                        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 9v3m0 0v3m0-3h3m-3 0H9m12 0a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
+                                        Add Signatory
+                                    </button>
                                 </div>
                             )}
                         </>
