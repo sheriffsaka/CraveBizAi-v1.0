@@ -1,4 +1,3 @@
-
 import React, { useState } from 'react';
 import Icon from './common/Icon';
 import { Company, User } from '../types';
@@ -13,6 +12,8 @@ interface HeaderProps {
     onOpenUserProfile: () => void;
     onLogout: () => void;
     onToggleMobileMenu: () => void;
+    isSidebarCollapsed?: boolean;
+    onToggleSidebar?: () => void;
 }
 
 const UserAvatar: React.FC<{ user: User; onOpenUserProfile: () => void; onLogout: () => void; }> = ({ user, onOpenUserProfile, onLogout }) => {
@@ -50,13 +51,39 @@ const UserAvatar: React.FC<{ user: User; onOpenUserProfile: () => void; onLogout
     )
 }
 
-const Header: React.FC<HeaderProps> = ({ pageTitle, onCreateInvoice, user, onOpenUserProfile, onLogout, onToggleMobileMenu }) => {
+const Header: React.FC<HeaderProps> = ({ 
+    pageTitle, 
+    onCreateInvoice, 
+    user, 
+    onOpenUserProfile, 
+    onLogout, 
+    onToggleMobileMenu,
+    isSidebarCollapsed = false,
+    onToggleSidebar
+}) => {
     return (
         <header className="flex justify-between items-center p-4 h-20 bg-white border-b shadow-sm relative z-40">
-            <div className="flex items-center">
-                <button onClick={onToggleMobileMenu} className="p-2 mr-3 text-gray-600 md:hidden hover:bg-gray-100 rounded-lg">
+            <div className="flex items-center space-x-2">
+                <button onClick={onToggleMobileMenu} className="p-2 mr-1 text-gray-600 md:hidden hover:bg-gray-100 rounded-lg">
                     <Icon name="menu" className="w-6 h-6"/>
                 </button>
+                
+                {onToggleSidebar && (
+                    <button 
+                        onClick={onToggleSidebar} 
+                        className="hidden md:flex p-2 text-gray-500 hover:text-primary-600 hover:bg-primary-50 rounded-xl transition-all shadow-sm border border-gray-100"
+                        title={isSidebarCollapsed ? "Expand Sidebar (Standard Screen)" : "Collapse Sidebar (Full Screen Workspace)"}
+                    >
+                        <svg className="w-5 h-5" fill="none" stroke="currentColor" strokeWidth="2.5" viewBox="0 0 24 24">
+                            {isSidebarCollapsed ? (
+                                <path strokeLinecap="round" strokeLinejoin="round" d="M13 5l7 7-7 7M5 5l7 7-7 7" />
+                            ) : (
+                                <path strokeLinecap="round" strokeLinejoin="round" d="M11 19l-7-7 7-7M19 19l-7-7 7-7" />
+                            )}
+                        </svg>
+                    </button>
+                )}
+                
                 <h2 className="text-xl font-bold text-gray-800 tracking-tight">{pageTitle}</h2>
             </div>
             <div className="flex items-center space-x-3">

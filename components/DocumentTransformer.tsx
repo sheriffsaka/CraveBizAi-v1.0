@@ -405,7 +405,8 @@ const DocumentTransformer: React.FC<DocumentTransformerProps> = ({ company, user
 
             // Structure custom fields in the fallback database
             const contentJson = {
-                fields: designerFields
+                fields: designerFields,
+                htmlContent: generatedDoc?.originalFileType === 'docx-html' ? generatedDoc.blocks.map(b => b.content.text).join('') : ''
             };
 
             const response = await api.createDocSignifyDocument(
@@ -1820,6 +1821,7 @@ ${company?.name || 'CraveBiZ Vendor'}`;
                                             <DocumentSignifyViewer
                                                 fileUrl={generatedDoc.originalFileUrl || generatedDoc.originalFileBase64}
                                                 fileType={generatedDoc.originalFileType || 'pdf'}
+                                                htmlContent={generatedDoc.originalFileType === 'docx-html' ? generatedDoc.blocks.map(b => b.content.text).join('') : ''}
                                                 fields={designerFields}
                                                 signatories={signatories.map((s, idx) => ({
                                                     id: s.id,
@@ -2268,6 +2270,7 @@ ${company?.name || 'CraveBiZ Vendor'}`;
                                                         <DocumentSignifyViewer
                                                             fileUrl={generatedDoc.originalFileUrl || generatedDoc.originalFileBase64}
                                                             fileType={generatedDoc.originalFileType || 'pdf'}
+                                                            htmlContent={generatedDoc.originalFileType === 'docx-html' ? generatedDoc.blocks.map(b => b.content.text).join('') : ''}
                                                             signatures={signatories.map((s, idx) => ({
                                                                 id: s.id || `sig-${idx}`,
                                                                 document_id: editingDocId || 'temp',

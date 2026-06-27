@@ -52,6 +52,7 @@ export default function App() {
   });
 
   const [activePage, setActivePage] = useState<Page>('dashboard');
+  const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
   const [isDataSyncing, setIsDataSyncing] = useState(false);
   const [syncError, setSyncError] = useState<string | null>(null);
@@ -569,6 +570,7 @@ export default function App() {
         isAdmin={currentUser?.isAdmin || false} 
         isOpen={isMobileMenuOpen} 
         onClose={() => setIsMobileMenuOpen(false)} 
+        isCollapsed={isSidebarCollapsed}
       />
       <div className="flex-1 flex flex-col overflow-hidden">
         <Header 
@@ -581,6 +583,8 @@ export default function App() {
             onOpenUserProfile={() => setIsUserProfileModalOpen(true)} 
             onLogout={async () => { await supabase.auth.signOut(); }} 
             onToggleMobileMenu={() => setIsMobileMenuOpen(true)} 
+            isSidebarCollapsed={isSidebarCollapsed}
+            onToggleSidebar={() => setIsSidebarCollapsed(prev => !prev)}
         />
         <main className="flex-1 overflow-y-auto p-4 md:p-8 relative">
             {syncError && (

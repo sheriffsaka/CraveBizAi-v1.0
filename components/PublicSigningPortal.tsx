@@ -668,6 +668,7 @@ export default function PublicSigningPortal({ docId, token, prefilledRecipient, 
                             <DocumentSignifyViewer
                                 fileUrl={dbDoc.original_file_url || dbDoc.original_file_base64 || ''}
                                 fileType={dbDoc.original_file_type || 'pdf'}
+                                htmlContent={dbDoc.content_json?.htmlContent || ''}
                                 signatures={dbSignatures}
                                 signatories={dbSignatories}
                                 activeSignatory={dbSignatory}
@@ -686,6 +687,7 @@ export default function PublicSigningPortal({ docId, token, prefilledRecipient, 
                             <DocumentSignifyViewer
                                 fileUrl={document.originalFileBase64}
                                 fileType={document.originalFileType || 'pdf'}
+                                htmlContent={document.originalFileType === 'docx-html' ? document.blocks.map(b => b.content.text).join('') : ''}
                                 signatures={dbSignatures.length > 0 ? dbSignatures : signatories.map((s, idx) => ({
                                     id: s.id || `sig-${idx}`,
                                     document_id: docId || '',

@@ -21,6 +21,7 @@ export interface PreparedField {
 interface DocumentSignifyViewerProps {
   fileUrl: string;
   fileType: string;
+  htmlContent?: string;
   // Legacy signatures support for backward compatibility
   signatures?: DbDocumentSignature[];
   signatories?: DbDocumentSignatory[];
@@ -42,6 +43,7 @@ interface DocumentSignifyViewerProps {
 export const DocumentSignifyViewer: React.FC<DocumentSignifyViewerProps> = ({
   fileUrl,
   fileType,
+  htmlContent = '',
   signatures = [],
   signatories = [],
   activeSignatory = null,
@@ -67,20 +69,27 @@ export const DocumentSignifyViewer: React.FC<DocumentSignifyViewerProps> = ({
   const canvasRefs = useRef<Record<number, HTMLCanvasElement | null>>({});
 
   const cleanType = fileType.toLowerCase().replace('-html', '').replace('docx-pdf', 'pdf');
+  const isPdf = cleanType.includes('pdf') || (fileUrl && fileUrl.toLowerCase().endsWith('.pdf')) || (fileUrl && fileUrl.startsWith('data:application/pdf'));
+  const isImage = ['png', 'jpg', 'jpeg', 'gif', 'webp'].some(ext => cleanType.includes(ext)) || (fileUrl && /\.(png|jpg|jpeg|gif|webp)$/i.test(fileUrl)) || (fileUrl && fileUrl.startsWith('data:image/'));
+  const isDoc = cleanType.includes('docx') || cleanType.includes('doc') || cleanType.includes('word') || cleanType.includes('html') || !!htmlContent;
 
   useEffect(() => {
-    if (!fileUrl) return;
+    if (!fileUrl && !htmlContent) {
+      setLoading(false);
+      return;
+    }
 
-    if (cleanType === 'pdf' || fileUrl.toLowerCase().endsWith('.pdf')) {
+    if (isPdf) {
       renderPdf();
-    } else if (['png', 'jpg', 'jpeg'].includes(cleanType) || /\.(png|jpg|jpeg)$/i.test(fileUrl)) {
+    } else if (isImage) {
       setNumPages(1);
       setLoading(false);
     } else {
-      setError("Unsupported file format in e-sign viewer.");
+      // Treat as Word / text document fallback
+      setNumPages(1);
       setLoading(false);
     }
-  }, [fileUrl, fileType]);
+  }, [fileUrl, fileType, htmlContent, isPdf, isImage, isDoc]);
 
   const renderPdf = async () => {
     setLoading(true);
@@ -288,8 +297,8 @@ export const DocumentSignifyViewer: React.FC<DocumentSignifyViewerProps> = ({
             }`}
             style={{
               width: '100%',
-              maxWidth: cleanType === 'pdf' ? '720px' : '650px',
-              aspectRatio: cleanType === 'pdf' ? '595/842' : undefined,
+              maxWidth: isPdf ? '720px' : '650px',
+              aspectRatio: isPdf ? '595/842' : undefined,
             }}
           >
             {/* Page header marker */}
@@ -297,19 +306,44 @@ export const DocumentSignifyViewer: React.FC<DocumentSignifyViewerProps> = ({
               PAGE {pageNum} of {numPages}
             </div>
 
-            {/* Render Canvas for PDF or direct Image for PNG/JPEG */}
-            {cleanType === 'pdf' ? (
+            {/* Render Canvas for PDF or direct Image for PNG/JPEG or Rich HTML/text for Docx */}
+            {isPdf ? (
               <canvas
                 ref={el => setCanvasRef(pageNum, el)}
                 className="w-full h-full rounded-xl page-content-target"
               />
-            ) : (
+            ) : isImage ? (
               <img
                 src={fileUrl}
                 alt="Uploaded Original"
                 className="w-full h-auto rounded-xl page-content-target"
                 referrerPolicy="no-referrer"
               />
+            ) : (
+              /* Beautiful rich text document rendering for DOCX / HTML Fallback */
+              <div 
+                className="w-full min-h-[800px] p-12 bg-white text-slate-800 rounded-xl overflow-y-auto page-content-target select-text text-left prose prose-sm max-w-none shadow-inner border border-slate-100"
+                style={{ fontFamily: 'Inter, sans-serif' }}
+              >
+                {htmlContent ? (
+                  <div 
+                    dangerouslySetInnerHTML={{ __html: htmlContent }} 
+                    className="space-y-4 page-content-target"
+                  />
+                ) : (
+                  <div className="space-y-4 page-content-target">
+                    <h1 className="text-xl font-bold border-b pb-2 text-slate-900 uppercase tracking-tight">
+                      Agreement Document
+                    </h1>
+                    <p className="text-xs text-slate-500 font-mono">
+                      Format: {fileType || 'Structured Document'}
+                    </p>
+                    <div className="text-sm leading-relaxed whitespace-pre-wrap text-slate-700">
+                      This agreement is prepared for signing. Please place overlays on the canvas.
+                    </div>
+                  </div>
+                )}
+              </div>
             )}
 
             {/* Render Interactive Fields */}
