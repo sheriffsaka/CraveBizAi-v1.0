@@ -1096,13 +1096,9 @@ class CraveBizApi {
     try {
       // 1. Try uploading to Supabase Storage first if configured
       try {
-        const cleanBase64 = base64Data.replace(/^data:[^;]+;base64,/, "");
-        const binaryString = atob(cleanBase64);
-        const bytes = new Uint8Array(binaryString.length);
-        for (let i = 0; i < binaryString.length; i++) {
-          bytes[i] = binaryString.charCodeAt(i);
-        }
-        const blob = new Blob([bytes], { type: fileType });
+        // Native, high-performance base64 to Blob translation to prevent UI thread freezing on large files
+        const res = await fetch(base64Data);
+        const blob = await res.blob();
         const filePath = `${crypto.randomUUID()}_${fileName}`;
         
         const { data, error } = await supabase.storage.from('documents').upload(filePath, blob, {
@@ -1176,6 +1172,25 @@ class CraveBizApi {
           
           const { error: sigError } = await supabase.from('document_signatories').insert(signatoriesData);
           if (!sigError) {
+            // Backup locally to allow guest/public unauthenticated users to access via local server APIs if Supabase is secured by RLS
+            try {
+              await fetch("/api/signify/documents", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ 
+                  id: docId, 
+                  title, 
+                  originalFileUrl, 
+                  ownerId, 
+                  fileType, 
+                  fileName, 
+                  signatories: signatoriesData, 
+                  contentJson 
+                })
+              });
+            } catch (err) {
+              console.warn("Local server backup synchronisation failed, continuing:", err);
+            }
             return { document: documentData as DbDocument, signatories: signatoriesData as DbDocumentSignatory[] };
           }
         }
@@ -1280,6 +1295,16 @@ class CraveBizApi {
         };
         const { error } = await supabase.from('document_signatures').insert([signatureData]);
         if (!error) {
+          // Backup locally for public unauthenticated guest access support
+          try {
+            await fetch("/api/signify/signatures", {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify(signatureData)
+            });
+          } catch (err) {
+            console.warn("Local server signature backup sync failed, continuing:", err);
+          }
           return signatureData as DbDocumentSignature;
         }
       } catch (dbErr) {
@@ -1331,6 +1356,17 @@ class CraveBizApi {
           
           await supabase.from('documents').update({ status: docStatus }).eq('id', docId);
           const { data: document } = await supabase.from('documents').select('*').eq('id', docId).single();
+          
+          // Sync locally for backup access and PDF signature merging
+          try {
+            await fetch(`/api/signify/signatories/${signatoryId}/status`, {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ status, signatures })
+            });
+          } catch (err) {
+            console.warn("Local server status update backup sync failed, continuing:", err);
+          }
           
           return {
             document: document as DbDocument,

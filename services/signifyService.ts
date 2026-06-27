@@ -95,8 +95,8 @@ export class SignifyService {
     const createdSignatories: DbDocumentSignatory[] = [];
     
     for (const input of signatoriesInput) {
-      const sigId = crypto.randomUUID();
-      const token = crypto.randomBytes(32).toString("hex");
+      const sigId = (input as any).id || crypto.randomUUID();
+      const token = (input as any).token || crypto.randomBytes(32).toString("hex");
       
       const signatory: DbDocumentSignatory = {
         id: sigId,
@@ -105,8 +105,8 @@ export class SignifyService {
         email: input.email,
         role: input.role,
         token: token,
-        status: "pending",
-        signed_at: null
+        status: (input as any).status || "pending",
+        signed_at: (input as any).signed_at || null
       };
       
       store.signatories[sigId] = signatory;
