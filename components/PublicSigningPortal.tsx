@@ -429,16 +429,15 @@ export default function PublicSigningPortal({ docId, token, prefilledRecipient, 
                 }
 
                 // Call addDocSignifySignature
-                const savedSig = await api.addDocSignifySignature(
-                    targetSig.document_id,
-                    targetSig.signatory_id,
-                    targetSig.page_number,
-                    targetSig.x_position,
-                    targetSig.y_position,
-                    targetSig.width || 140,
-                    targetSig.height || 60,
-                    finalSigImage
-                );
+                const savedSig = await api.addDocSignifySignature({
+                    document_id: targetSig.document_id,
+                    signatory_id: targetSig.signatory_id,
+                    page_number: targetSig.page_number,
+                    x_position: targetSig.x_position,
+                    y_position: targetSig.y_position,
+                    signature_type: targetSig.signature_type || 'draw',
+                    signature_image_url: finalSigImage
+                });
 
                 if (savedSig) {
                     const nextSigs = dbSignatures.filter(s => s.id !== targetSig.id);
@@ -446,16 +445,15 @@ export default function PublicSigningPortal({ docId, token, prefilledRecipient, 
                     setDbSignatures(updatedSigs);
                     
                     // Transition status to signed
-                    const updatedSignatories = await api.updateDocSignifySignatoryStatus(
+                    const result = await api.updateDocSignifySignatoryStatus(
                         dbSignatory.id,
                         'signed',
                         updatedSigs
                     );
                     
-                    if (updatedSignatories) {
-                        setDbSignatories(updatedSignatories);
-                        const selfMatched = updatedSignatories.find(s => s.id === dbSignatory.id);
-                        if (selfMatched) setDbSignatory(selfMatched);
+                    if (result && result.signatory) {
+                        setDbSignatories(prev => prev.map(s => s.id === result.signatory.id ? result.signatory : s));
+                        setDbSignatory(result.signatory);
                         setAlreadySigned(true);
                         setIsSignedSuccess(true);
                     }

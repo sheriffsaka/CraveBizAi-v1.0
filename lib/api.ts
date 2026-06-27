@@ -1,6 +1,6 @@
 
 import { createClient } from '@supabase/supabase-js';
-import { Invoice, Client, Service, Company, User, InvoiceStatus, BankAccount, InvoiceItem, InvoiceFrequency, GeneratedDocument, StoredGeneratedDoc, DocumentBlock, SignatureInfo } from '../types';
+import { Invoice, Client, Service, Company, User, InvoiceStatus, BankAccount, InvoiceItem, InvoiceFrequency, GeneratedDocument, StoredGeneratedDoc, DocumentBlock, SignatureInfo, DbDocument, DbDocumentSignatory, DbDocumentSignature } from '../types';
 
 const SUPABASE_URL = 'https://dfqvgezjhudmnlyeycju.supabase.co';
 const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImRmcXZnZXpqaHVkbW5seWV5Y2p1Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjYyNDAyOTMsImV4cCI6MjA4MTgxNjI5M30.8VsHsDpychdSMJmrfnmkxi5ed8CygwErX3-RkVPXkUI';
@@ -1144,19 +1144,21 @@ class CraveBizApi {
     ownerId: string,
     fileType: string,
     fileName: string,
-    signatories: { name: string; email: string; role: DbDocumentSignatory['role'] }[]
+    signatories: { name: string; email: string; role: DbDocumentSignatory['role'] }[],
+    contentJson?: any
   ): Promise<{ document: DbDocument; signatories: DbDocumentSignatory[] }> {
     try {
       // 1. Try insert into Supabase tables if they exist
       try {
-        const documentData = {
+         const documentData = {
           id: docId,
           title,
           original_file_url: originalFileUrl,
           signed_file_url: null,
           owner_id: ownerId,
           status: 'pending',
-          created_at: new Date().toISOString()
+          created_at: new Date().toISOString(),
+          content_json: contentJson
         };
         const { error: docError } = await supabase.from('documents').insert([documentData]);
         
@@ -1185,7 +1187,7 @@ class CraveBizApi {
       const response = await fetch("/api/signify/documents", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ id: docId, title, originalFileUrl, ownerId, fileType, fileName, signatories })
+        body: JSON.stringify({ id: docId, title, originalFileUrl, ownerId, fileType, fileName, signatories, contentJson })
       });
       if (!response.ok) {
         throw new Error("Failed to register document on local server");

@@ -6,7 +6,7 @@ import { transformDocument, generateDocumentFromPurpose, reviewDocumentContent }
 import { GeneratedDocument, DocumentBlock, HeaderBlock, MetadataBlock, TableBlock, SummaryBlock, Company, User, StoredGeneratedDoc, DocumentReviewResult, SignatureInfo, DbDocumentSignatory, DbDocumentSignature } from '../types';
 import EditableBlock from './EditableBlock';
 import Icon from './common/Icon';
-import { DocumentSignifyViewer } from './DocumentSignifyViewer';
+import { DocumentSignifyViewer, PreparedField } from './DocumentSignifyViewer';
 import { api } from '../lib/api';
 
 const utf8ToBase64 = (str: string): string => {
@@ -319,6 +319,14 @@ const DocumentTransformer: React.FC<DocumentTransformerProps> = ({ company, user
     const [toastMessage, setToastMessage] = useState<string | null>(null);
     const [isDocumentSubmitted, setIsDocumentSubmitted] = useState(false);
     const [isRequestSuccessModalOpen, setIsRequestSuccessModalOpen] = useState(false);
+
+    // DocSignify Wizard State Driven Signing Flow
+    const [wizardStep, setWizardStep] = useState<'upload' | 'signers' | 'prepare' | 'send'>('upload');
+    const [designerFields, setDesignerFields] = useState<PreparedField[]>([]);
+    const [activeDesignerSignerId, setActiveDesignerSignerId] = useState<string>('creator');
+    const [designerFieldType, setDesignerFieldType] = useState<'signature' | 'initial' | 'date' | 'name' | 'email' | 'company' | 'title' | 'text' | 'checkbox' | 'dropdown' | 'stamp'>('signature');
+    const [createdDocSignatories, setCreatedDocSignatories] = useState<DbDocumentSignatory[]>([]);
+    const [createdDocId, setCreatedDocId] = useState<string>('');
     const [savedSigningUrl, setSavedSigningUrl] = useState('');
     const [savedMailtoUrl, setSavedMailtoUrl] = useState('');
     const [latestRequestedEmail, setLatestRequestedEmail] = useState('');
@@ -328,6 +336,103 @@ const DocumentTransformer: React.FC<DocumentTransformerProps> = ({ company, user
     const triggerToast = (msg: string) => {
         setToastMessage(msg);
         setTimeout(() => setToastMessage(null), 4000);
+    };
+
+    const handlePlaceFieldAtCoordinates = (pageNum: number, x: number, y: number) => {
+        if (!activeDesignerSignerId) {
+            triggerToast("Please configure counterparties or select an active signatory first!");
+            return;
+        }
+
+        const newField: PreparedField = {
+            id: 'field_' + Math.floor(Math.random() * 899999 + 100000),
+            type: designerFieldType,
+            page_number: pageNum,
+            x_position: x,
+            y_position: y,
+            width: designerFieldType === 'checkbox' ? 36 : designerFieldType === 'stamp' ? 140 : 130,
+            height: designerFieldType === 'checkbox' ? 36 : designerFieldType === 'stamp' ? 65 : 45,
+            assigned_signer_id: activeDesignerSignerId,
+            required: true
+        };
+
+        setDesignerFields(prev => [...prev, newField]);
+        triggerToast(`Placed ${designerFieldType.toUpperCase()} on page ${pageNum}`);
+    };
+
+    const handleFieldMove = (fieldId: string, pageNum: number, x: number, y: number) => {
+        setDesignerFields(prev => prev.map(f => f.id === fieldId ? { ...f, page_number: pageNum, x_position: x, y_position: y } : f));
+    };
+
+    const handleFieldResize = (fieldId: string, width: number, height: number) => {
+        setDesignerFields(prev => prev.map(f => f.id === fieldId ? { ...f, width, height } : f));
+    };
+
+    const handleFieldDelete = (fieldId: string) => {
+        setDesignerFields(prev => prev.filter(f => f.id !== fieldId));
+        triggerToast("Field removed from template.");
+    };
+
+    const handleFieldUpdate = (fieldId: string, updated: Partial<PreparedField>) => {
+        setDesignerFields(prev => prev.map(f => f.id === fieldId ? { ...f, ...updated } : f));
+    };
+
+    const handleSaveDraftAndSend = async () => {
+        if (signatories.length === 0) {
+            triggerToast("You must configure at least one signatory recipient.");
+            return;
+        }
+
+        if (designerFields.length === 0) {
+            triggerToast("Please place at least one signature/initial field onto the canvas.");
+            return;
+        }
+
+        setIsLoading(true);
+        setError(null);
+        try {
+            const docId = 'doc_' + Math.floor(Math.random() * 899999 + 100000);
+            const originalFileUrl = generatedDoc?.originalFileUrl || generatedDoc?.originalFileBase64 || '';
+            const fileName = generatedDoc?.originalFileName || 'secured_agreement.pdf';
+            const fileType = generatedDoc?.originalFileType || 'pdf';
+
+            // Map standard DocSignify signatories
+            const mappedSigs = signatories.map(s => ({
+                name: s.name,
+                email: s.email || `${s.name.toLowerCase().replace(/\s/g, '')}@cravebiz-secure.com`,
+                role: s.signatoryType === 'Main' ? 'main_signatory' : 'witness' as any
+            }));
+
+            // Structure custom fields in the fallback database
+            const contentJson = {
+                fields: designerFields
+            };
+
+            const response = await api.createDocSignifyDocument(
+                docId,
+                generatedDoc?.documentType || "Secured Multi-Party Agreement",
+                originalFileUrl,
+                user?.id || 'admin',
+                fileType,
+                fileName,
+                mappedSigs,
+                contentJson
+            );
+
+            if (response && response.document) {
+                setCreatedDocId(docId);
+                setCreatedDocSignatories(response.signatories);
+                setWizardStep('send');
+                triggerToast("Workflow activated! Secure e-sign tokens created.");
+            } else {
+                setError("Failed to register e-sign workflow context on host.");
+            }
+        } catch (err: any) {
+            console.error("Save Draft & Send Error:", err);
+            setError("Failed to register multi-party workspace: " + (err.message || err));
+        } finally {
+            setIsLoading(false);
+        }
     };
 
     const handleAddSignatorySubmit = () => {
@@ -739,8 +844,8 @@ const DocumentTransformer: React.FC<DocumentTransformerProps> = ({ company, user
                 // 1. Upload original file to secure server storage
                 try {
                     const uploadRes = await api.uploadDocSignifyFile(file.name, base64Data, file.type);
-                    if (uploadRes && uploadRes.success) {
-                        originalFileUrl = uploadRes.url;
+                    if (uploadRes) {
+                        originalFileUrl = uploadRes;
                     }
                 } catch (uploadErr) {
                     console.warn("Server upload failed, relying on secure inline base64:", uploadErr);
@@ -1286,119 +1391,553 @@ ${company?.name || 'CraveBiZ Vendor'}`;
                     )}
 
                     {activeTab === 'sign' && (
-                        <>
-                            <div className="bg-white p-5 rounded-2xl border border-gray-200/50 shadow-sm space-y-4">
-                                <h2 className="text-sm font-black text-gray-800 uppercase tracking-wider flex items-center gap-2">
-                                    <span className="w-2.5 h-2.5 rounded-full bg-indigo-600 animate-pulse"></span>
-                                    Client Sign-Off & Upload
-                                </h2>
-                                <p className="text-xs text-gray-500 font-medium leading-relaxed">
-                                    Upload any professional Word (.docx) or PDF (.pdf) file. We will extract and automatically map its text onto our premium signable canvas.
-                                </p>
-                                
-                                {/* Drag & Drop Upload Zone */}
-                                <div
-                                    onDragOver={(e) => { e.preventDefault(); setIsDragOver(true); }}
-                                    onDragLeave={() => setIsDragOver(false)}
-                                    onDrop={handleFileDrop}
-                                    className={`h-40 border-2 border-dashed rounded-xl flex flex-col justify-center items-center p-4 transition-all relative ${isDragOver ? 'border-primary-500 bg-primary-50/50' : 'border-gray-200 bg-gray-50'} cursor-pointer`}
-                                >
-                                    <input
-                                        type="file"
-                                        id="review-uploader"
-                                        onChange={handleFileSelect}
-                                        accept=".pdf,.docx"
-                                        className="absolute inset-0 opacity-0 cursor-pointer"
-                                    />
-                                    <div className="p-2.5 bg-white shadow-sm rounded-full mb-2">
-                                        <svg className="w-6 h-6 text-primary-600" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12"></path></svg>
+                        <div className="space-y-6">
+                            {/* State-Driven Step Progress Bar */}
+                            <div className="bg-white p-4 rounded-xl border border-gray-200/50 shadow-sm">
+                                <div className="flex items-center justify-between text-xs font-bold text-gray-500 max-w-3xl mx-auto">
+                                    <div className="flex items-center gap-2">
+                                        <div className={`w-6 h-6 rounded-full flex items-center justify-center border text-[10px] ${wizardStep === 'upload' ? 'bg-primary-600 border-primary-600 text-white' : 'bg-emerald-50 border-emerald-300 text-emerald-700'}`}>
+                                            {generatedDoc ? '✔' : '1'}
+                                        </div>
+                                        <span className={wizardStep === 'upload' ? 'text-primary-600 font-extrabold' : 'text-gray-700'}>1. Upload File</span>
                                     </div>
-                                    <span className="text-xs font-bold text-gray-700">Drag & Drop Files Here</span>
-                                    <span className="text-[10px] text-gray-400 font-medium mt-0.5">Supports PDF or Word format (.pdf, .docx)</span>
-                                    
-                                    {uploadedFileName && (
-                                        <div className="absolute bottom-2 left-2 right-2 bg-white px-2 py-1 border border-primary-100 rounded text-[9px] text-primary-800 font-mono flex items-center justify-between">
-                                            <span className="truncate max-w-[200px]">{uploadedFileName}</span>
-                                            <span className="text-emerald-500 font-bold">✔ Uploaded</span>
+                                    <div className="flex-1 h-0.5 bg-gray-100 mx-4">
+                                        <div className={`h-full bg-primary-600 transition-all ${wizardStep !== 'upload' ? 'w-full' : 'w-0'}`}></div>
+                                    </div>
+                                    <div className="flex items-center gap-2">
+                                        <div className={`w-6 h-6 rounded-full flex items-center justify-center border text-[10px] ${wizardStep === 'signers' ? 'bg-primary-600 border-primary-600 text-white' : wizardStep === 'prepare' || wizardStep === 'send' ? 'bg-emerald-50 border-emerald-300 text-emerald-700' : 'bg-gray-50 border-gray-200 text-gray-400'}`}>
+                                            {wizardStep === 'prepare' || wizardStep === 'send' ? '✔' : '2'}
+                                        </div>
+                                        <span className={wizardStep === 'signers' ? 'text-primary-600 font-extrabold' : 'text-gray-500'}>2. Recipients</span>
+                                    </div>
+                                    <div className="flex-1 h-0.5 bg-gray-100 mx-4">
+                                        <div className={`h-full bg-primary-600 transition-all ${wizardStep === 'prepare' || wizardStep === 'send' ? 'w-full' : 'w-0'}`}></div>
+                                    </div>
+                                    <div className="flex items-center gap-2">
+                                        <div className={`w-6 h-6 rounded-full flex items-center justify-center border text-[10px] ${wizardStep === 'prepare' ? 'bg-primary-600 border-primary-600 text-white' : wizardStep === 'send' ? 'bg-emerald-50 border-emerald-300 text-emerald-700' : 'bg-gray-50 border-gray-200 text-gray-400'}`}>
+                                            {wizardStep === 'send' ? '✔' : '3'}
+                                        </div>
+                                        <span className={wizardStep === 'prepare' ? 'text-primary-600 font-extrabold' : 'text-gray-500'}>3. Place Fields</span>
+                                    </div>
+                                    <div className="flex-1 h-0.5 bg-gray-100 mx-4">
+                                        <div className={`h-full bg-primary-600 transition-all ${wizardStep === 'send' ? 'w-full' : 'w-0'}`}></div>
+                                    </div>
+                                    <div className="flex items-center gap-2">
+                                        <div className={`w-6 h-6 rounded-full flex items-center justify-center border text-[10px] ${wizardStep === 'send' ? 'bg-primary-600 border-primary-600 text-white' : 'bg-gray-50 border-gray-200 text-gray-400'}`}>
+                                            4
+                                        </div>
+                                        <span className={wizardStep === 'send' ? 'text-primary-600 font-extrabold' : 'text-gray-500'}>4. Send & Sim</span>
+                                    </div>
+                                </div>
+                            </div>
+
+                            {/* STEP 1: UPLOAD FILE */}
+                            {wizardStep === 'upload' && (
+                                <div className="bg-white p-6 rounded-2xl border border-gray-200/50 shadow-sm space-y-5 animate-in fade-in duration-300">
+                                    <div className="flex items-center justify-between">
+                                        <div>
+                                            <h2 className="text-sm font-black text-gray-800 uppercase tracking-wider flex items-center gap-2">
+                                                <span className="w-2.5 h-2.5 rounded-full bg-primary-600 animate-pulse"></span>
+                                                Step 1: Upload Legal Binding Document
+                                            </h2>
+                                            <p className="text-xs text-gray-500 font-medium leading-relaxed mt-1">
+                                                Select or drop a standard PDF (.pdf) or Word (.docx) document. This original file will be treated as the exact source of truth.
+                                            </p>
+                                        </div>
+                                    </div>
+
+                                    {/* Drag & Drop Upload Zone */}
+                                    <div
+                                        onDragOver={(e) => { e.preventDefault(); setIsDragOver(true); }}
+                                        onDragLeave={() => setIsDragOver(false)}
+                                        onDrop={handleFileDrop}
+                                        className={`h-48 border-2 border-dashed rounded-xl flex flex-col justify-center items-center p-4 transition-all relative ${isDragOver ? 'border-primary-500 bg-primary-50/50' : 'border-gray-200 bg-gray-50'} cursor-pointer`}
+                                    >
+                                        <input
+                                            type="file"
+                                            id="review-uploader"
+                                            onChange={handleFileSelect}
+                                            accept=".pdf,.docx"
+                                            className="absolute inset-0 opacity-0 cursor-pointer"
+                                        />
+                                        <div className="p-3 bg-white shadow-sm rounded-full mb-3 border border-gray-100">
+                                            <svg className="w-6 h-6 text-primary-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12"></path>
+                                            </svg>
+                                        </div>
+                                        <span className="text-xs font-extrabold text-gray-700">Drag & Drop Files Here</span>
+                                        <span className="text-[10px] text-gray-400 font-bold mt-1 uppercase tracking-widest">Supports PDF, DOCX, and Images</span>
+
+                                        {uploadedFileName && (
+                                            <div className="absolute bottom-4 left-4 right-4 bg-white px-3 py-2 border border-primary-100 rounded-lg text-[10px] text-primary-800 font-mono flex items-center justify-between shadow-sm">
+                                                <span className="truncate max-w-[220px] font-bold">{uploadedFileName}</span>
+                                                <span className="text-emerald-600 font-bold flex items-center gap-1">
+                                                    <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-ping"></span>
+                                                    ✔ Uploaded
+                                                </span>
+                                            </div>
+                                        )}
+                                    </div>
+
+                                    {generatedDoc ? (
+                                        <div className="bg-gray-50 p-4 rounded-xl border border-gray-100 flex items-center justify-between text-xs">
+                                            <div>
+                                                <span className="text-[10px] text-gray-400 font-extrabold uppercase tracking-widest">Selected Document</span>
+                                                <p className="font-bold text-gray-800 mt-0.5">{generatedDoc.documentType}</p>
+                                            </div>
+                                            <button
+                                                onClick={() => setWizardStep('signers')}
+                                                className="px-4 py-2 bg-primary-600 hover:bg-primary-700 text-white text-[10px] font-black uppercase tracking-widest rounded-lg shadow-sm transition-all"
+                                            >
+                                                Configure Recipients →
+                                            </button>
+                                        </div>
+                                    ) : (
+                                        <div className="bg-amber-50 p-4 rounded-xl border border-amber-100 text-amber-800 text-xs font-semibold flex items-center gap-2">
+                                            <span className="font-extrabold text-amber-600">⚠ Note:</span>
+                                            Please drop or select a backup agreement file to activate the e-sign designer canvas.
                                         </div>
                                     )}
                                 </div>
+                            )}
 
-                                <button
-                                    onClick={handlePrepareSignDocument}
-                                    disabled={isLoading || (!rawText.trim() && !uploadedFileName)}
-                                    className="w-full py-3.5 bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-black uppercase tracking-widest rounded-xl shadow-md transition-all disabled:bg-gray-400"
-                                    id="prepare_sign_btn"
-                                >
-                                    {isLoading ? 'Parsing Document...' : 'Prepare & Load onto Canvas'}
-                                </button>
-                            </div>
+                            {/* STEP 2: RECIPIENTS / SIGNERS CONFIGURATION */}
+                            {wizardStep === 'signers' && (
+                                <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 animate-in fade-in duration-300">
+                                    {/* Left side: Add Signatory */}
+                                    <div className="lg:col-span-5 bg-white p-6 rounded-2xl border border-gray-200/50 shadow-sm space-y-4">
+                                        <h3 className="text-xs font-black text-gray-800 uppercase tracking-widest flex items-center gap-2">
+                                            <svg className="w-4 h-4 text-primary-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M18 9v3m0 0v3m0-3h3m-3 0H9m12 0a9 9 0 11-18 0 9 9 0 0118 0z" />
+                                            </svg>
+                                            Configure Recipient
+                                        </h3>
+                                        <p className="text-[11px] text-gray-400 font-semibold uppercase tracking-wider">Define roles, multi-signer order & security</p>
 
-                            {/* Added Signatories Management card! */}
-                            {generatedDoc && (
-                                <div className="bg-white p-5 rounded-2xl border border-gray-200/50 shadow-sm space-y-4 animate-in slide-in-from-top-4 duration-300">
-                                    <h2 className="text-xs font-black text-gray-800 uppercase tracking-wider flex items-center gap-2">
-                                        <svg className="w-4 h-4 text-primary-600" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0zm6 3a2 2 0 11-4 0 2 2 0 014 0zM7 10a2 2 0 11-4 0 2 2 0 014 0z" /></svg>
-                                        Live Signatories Configuration
-                                    </h2>
-                                    <p className="text-[11px] text-gray-500 font-medium">Manage counterparty slots and request electronic execution links directly on site.</p>
-                                    
-                                    <div className="space-y-2">
-                                        {signatories.map((sig, idx) => (
-                                            <div key={sig.id || idx} className="p-3 bg-gray-50/50 border border-gray-100 rounded-xl flex items-center justify-between text-xs transition-colors hover:bg-gray-50">
-                                                <div className="truncate pr-2">
-                                                    <p className="font-bold text-gray-700 truncate">{sig.name || 'Awaiting Signee'}</p>
-                                                    <p className="text-[10px] text-gray-400 font-semibold">{sig.title || 'Corporate Officer'} • <span className="font-bold text-primary-600">{sig.signatoryType}</span></p>
-                                                    {sig.email && <p className="text-[9px] text-gray-400 font-mono mt-0.5 truncate">{sig.email}</p>}
+                                        <div className="space-y-3">
+                                            <div>
+                                                <label className="block text-[10px] font-extrabold text-gray-400 uppercase tracking-wider mb-1">Full Name</label>
+                                                <input
+                                                    type="text"
+                                                    value={newSigName}
+                                                    onChange={(e) => setNewSigName(e.target.value)}
+                                                    placeholder="John Doe"
+                                                    className="w-full px-3 py-2 text-xs border border-gray-200 rounded-lg focus:outline-none focus:ring-1 focus:ring-primary-500 font-medium"
+                                                />
+                                            </div>
+                                            <div>
+                                                <label className="block text-[10px] font-extrabold text-gray-400 uppercase tracking-wider mb-1">Email Address</label>
+                                                <input
+                                                    type="email"
+                                                    value={newSigEmail}
+                                                    onChange={(e) => setNewSigEmail(e.target.value)}
+                                                    placeholder="john.doe@corporate.com"
+                                                    className="w-full px-3 py-2 text-xs border border-gray-200 rounded-lg focus:outline-none focus:ring-1 focus:ring-primary-500 font-medium"
+                                                />
+                                            </div>
+                                            <div>
+                                                <label className="block text-[10px] font-extrabold text-gray-400 uppercase tracking-wider mb-1">Corporate/Legal Title</label>
+                                                <input
+                                                    type="text"
+                                                    value={newSigTitle}
+                                                    onChange={(e) => setNewSigTitle(e.target.value)}
+                                                    placeholder="Chief Operations Officer"
+                                                    className="w-full px-3 py-2 text-xs border border-gray-200 rounded-lg focus:outline-none focus:ring-1 focus:ring-primary-500 font-medium"
+                                                />
+                                            </div>
+                                            <div className="grid grid-cols-2 gap-2">
+                                                <div>
+                                                    <label className="block text-[10px] font-extrabold text-gray-400 uppercase tracking-wider mb-1">Role Type</label>
+                                                    <select
+                                                        value={newSigType}
+                                                        onChange={(e) => setNewSigType(e.target.value as any)}
+                                                        className="w-full px-3 py-2 text-xs border border-gray-200 rounded-lg bg-white font-medium"
+                                                    >
+                                                        <option value="Main">Main Signatory</option>
+                                                        <option value="Witness">Witness</option>
+                                                    </select>
                                                 </div>
-                                                <div className="flex-shrink-0 flex items-center gap-1.5">
-                                                    {sig.isSigned ? (
-                                                        <span className="bg-emerald-100 text-emerald-800 text-[8px] font-black uppercase tracking-wider px-2 py-0.5 rounded border border-emerald-200">
-                                                            Executed
-                                                        </span>
-                                                    ) : sig.isRequested ? (
-                                                        <div className="flex flex-col items-end">
-                                                            <span className="bg-indigo-100 text-indigo-800 text-[8px] font-black uppercase tracking-wider px-2 py-0.5 rounded border border-indigo-200">
-                                                                Requested
-                                                            </span>
-                                                            <button 
-                                                                onClick={() => handleOpenRequestModal(idx)}
-                                                                className="text-[8px] text-indigo-600 hover:underline font-bold mt-1"
-                                                            >
-                                                                Update Request
-                                                            </button>
-                                                        </div>
-                                                    ) : (
-                                                        <div className="flex flex-col items-end gap-1">
-                                                            <span className="bg-amber-100 text-amber-800 text-[8px] font-black uppercase tracking-wider px-2 py-0.5 rounded border border-amber-200">
-                                                                Unsigned
-                                                            </span>
-                                                            {idx > 0 && (
-                                                                <button 
-                                                                    onClick={() => handleOpenRequestModal(idx)}
-                                                                    className="text-[9px] bg-indigo-50 hover:bg-indigo-100 text-indigo-700 px-1.5 py-0.5 rounded border border-indigo-200 font-black uppercase tracking-widest text-[8px]"
+                                                <div>
+                                                    <label className="block text-[10px] font-extrabold text-gray-400 uppercase tracking-wider mb-1">Signing Order</label>
+                                                    <input
+                                                        type="number"
+                                                        defaultValue={1}
+                                                        min={1}
+                                                        className="w-full px-3 py-2 text-xs border border-gray-200 rounded-lg font-medium"
+                                                    />
+                                                </div>
+                                            </div>
+
+                                            <div className="border-t border-gray-100 pt-3 space-y-2">
+                                                <label className="block text-[10px] font-black text-gray-500 uppercase tracking-wider">Verification Security</label>
+                                                <div className="flex items-center justify-between text-[11px] text-gray-600 font-medium bg-gray-50 p-2 rounded-lg">
+                                                    <span>🔒 Secure Access OTP Check</span>
+                                                    <input type="checkbox" defaultChecked className="rounded text-primary-600" />
+                                                </div>
+                                                <div className="flex items-center justify-between text-[11px] text-gray-600 font-medium bg-gray-50 p-2 rounded-lg">
+                                                    <span>📧 Double Email Validation</span>
+                                                    <input type="checkbox" defaultChecked className="rounded text-primary-600" />
+                                                </div>
+                                            </div>
+                                        </div>
+
+                                        <button
+                                            onClick={() => {
+                                                if (!newSigName.trim()) { triggerToast("Name is required"); return; }
+                                                const newId = 'sig_' + Math.floor(Math.random() * 899999 + 100000);
+                                                const newSlot: SignatureInfo = {
+                                                    id: newId,
+                                                    type: 'type',
+                                                    value: '',
+                                                    name: newSigName.trim(),
+                                                    title: newSigTitle.trim() || 'Officer',
+                                                    date: '',
+                                                    signatoryType: newSigType,
+                                                    email: newSigEmail.trim() || `${newSigName.toLowerCase().replace(/\s/g, '')}@cravebiz.ai`,
+                                                    isSigned: false
+                                                };
+                                                setSignatories(prev => [...prev, newSlot]);
+                                                // Initialize active designer signer if not set
+                                                if (activeDesignerSignerId === 'creator' || activeDesignerSignerId === '') {
+                                                    setActiveDesignerSignerId(newId);
+                                                }
+                                                // Clear fields
+                                                setNewSigName('');
+                                                setNewSigEmail('');
+                                                setNewSigTitle('');
+                                                triggerToast("Signatory added successfully!");
+                                            }}
+                                            className="w-full py-3 bg-primary-600 hover:bg-primary-700 text-white text-[10px] font-black uppercase tracking-widest rounded-xl shadow-md transition-all flex items-center justify-center gap-2"
+                                        >
+                                            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 9v3m0 0v3m0-3h3m-3 0H9m12 0a9 9 0 11-18 0 9 9 0 0118 0z" />
+                                            </svg>
+                                            Register Recipient Slot
+                                        </button>
+                                    </div>
+
+                                    {/* Right side: Recipient List & Workflow Navigation */}
+                                    <div className="lg:col-span-7 bg-white p-6 rounded-2xl border border-gray-200/50 shadow-sm flex flex-col justify-between space-y-4">
+                                        <div className="space-y-4">
+                                            <h3 className="text-xs font-black text-gray-800 uppercase tracking-widest flex items-center gap-2">
+                                                <svg className="w-4 h-4 text-emerald-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-3 7h3m-3 4h3m-6-4h.01M9 16h.01" />
+                                                </svg>
+                                                Active Recipient Sequence
+                                            </h3>
+                                            <p className="text-xs text-gray-500 font-medium leading-relaxed">
+                                                These individuals are authorized to receive e-sign requests. Ensure each slot contains correct email details for automatic token invitations.
+                                            </p>
+
+                                            <div className="space-y-2.5 max-h-[300px] overflow-y-auto pr-1">
+                                                {signatories.length === 0 ? (
+                                                    <div className="text-center py-10 border border-dashed border-gray-150 rounded-xl bg-gray-50/50 text-gray-400 text-xs font-bold uppercase tracking-widest">
+                                                        No Recipients Configured Yet
+                                                    </div>
+                                                ) : (
+                                                    signatories.map((sig, idx) => {
+                                                        const colors = ['bg-indigo-500', 'bg-pink-500', 'bg-emerald-500', 'bg-amber-500', 'bg-purple-500'];
+                                                        const colorClass = colors[idx % colors.length];
+                                                        return (
+                                                            <div key={sig.id || idx} className="p-3 bg-gray-50/50 border border-gray-150 rounded-xl flex items-center justify-between transition-all hover:bg-gray-50">
+                                                                <div className="flex items-center gap-3">
+                                                                    <div className={`w-3 h-3 rounded-full ${colorClass} flex-shrink-0 shadow-sm`}></div>
+                                                                    <div className="truncate">
+                                                                        <p className="text-xs font-black text-gray-800 truncate">{sig.name}</p>
+                                                                        <p className="text-[10px] text-gray-400 font-bold mt-0.5">{sig.title} • <span className="text-primary-600">{sig.signatoryType}</span></p>
+                                                                        <span className="text-[9px] text-gray-400 font-mono mt-0.5 block truncate">{sig.email}</span>
+                                                                    </div>
+                                                                </div>
+                                                                <button
+                                                                    onClick={() => setSignatories(prev => prev.filter(item => item.id !== sig.id))}
+                                                                    className="text-red-500 hover:text-red-700 text-[10px] font-bold uppercase tracking-widest p-1"
                                                                 >
-                                                                    Request
+                                                                    Remove
                                                                 </button>
-                                                            )}
-                                                        </div>
+                                                            </div>
+                                                        );
+                                                    })
+                                                )}
+                                            </div>
+                                        </div>
+
+                                        <div className="border-t border-gray-100 pt-4 flex justify-between items-center gap-4">
+                                            <button
+                                                onClick={() => setWizardStep('upload')}
+                                                className="px-5 py-3 border border-gray-200 rounded-xl hover:bg-gray-50 text-[10px] font-black uppercase tracking-widest text-gray-600 transition-all"
+                                            >
+                                                ← Back to Upload
+                                            </button>
+                                            <button
+                                                onClick={() => {
+                                                    if (signatories.length === 0) {
+                                                        triggerToast("Please add at least one signatory recipient.");
+                                                        return;
+                                                    }
+                                                    // Set default active designer signatory
+                                                    setActiveDesignerSignerId(signatories[0].id || 'creator');
+                                                    setWizardStep('prepare');
+                                                }}
+                                                className="px-5 py-3 bg-primary-600 hover:bg-primary-700 text-white rounded-xl text-[10px] font-black uppercase tracking-widest shadow-md transition-all flex items-center gap-1"
+                                            >
+                                                Design Field Overlays →
+                                            </button>
+                                        </div>
+                                    </div>
+                                </div>
+                            )}
+
+                            {/* STEP 3: INTERACTIVE FIELD DESIGNER */}
+                            {wizardStep === 'prepare' && generatedDoc && (
+                                <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 animate-in fade-in duration-300">
+                                    {/* Left side: Palette of overlays & Placed Fields Checklist */}
+                                    <div className="lg:col-span-4 bg-white p-5 rounded-2xl border border-gray-200/50 shadow-sm flex flex-col justify-between space-y-4 max-h-[75vh] overflow-y-auto">
+                                        <div className="space-y-4">
+                                            <div>
+                                                <h3 className="text-xs font-black text-gray-800 uppercase tracking-widest flex items-center gap-2">
+                                                    <span className="w-2.5 h-2.5 rounded-full bg-primary-600 animate-pulse"></span>
+                                                    E-Sign Field Palette
+                                                </h3>
+                                                <p className="text-[10px] text-gray-400 font-semibold uppercase tracking-wider mt-0.5">Click/Tap to Place Overlays</p>
+                                            </div>
+
+                                            {/* Signatory Mappings List */}
+                                            <div className="space-y-1">
+                                                <label className="block text-[9px] font-black text-gray-400 uppercase tracking-wider">Active Assigned Recipient</label>
+                                                <select
+                                                    value={activeDesignerSignerId}
+                                                    onChange={(e) => setActiveDesignerSignerId(e.target.value)}
+                                                    className="w-full text-xs font-bold border border-gray-200 rounded-lg p-2.5 bg-white text-gray-800 shadow-sm"
+                                                >
+                                                    {signatories.map(sig => (
+                                                        <option key={sig.id} value={sig.id}>{sig.name} ({sig.title})</option>
+                                                    ))}
+                                                </select>
+                                            </div>
+
+                                            {/* Grid of Palette Buttons */}
+                                            <div className="space-y-1">
+                                                <label className="block text-[9px] font-black text-gray-400 uppercase tracking-wider mb-1.5">Standard Field Overlay Types</label>
+                                                <div className="grid grid-cols-2 gap-2">
+                                                    {[
+                                                        { type: 'signature', label: '✒ Signature', color: 'border-indigo-200 hover:bg-indigo-50/50 hover:border-indigo-500' },
+                                                        { type: 'initial', label: '🔤 Initials', color: 'border-pink-200 hover:bg-pink-50/50 hover:border-pink-500' },
+                                                        { type: 'date', label: '📅 Signing Date', color: 'border-emerald-200 hover:bg-emerald-50/50 hover:border-emerald-500' },
+                                                        { type: 'name', label: '👤 Signer Name', color: 'border-amber-200 hover:bg-amber-50/50 hover:border-amber-500' },
+                                                        { type: 'email', label: '✉ Email Address', color: 'border-purple-200 hover:bg-purple-50/50 hover:border-purple-500' },
+                                                        { type: 'company', label: '🏢 Company Name', color: 'border-blue-200 hover:bg-blue-50/50 hover:border-blue-500' },
+                                                        { type: 'title', label: '👔 Corporate Title', color: 'border-orange-200 hover:bg-orange-50/50 hover:border-orange-500' },
+                                                        { type: 'text', label: '📝 Free Text Box', color: 'border-gray-200 hover:bg-gray-50 hover:border-gray-500' },
+                                                        { type: 'checkbox', label: '☑ Checkbox', color: 'border-rose-200 hover:bg-rose-50/50 hover:border-rose-500' },
+                                                        { type: 'dropdown', label: '▼ Select Dropdown', color: 'border-teal-200 hover:bg-teal-50/50 hover:border-teal-500' },
+                                                        { type: 'stamp', label: '🛡 Official Stamp', color: 'border-red-200 hover:bg-red-50/50 hover:border-red-500' }
+                                                    ].map(item => (
+                                                        <button
+                                                            key={item.type}
+                                                            onClick={() => {
+                                                                setDesignerFieldType(item.type as any);
+                                                                triggerToast(`Ready to place ${item.type.toUpperCase()}. Click anywhere on the document canvas.`);
+                                                            }}
+                                                            className={`p-2.5 border rounded-lg text-left text-[11px] font-black tracking-tight transition-all uppercase ${designerFieldType === item.type ? 'bg-primary-50 border-primary-500 text-primary-700 ring-2 ring-primary-100' : 'bg-white border-gray-200 text-gray-700'} ${item.color}`}
+                                                        >
+                                                            {item.label}
+                                                        </button>
+                                                    ))}
+                                                </div>
+                                            </div>
+
+                                            {/* Helper Instructions card */}
+                                            <div className="p-3.5 bg-indigo-50/50 border border-indigo-100 rounded-xl text-[11px] text-indigo-900 font-semibold space-y-1.5 leading-relaxed">
+                                                <p className="font-extrabold text-[10px] uppercase tracking-wider text-indigo-950">💡 Designer Pro-Tips:</p>
+                                                <ul className="list-disc list-inside space-y-1 text-[10px]">
+                                                    <li>Select a recipient and a field type in the palette.</li>
+                                                    <li>Click directly on the document canvas to place.</li>
+                                                    <li>Drag any overlay to reposition precisely.</li>
+                                                    <li>Use the bottom-right handle of a box to resize.</li>
+                                                </ul>
+                                            </div>
+
+                                            {/* Placed Fields Checklist */}
+                                            <div className="space-y-2">
+                                                <div className="flex items-center justify-between">
+                                                    <span className="text-[10px] font-black text-gray-400 uppercase tracking-wider">Placed Template Fields ({designerFields.length})</span>
+                                                    {designerFields.length > 0 && (
+                                                        <button onClick={() => setDesignerFields([])} className="text-[9px] font-bold text-red-500 hover:underline uppercase tracking-wider">Clear All</button>
+                                                    )}
+                                                </div>
+                                                <div className="space-y-1.5 max-h-[140px] overflow-y-auto">
+                                                    {designerFields.length === 0 ? (
+                                                        <p className="text-[10px] text-gray-400 font-bold uppercase tracking-wider py-4 text-center bg-gray-50 rounded-lg">No fields placed on template</p>
+                                                    ) : (
+                                                        designerFields.map((field) => {
+                                                            const signer = signatories.find(s => s.id === field.assigned_signer_id);
+                                                            return (
+                                                                <div key={field.id} className="p-2 bg-gray-50 border border-gray-150 rounded-lg flex items-center justify-between text-[10px] font-bold text-gray-700">
+                                                                    <div className="truncate">
+                                                                        <span className="text-[9px] bg-white border border-gray-200 px-1 py-0.5 rounded mr-1.5 text-primary-600 font-extrabold uppercase">{field.type}</span>
+                                                                        <span>Page {field.page_number}</span>
+                                                                        <span className="text-gray-400 font-semibold ml-1">({signer ? signer.name : 'Unknown'})</span>
+                                                                    </div>
+                                                                    <div className="flex items-center gap-2">
+                                                                        <label className="flex items-center gap-1 cursor-pointer">
+                                                                            <span className="text-[9px] text-gray-400 font-semibold uppercase">Req</span>
+                                                                            <input
+                                                                                type="checkbox"
+                                                                                checked={field.required}
+                                                                                onChange={(e) => handleFieldUpdate(field.id, { required: e.target.checked })}
+                                                                                className="rounded text-primary-600 scale-75"
+                                                                            />
+                                                                        </label>
+                                                                        <button onClick={() => handleFieldDelete(field.id)} className="text-red-500 hover:text-red-700 font-extrabold font-mono">✕</button>
+                                                                    </div>
+                                                                </div>
+                                                            );
+                                                        })
                                                     )}
                                                 </div>
                                             </div>
-                                        ))}
+                                        </div>
+
+                                        <div className="border-t border-gray-100 pt-4 flex justify-between items-center gap-4">
+                                            <button
+                                                onClick={() => setWizardStep('signers')}
+                                                className="px-4 py-2.5 border border-gray-200 rounded-lg hover:bg-gray-50 text-[9px] font-black uppercase tracking-widest text-gray-600 transition-all"
+                                            >
+                                                ← Recipients
+                                            </button>
+                                            <button
+                                                onClick={handleSaveDraftAndSend}
+                                                className="px-4 py-2.5 bg-primary-600 hover:bg-primary-700 text-white rounded-lg text-[9px] font-black uppercase tracking-widest shadow-md transition-all"
+                                            >
+                                                {isLoading ? 'Activating Workflow...' : 'Save Draft & Send Invite →'}
+                                            </button>
+                                        </div>
                                     </div>
 
-                                    <button
-                                        onClick={() => setIsAddSignatoryModalOpen(true)}
-                                        className="w-full py-3 bg-primary-600 hover:bg-primary-700 text-white text-xs font-black uppercase tracking-widest rounded-xl shadow-md hover:shadow-lg hover:scale-[1.01] active:scale-95 transition-all flex items-center justify-center gap-2"
-                                        id="add_signatory_btn"
-                                    >
-                                        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 9v3m0 0v3m0-3h3m-3 0H9m12 0a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
-                                        Add Signatory
-                                    </button>
+                                    {/* Right side: Interactive PDF canvas */}
+                                    <div className="lg:col-span-8 bg-gray-50/50 p-4 rounded-2xl border border-gray-200/50 shadow-sm flex flex-col items-center justify-start min-h-[60vh]">
+                                        <div className="w-full max-w-2xl bg-white rounded-xl shadow-lg border border-gray-200/80 overflow-hidden relative">
+                                            <DocumentSignifyViewer
+                                                fileUrl={generatedDoc.originalFileUrl || generatedDoc.originalFileBase64}
+                                                fileType={generatedDoc.originalFileType || 'pdf'}
+                                                fields={designerFields}
+                                                signatories={signatories.map((s, idx) => ({
+                                                    id: s.id,
+                                                    name: s.name,
+                                                    email: s.email || '',
+                                                    role: s.signatoryType === 'Main' ? 'main_signatory' : 'witness',
+                                                    status: s.isSigned ? 'signed' : 'pending',
+                                                    token: ''
+                                                }))}
+                                                isDesignerMode={true}
+                                                activeSignatoryId={activeDesignerSignerId}
+                                                onPlaceFieldAtCoordinates={handlePlaceFieldAtCoordinates}
+                                                onFieldMove={handleFieldMove}
+                                                onFieldResize={handleFieldResize}
+                                                onFieldDelete={handleFieldDelete}
+                                                onFieldUpdate={handleFieldUpdate}
+                                            />
+                                        </div>
+                                    </div>
                                 </div>
                             )}
-                        </>
+
+                            {/* STEP 4: SUCCESS / SEND CONFIRMATION & SIMULATION LINKS */}
+                            {wizardStep === 'send' && (
+                                <div className="max-w-4xl mx-auto bg-white p-8 rounded-3xl border border-gray-200/50 shadow-lg space-y-6 text-center animate-in zoom-in-95 duration-300">
+                                    <div className="w-16 h-16 bg-emerald-50 rounded-full flex items-center justify-center mx-auto border border-emerald-200 shadow-inner">
+                                        <svg className="w-8 h-8 text-emerald-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
+                                        </svg>
+                                    </div>
+
+                                    <div className="space-y-2">
+                                        <h2 className="text-xl font-black text-gray-900 uppercase tracking-widest">DocSignify Pipeline Activated!</h2>
+                                        <p className="text-xs text-emerald-600 font-extrabold tracking-widest uppercase">Double verification • Secure link invitations sent</p>
+                                        <p className="text-xs text-gray-500 font-medium max-w-xl mx-auto leading-relaxed mt-2">
+                                            The original document has been sealed. Individual security tokens and visual field maps have been registered for each recipient below.
+                                        </p>
+                                    </div>
+
+                                    {/* Verification metadata block */}
+                                    <div className="p-4 bg-gray-50 border border-gray-150 rounded-2xl max-w-2xl mx-auto grid grid-cols-2 gap-4 text-left font-mono text-[10px] text-gray-500 shadow-sm">
+                                        <div>
+                                            <span className="text-[8px] text-gray-400 font-bold uppercase tracking-widest">Document Registry ID</span>
+                                            <p className="font-bold text-gray-800 mt-0.5 truncate">{createdDocId}</p>
+                                        </div>
+                                        <div>
+                                            <span className="text-[8px] text-gray-400 font-bold uppercase tracking-widest">Secure Cryptographic SHA-256</span>
+                                            <p className="font-bold text-emerald-600 mt-0.5 truncate">SHA256-{createdDocId ? createdDocId.toUpperCase() : 'SEALED-HASH'}</p>
+                                        </div>
+                                    </div>
+
+                                    {/* Signatory Invitation Links List */}
+                                    <div className="space-y-4 max-w-2xl mx-auto text-left">
+                                        <h3 className="text-xs font-black text-gray-800 uppercase tracking-wider">Secure Access Tokens List</h3>
+                                        <div className="space-y-3">
+                                            {createdDocSignatories.map((sig, idx) => {
+                                                const secureLink = window.location.origin + '?token=' + sig.token;
+                                                return (
+                                                    <div key={sig.id || idx} className="p-4 bg-white border border-gray-150 rounded-xl flex flex-col md:flex-row md:items-center justify-between gap-3 shadow-sm hover:border-gray-300 transition-colors">
+                                                        <div className="truncate pr-2">
+                                                            <div className="flex items-center gap-2">
+                                                                <span className="w-2.5 h-2.5 rounded-full bg-indigo-500"></span>
+                                                                <p className="text-xs font-black text-gray-800 truncate">{sig.name}</p>
+                                                            </div>
+                                                            <p className="text-[10px] text-gray-400 font-bold mt-0.5 uppercase tracking-wider">{sig.role.replace('_', ' ')} • <span className="text-primary-600">{sig.email}</span></p>
+                                                            <p className="text-[9px] text-indigo-600 font-mono mt-1 select-all truncate bg-indigo-50/50 p-1.5 rounded border border-indigo-100/50">{secureLink}</p>
+                                                        </div>
+                                                        <div className="flex-shrink-0 flex items-center gap-2 mt-2 md:mt-0">
+                                                            <button
+                                                                onClick={() => {
+                                                                    navigator.clipboard.writeText(secureLink);
+                                                                    triggerToast(`Token link copied for ${sig.name}`);
+                                                                }}
+                                                                className="px-3 py-2 bg-gray-50 hover:bg-gray-100 border border-gray-200 text-gray-700 text-[9px] font-black uppercase tracking-widest rounded-lg transition-all"
+                                                            >
+                                                                Copy Link
+                                                            </button>
+                                                            <button
+                                                                onClick={() => {
+                                                                    window.open(secureLink, '_blank');
+                                                                }}
+                                                                className="px-3 py-2 bg-indigo-600 hover:bg-indigo-700 text-white text-[9px] font-black uppercase tracking-widest rounded-lg shadow-sm transition-all flex items-center gap-1"
+                                                            >
+                                                                Test Sign Now ↗
+                                                            </button>
+                                                        </div>
+                                                    </div>
+                                                );
+                                            })}
+                                        </div>
+                                    </div>
+
+                                    {/* Simulated Invitation Send Controls */}
+                                    <div className="border-t border-gray-100 pt-6 flex justify-center gap-4">
+                                        <button
+                                            onClick={() => {
+                                                setWizardStep('upload');
+                                                setDesignerFields([]);
+                                                setCreatedDocSignatories([]);
+                                                setGeneratedDoc(null);
+                                            }}
+                                            className="px-6 py-3 border border-gray-200 text-gray-600 hover:bg-gray-50 text-[10px] font-black uppercase tracking-widest rounded-xl transition-all"
+                                        >
+                                            Reset & Upload New Agreement
+                                        </button>
+                                        <button
+                                            onClick={() => {
+                                                // Change tab to manage
+                                                setActiveTab('manage');
+                                            }}
+                                            className="px-6 py-3 bg-primary-600 hover:bg-primary-700 text-white text-[10px] font-black uppercase tracking-widest rounded-xl shadow-md transition-all"
+                                        >
+                                            Go to Signatures Vault
+                                        </button>
+                                    </div>
+                                </div>
+                            )}
+                        </div>
                     )}
 
                     {activeTab === 'manage' && (

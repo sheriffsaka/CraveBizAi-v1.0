@@ -163,12 +163,12 @@ app.post("/api/signify/upload-file", (req, res) => {
 // 2. Create/register a document for signing
 app.post("/api/signify/documents", (req, res) => {
     try {
-        const { id, title, originalFileUrl, ownerId, fileType, fileName, signatories } = req.body;
+        const { id, title, originalFileUrl, ownerId, fileType, fileName, signatories, contentJson, content_json } = req.body;
         if (!id || !title || !originalFileUrl || !ownerId || !signatories) {
             return res.status(400).json({ error: "Missing required fields for document creation" });
         }
         
-        const result = SignifyService.createDocument(id, title, originalFileUrl, ownerId, fileType || "pdf", fileName || "document.pdf", signatories);
+        const result = SignifyService.createDocument(id, title, originalFileUrl, ownerId, fileType || "pdf", fileName || "document.pdf", signatories, contentJson || content_json);
         res.json({
             success: true,
             document: result.document,

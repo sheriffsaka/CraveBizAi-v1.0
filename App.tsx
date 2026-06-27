@@ -24,7 +24,7 @@ import PaymentIntelligence from './components/PaymentIntelligence';
 import PublicSigningPortal from './components/PublicSigningPortal';
 import { api, supabase } from './lib/api';
 import { generateRenewalInvoiceSuggestion } from './services/aiGenerationService';
-import { Invoice, Client, Service, Company, User, TenantData, InvoiceStatus, AllTenantsData, GeneratedDocument } from './types';
+import { Invoice, Client, Service, Company, User, TenantData, InvoiceStatus, AllTenantsData, GeneratedDocument, DbDocumentSignatory } from './types';
 import Icon from './components/common/Icon';
 
 export type Page = 'dashboard' | 'invoices' | 'clients' | 'services' | 'reports' | 'settings' | 'create-invoice' | 'edit-invoice' | 'invoice-detail' | 'receipt-detail' | 'plain-invoice-detail' | 'recurring-invoices' | 'email-verification' | 'sent-receipts' | 'admin-dashboard' | 'document-transformer' | 'payment-intelligence';

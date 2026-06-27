@@ -175,6 +175,7 @@ export interface GeneratedDocument {
   originalFileBase64?: string;
   originalFileType?: string;
   originalFileName?: string;
+  originalFileUrl?: string;
 }
 
 export interface StoredGeneratedDoc extends GeneratedDocument {
