@@ -1191,43 +1191,65 @@ class CraveBizApi {
           content_json: contentJson
         };
         const { error: docError } = await supabase.from('documents').insert([documentData]);
-        
-        if (!docError) {
-          const signatoriesData = signatories.map(sig => ({
-            id: sig.id || crypto.randomUUID(),
-            document_id: docId,
-            name: sig.name,
-            email: sig.email,
-            role: sig.role,
-            token: crypto.randomUUID().replace(/-/g, ''),
-            status: 'pending',
-            signed_at: null
-          }));
-          
-          const { error: sigError } = await supabase.from('document_signatories').insert(signatoriesData);
-          if (!sigError) {
-            // Backup locally to allow guest/public unauthenticated users to access via local server APIs if Supabase is secured by RLS
-            try {
-              await fetch("/api/signify/documents", {
-                method: "POST",
-                headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({ 
-                  id: docId, 
-                  title, 
-                  originalFileUrl, 
-                  ownerId, 
-                  fileType, 
-                  fileName, 
-                  signatories: signatoriesData, 
-                  contentJson 
-                })
-              });
-            } catch (err) {
-              console.warn("Local server backup synchronisation failed, continuing:", err);
-            }
-            return { document: documentData as DbDocument, signatories: signatoriesData as DbDocumentSignatory[] };
-          }
+        if (docError) {
+          throw new Error(`Supabase documents table insert error: ${docError.message}`);
         }
+        
+        const signatoriesData = signatories.map(sig => ({
+          id: sig.id || crypto.randomUUID(),
+          document_id: docId,
+          name: sig.name,
+          email: sig.email,
+          role: sig.role,
+          token: crypto.randomUUID().replace(/-/g, ''),
+          status: 'pending',
+          signed_at: null
+        }));
+        
+        const { error: sigError } = await supabase.from('document_signatories').insert(signatoriesData);
+        if (sigError) {
+          throw new Error(`Supabase document_signatories table insert error: ${sigError.message}`);
+        }
+
+        // Also proactively populate the alternative document_signers table for absolute compatibility
+        try {
+          const alternativeSigners = signatoriesData.map(sig => ({
+            id: sig.id,
+            document_id: docId,
+            email: sig.email || '',
+            name: sig.name || '',
+            title: sig.role === 'main_signatory' ? 'Main Signatory' : 'Witness',
+            is_signed: false,
+            signature_value: '',
+            signatory_type: sig.role === 'main_signatory' ? 'Main' : 'Witness',
+            type: 'draw',
+            date: ''
+          }));
+          await supabase.from('document_signers').insert(alternativeSigners);
+        } catch (signerSyncErr) {
+          console.warn("Could not sync to alternative document_signers table:", signerSyncErr);
+        }
+        
+        // Backup locally to allow guest/public unauthenticated users to access via local server APIs if Supabase is secured by RLS
+        try {
+          await fetch("/api/signify/documents", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ 
+              id: docId, 
+              title, 
+              originalFileUrl, 
+              ownerId, 
+              fileType, 
+              fileName, 
+              signatories: signatoriesData, 
+              contentJson 
+            })
+          });
+        } catch (err) {
+          console.warn("Local server backup synchronisation failed, continuing:", err);
+        }
+        return { document: documentData as DbDocument, signatories: signatoriesData as DbDocumentSignatory[] };
       } catch (dbErr) {
         console.warn("Supabase tables not configured or failed, using local server fallback:", dbErr);
       }
@@ -1254,9 +1276,18 @@ class CraveBizApi {
       // 1. Try Supabase
       try {
         const { data: document, error: docError } = await supabase.from('documents').select('*').eq('id', docId).single();
-        if (!docError && document) {
-          const { data: signatories } = await supabase.from('document_signatories').select('*').eq('document_id', docId);
-          const { data: signatures } = await supabase.from('document_signatures').select('*').eq('document_id', docId);
+        if (docError) {
+          throw new Error(`Supabase documents fetch failed: ${docError.message}`);
+        }
+        if (document) {
+          const { data: signatories, error: sigsError } = await supabase.from('document_signatories').select('*').eq('document_id', docId);
+          if (sigsError) {
+            throw new Error(`Supabase signatories fetch failed: ${sigsError.message}`);
+          }
+          const { data: signatures, error: sigsErr2 } = await supabase.from('document_signatures').select('*').eq('document_id', docId);
+          if (sigsErr2) {
+            throw new Error(`Supabase signatures fetch failed: ${sigsErr2.message}`);
+          }
           return {
             document: document as DbDocument,
             signatories: (signatories || []) as DbDocumentSignatory[],
@@ -1284,11 +1315,23 @@ class CraveBizApi {
       // 1. Try Supabase
       try {
         const { data: signatory, error: sigError } = await supabase.from('document_signatories').select('*').eq('token', token).single();
-        if (!sigError && signatory) {
+        if (sigError) {
+          throw new Error(`Supabase signatory fetch by token failed: ${sigError.message}`);
+        }
+        if (signatory) {
           const docId = signatory.document_id;
-          const { data: document } = await supabase.from('documents').select('*').eq('id', docId).single();
-          const { data: signatories } = await supabase.from('document_signatories').select('*').eq('document_id', docId);
-          const { data: signatures } = await supabase.from('document_signatures').select('*').eq('document_id', docId);
+          const { data: document, error: docError } = await supabase.from('documents').select('*').eq('id', docId).single();
+          if (docError) {
+            throw new Error(`Supabase documents fetch failed: ${docError.message}`);
+          }
+          const { data: signatories, error: sigsError } = await supabase.from('document_signatories').select('*').eq('document_id', docId);
+          if (sigsError) {
+            throw new Error(`Supabase signatories fetch failed: ${sigsError.message}`);
+          }
+          const { data: signatures, error: sigsErr2 } = await supabase.from('document_signatures').select('*').eq('document_id', docId);
+          if (sigsErr2) {
+            throw new Error(`Supabase signatures fetch failed: ${sigsErr2.message}`);
+          }
           return {
             document: document as DbDocument,
             signatory: signatory as DbDocumentSignatory,
@@ -1330,19 +1373,20 @@ class CraveBizApi {
           created_at: new Date().toISOString()
         };
         const { error } = await supabase.from('document_signatures').insert([signatureData]);
-        if (!error) {
-          // Backup locally for public unauthenticated guest access support
-          try {
-            await fetch("/api/signify/signatures", {
-              method: "POST",
-              headers: { "Content-Type": "application/json" },
-              body: JSON.stringify(signatureData)
-            });
-          } catch (err) {
-            console.warn("Local server signature backup sync failed, continuing:", err);
-          }
-          return signatureData as DbDocumentSignature;
+        if (error) {
+          throw new Error(`Supabase signature insert failed: ${error.message}`);
         }
+        // Backup locally for public unauthenticated guest access support
+        try {
+          await fetch("/api/signify/signatures", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(signatureData)
+          });
+        } catch (err) {
+          console.warn("Local server signature backup sync failed, continuing:", err);
+        }
+        return signatureData as DbDocumentSignature;
       } catch (dbErr) {
         console.warn("Supabase signature insert failed, trying local fallback:", dbErr);
       }
@@ -1371,44 +1415,57 @@ class CraveBizApi {
         const { error: sigError } = await supabase.from('document_signatories')
           .update({ status, signed_at: status === 'signed' ? new Date().toISOString() : null })
           .eq('id', signatoryId);
-          
-        if (!sigError) {
-          const { data: signatory } = await supabase.from('document_signatories').select('*').eq('id', signatoryId).single();
-          const docId = signatory.document_id;
-          
-          // Check other signatories to update document status if needed
-          const { data: signatories } = await supabase.from('document_signatories').select('*').eq('document_id', docId);
-          const totalToSign = (signatories || []).filter((s: any) => s.role !== 'owner').length;
-          const signedCount = (signatories || []).filter((s: any) => s.role !== 'owner' && s.status === 'signed').length;
-          
-          let docStatus = 'pending';
-          if (status === 'declined') {
-            docStatus = 'declined';
-          } else if (signedCount === totalToSign) {
-            docStatus = 'completed';
-          } else if (signedCount > 0) {
-            docStatus = 'partially_signed';
-          }
-          
-          await supabase.from('documents').update({ status: docStatus }).eq('id', docId);
-          const { data: document } = await supabase.from('documents').select('*').eq('id', docId).single();
-          
-          // Sync locally for backup access and PDF signature merging
-          try {
-            await fetch(`/api/signify/signatories/${signatoryId}/status`, {
-              method: "POST",
-              headers: { "Content-Type": "application/json" },
-              body: JSON.stringify({ status, signatures })
-            });
-          } catch (err) {
-            console.warn("Local server status update backup sync failed, continuing:", err);
-          }
-          
-          return {
-            document: document as DbDocument,
-            signatory: signatory as DbDocumentSignatory
-          };
+        if (sigError) {
+          throw new Error(`Supabase update signatory status failed: ${sigError.message}`);
         }
+          
+        const { data: signatory, error: fetchSigError } = await supabase.from('document_signatories').select('*').eq('id', signatoryId).single();
+        if (fetchSigError || !signatory) {
+          throw new Error(`Supabase fetch signatory failed: ${fetchSigError?.message}`);
+        }
+        const docId = signatory.document_id;
+        
+        // Check other signatories to update document status if needed
+        const { data: signatories, error: fetchSigsError } = await supabase.from('document_signatories').select('*').eq('document_id', docId);
+        if (fetchSigsError) {
+          throw new Error(`Supabase fetch signatories failed: ${fetchSigsError.message}`);
+        }
+        const totalToSign = (signatories || []).filter((s: any) => s.role !== 'owner').length;
+        const signedCount = (signatories || []).filter((s: any) => s.role !== 'owner' && s.status === 'signed').length;
+        
+        let docStatus = 'pending';
+        if (status === 'declined') {
+          docStatus = 'declined';
+        } else if (signedCount === totalToSign) {
+          docStatus = 'completed';
+        } else if (signedCount > 0) {
+          docStatus = 'partially_signed';
+        }
+        
+        const { error: updateDocError } = await supabase.from('documents').update({ status: docStatus }).eq('id', docId);
+        if (updateDocError) {
+          throw new Error(`Supabase update document status failed: ${updateDocError.message}`);
+        }
+        const { data: document, error: fetchDocError } = await supabase.from('documents').select('*').eq('id', docId).single();
+        if (fetchDocError || !document) {
+          throw new Error(`Supabase fetch document failed: ${fetchDocError?.message}`);
+        }
+        
+        // Sync locally for backup access and PDF signature merging
+        try {
+          await fetch(`/api/signify/signatories/${signatoryId}/status`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ status, signatures })
+          });
+        } catch (err) {
+          console.warn("Local server status update backup sync failed, continuing:", err);
+        }
+        
+        return {
+          document: document as DbDocument,
+          signatory: signatory as DbDocumentSignatory
+        };
       } catch (dbErr) {
         console.warn("Supabase status update failed, trying local fallback:", dbErr);
       }
