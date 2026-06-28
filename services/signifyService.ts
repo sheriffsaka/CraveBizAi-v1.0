@@ -170,11 +170,13 @@ export class SignifyService {
       created_at: new Date().toISOString()
     };
     
-    // Remove duplicates if the signatory is re-positioning or placing on the same page
+    // Remove duplicates only if the signatory is re-positioning or updating the exact same signature field (using position matching with 1% margin)
     store.signatures = store.signatures.filter(s => 
       !(s.document_id === signature.document_id && 
         s.signatory_id === signature.signatory_id && 
-        s.page_number === signature.page_number)
+        s.page_number === signature.page_number &&
+        Math.abs(s.x_position - signature.x_position) < 1.0 &&
+        Math.abs(s.y_position - signature.y_position) < 1.0)
     );
     
     store.signatures.push(signature);
@@ -295,7 +297,7 @@ export class SignifyService {
         height
       });
     } else if (fileType === 'docx' || fileType === 'docx-html') {
-      pdfDoc = await PDFDocument.load(fileBytes);
+      pdfDoc = await PDFDocument.create();
     } else {
       throw new Error(`Unsupported file type for signature embedding: ${fileType}`);
     }
@@ -303,6 +305,68 @@ export class SignifyService {
     const fontRegular = await pdfDoc.embedFont(StandardFonts.Helvetica);
     const fontBold = await pdfDoc.embedFont(StandardFonts.HelveticaBold);
     const fontMono = await pdfDoc.embedFont(StandardFonts.Courier);
+
+    if (fileType === 'docx' || fileType === 'docx-html') {
+      let page = pdfDoc.addPage();
+      const { width, height } = page.getSize();
+      let currentY = height - 50;
+      
+      // Draw document title
+      page.drawText(document.title || "Secured Agreement Document", {
+        x: 50,
+        y: currentY,
+        size: 16,
+        font: fontBold
+      });
+      currentY -= 35;
+      
+      // Retrieve text content from HTML or fallback to title/meta
+      let textContent = document.content_json?.htmlContent || "";
+      const cleanLines: string[] = [];
+      
+      if (textContent) {
+        // Strip basic HTML tags
+        const rawLines = textContent.replace(/<[^>]*>/g, '\n').split('\n');
+        for (const line of rawLines) {
+          const trimmed = line.trim();
+          if (trimmed) cleanLines.push(trimmed);
+        }
+      } else {
+        cleanLines.push(`Agreement details for: ${document.title}`);
+        cleanLines.push(`Reference ID: ${document.id}`);
+        cleanLines.push(`Created: ${new Date(document.created_at).toLocaleDateString()}`);
+      }
+      
+      for (const line of cleanLines) {
+        if (currentY < 60) {
+          page = pdfDoc.addPage();
+          currentY = height - 50;
+        }
+        
+        // Split and wrap words
+        const words = line.split(' ');
+        let currentLine = '';
+        for (const word of words) {
+          const testLine = currentLine ? `${currentLine} ${word}` : word;
+          const widthOfTest = fontRegular.widthOfTextAtSize(testLine, 10);
+          if (widthOfTest > width - 100) {
+            page.drawText(currentLine, { x: 50, y: currentY, size: 10, font: fontRegular });
+            currentY -= 15;
+            if (currentY < 60) {
+              page = pdfDoc.addPage();
+              currentY = height - 50;
+            }
+            currentLine = word;
+          } else {
+            currentLine = testLine;
+          }
+        }
+        if (currentLine) {
+          page.drawText(currentLine, { x: 50, y: currentY, size: 10, font: fontRegular });
+          currentY -= 18;
+        }
+      }
+    }
 
     // Retrieve fields from the document's content_json (if available)
     const fields = document.content_json?.fields || [];

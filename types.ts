@@ -166,6 +166,11 @@ export interface SignatureInfo {
   email?: string;
   isSigned: boolean;
   isRequested?: boolean;
+  page_number?: number;
+  x_position?: number;
+  y_position?: number;
+  width?: number;
+  height?: number;
 }
 
 export interface GeneratedDocument {

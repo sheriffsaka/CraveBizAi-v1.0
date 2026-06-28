@@ -93,6 +93,8 @@ export const DocumentSignifyViewer: React.FC<DocumentSignifyViewerProps> = ({
   const isImage = ['png', 'jpg', 'jpeg', 'gif', 'webp'].some(ext => cleanType.includes(ext)) || (fileUrl && /\.(png|jpg|jpeg|gif|webp)$/i.test(fileUrl)) || (fileUrl && fileUrl.startsWith('data:image/'));
   const isDoc = cleanType.includes('docx') || cleanType.includes('doc') || cleanType.includes('word') || cleanType.includes('html') || !!htmlContent;
 
+  const pdfDocRef = useRef<any>(null);
+
   useEffect(() => {
     if (!fileUrl && !htmlContent) {
       setLoading(false);
@@ -100,7 +102,25 @@ export const DocumentSignifyViewer: React.FC<DocumentSignifyViewerProps> = ({
     }
 
     if (isPdf) {
-      renderPdf();
+      const loadPdf = async () => {
+        setLoading(true);
+        setError(null);
+        try {
+          const pdfjsLib = await loadPdfJS();
+          if (!pdfjsLib) {
+            throw new Error("PDF.js engine is still loading. Please wait...");
+          }
+          const loadingTask = pdfjsLib.getDocument(fileUrl);
+          const pdf = await loadingTask.promise;
+          pdfDocRef.current = pdf;
+          setNumPages(pdf.numPages);
+        } catch (err: any) {
+          console.error("Error loading PDF:", err);
+          setError("Fidelity Viewer could not parse this PDF format: " + err.message);
+          setLoading(false);
+        }
+      };
+      loadPdf();
     } else if (isImage) {
       setNumPages(1);
       setLoading(false);
@@ -111,56 +131,69 @@ export const DocumentSignifyViewer: React.FC<DocumentSignifyViewerProps> = ({
     }
   }, [fileUrl, fileType, htmlContent, isPdf, isImage, isDoc]);
 
-  const renderPdf = async () => {
-    setLoading(true);
-    setError(null);
-    try {
-      const pdfjsLib = await loadPdfJS();
-      if (!pdfjsLib) {
-        throw new Error("PDF.js engine is still loading. Please wait...");
-      }
+  useEffect(() => {
+    if (!isPdf || !pdfDocRef.current || numPages === 0) return;
 
-      const loadingTask = pdfjsLib.getDocument(fileUrl);
-      const pdf = await loadingTask.promise;
-      setNumPages(pdf.numPages);
-      
-      // Render pages sequentially
-      for (let pageNum = 1; pageNum <= pdf.numPages; pageNum++) {
-        const page = await pdf.getPage(pageNum);
-        const viewport = page.getViewport({ scale: 1.5 });
+    let isCancelled = false;
+
+    const renderAllPages = async () => {
+      try {
+        const pdf = pdfDocRef.current;
+        const dims: Record<number, { width: number; height: number }> = {};
         
-        const canvas = canvasRefs.current[pageNum];
-        if (canvas) {
-          canvas.width = viewport.width;
-          canvas.height = viewport.height;
-          const context = canvas.getContext('2d');
-          if (context) {
-            const renderContext = {
-              canvasContext: context,
-              viewport: viewport,
-            };
-            await page.render(renderContext).promise;
+        for (let pageNum = 1; pageNum <= numPages; pageNum++) {
+          if (isCancelled) return;
+          const page = await pdf.getPage(pageNum);
+          const viewport = page.getViewport({ scale: 1.5 });
+          
+          // Retry slightly if canvas is not in DOM yet
+          let canvas = canvasRefs.current[pageNum];
+          if (!canvas) {
+            await new Promise(resolve => setTimeout(resolve, 50));
+            canvas = canvasRefs.current[pageNum];
           }
           
-          setPageDimensions(prev => ({
-            ...prev,
-            [pageNum]: { width: viewport.width, height: viewport.height }
-          }));
+          if (canvas) {
+            canvas.width = viewport.width;
+            canvas.height = viewport.height;
+            const context = canvas.getContext('2d');
+            if (context) {
+              const renderContext = {
+                canvasContext: context,
+                viewport: viewport,
+              };
+              await page.render(renderContext).promise;
+            }
+            dims[pageNum] = { width: viewport.width, height: viewport.height };
+          }
+        }
+        
+        if (!isCancelled) {
+          setPageDimensions(dims);
+          setLoading(false);
+        }
+      } catch (err: any) {
+        console.error("Error rendering PDF pages:", err);
+        if (!isCancelled) {
+          setError("Failed to render PDF: " + err.message);
+          setLoading(false);
         }
       }
-    } catch (err: any) {
-      console.error("Error rendering PDF:", err);
-      setError("Fidelity Viewer could not parse this PDF format: " + err.message);
-    } finally {
-      setLoading(false);
-    }
-  };
+    };
+
+    // We run after a brief pause to allow canvas elements to mount
+    const timer = setTimeout(() => {
+      renderAllPages();
+    }, 100);
+
+    return () => {
+      isCancelled = true;
+      clearTimeout(timer);
+    };
+  }, [numPages, isPdf, fileUrl]);
 
   const setCanvasRef = (pageNum: number, canvas: HTMLCanvasElement | null) => {
     canvasRefs.current[pageNum] = canvas;
-    if (canvas && pageDimensions[pageNum] === undefined) {
-      renderPdf();
-    }
   };
 
   const handlePageClick = (pageNum: number, e: React.MouseEvent<HTMLDivElement>) => {

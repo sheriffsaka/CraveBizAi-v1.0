@@ -52,14 +52,17 @@ const loadPdfJS = (): Promise<any> => {
 };
 
 const extractTextFromPdf = async (arrayBuffer: ArrayBuffer): Promise<string> => {
+    let loadingTask: any = null;
     try {
         const parsePromise = (async () => {
             const pdfjsLib = await loadPdfJS();
-            const loadingTask = pdfjsLib.getDocument({ data: new Uint8Array(arrayBuffer) });
+            loadingTask = pdfjsLib.getDocument({ data: new Uint8Array(arrayBuffer) });
             const pdf = await loadingTask.promise;
             let fullText = '';
 
-            for (let pageNum = 1; pageNum <= pdf.numPages; pageNum++) {
+            // Cap reading at max 10 pages for text extraction to avoid freezing on massive documents
+            const pagesToRead = Math.min(pdf.numPages, 10);
+            for (let pageNum = 1; pageNum <= pagesToRead; pageNum++) {
                 const page = await pdf.getPage(pageNum);
                 const textContent = await page.getTextContent();
                 let lastY = -1;
@@ -77,20 +80,35 @@ const extractTextFromPdf = async (arrayBuffer: ArrayBuffer): Promise<string> => 
                 }
                 fullText += pageText + '\n\n';
             }
+            if (pdf.numPages > 10) {
+                fullText += `\n\n[Truncated remaining ${pdf.numPages - 10} pages to optimize performance]`;
+            }
             return fullText;
         })();
 
-        // Race with a 4-second timeout
+        // Race with an 8-second timeout
         const timeoutPromise = new Promise<string>((resolve) => {
             setTimeout(() => {
-                console.warn("PDF extraction timed out after 4 seconds.");
+                console.warn("PDF extraction timed out after 8 seconds.");
+                if (loadingTask) {
+                    try {
+                        loadingTask.destroy();
+                    } catch (err) {
+                        console.warn("Error destroying timed-out PDF task:", err);
+                    }
+                }
                 resolve("[PDF Content - Extraction Timeout]");
-            }, 4000);
+            }, 8000);
         });
 
         return await Promise.race([parsePromise, timeoutPromise]);
     } catch (e) {
         console.warn("Error inside extractTextFromPdf:", e);
+        if (loadingTask) {
+            try {
+                loadingTask.destroy();
+            } catch (err) {}
+        }
         return "[PDF Content - Extraction Failed]";
     }
 };
@@ -287,6 +305,7 @@ const DocumentTransformer: React.FC<DocumentTransformerProps> = ({ company, user
     const [rawText, setRawText] = useState('');
     const [generatedDoc, setGeneratedDoc] = useState<GeneratedDocument | null>(null);
     const [isLoading, setIsLoading] = useState(false);
+    const [loadingMessage, setLoadingMessage] = useState('');
     const [error, setError] = useState<string | null>(null);
 
     // Feature i: Generate Document by Purpose
@@ -320,6 +339,7 @@ const DocumentTransformer: React.FC<DocumentTransformerProps> = ({ company, user
     const [uploadedFileName, setUploadedFileName] = useState('');
 
     // Dynamic Multi-Signatories states
+    const [isAddSignatoryModalOpen, setIsAddSignatoryModalOpen] = useState(false);
     const [signatories, setSignatories] = useState<SignatureInfo[]>([]);
     const [activeSignatoryIndex, setActiveSignatoryIndex] = useState<number | null>(null);
     const [newSigName, setNewSigName] = useState('');
@@ -328,8 +348,7 @@ const DocumentTransformer: React.FC<DocumentTransformerProps> = ({ company, user
     const [newSigType, setNewSigType] = useState<'Main' | 'Witness'>('Main');
     const [editingDocId, setEditingDocId] = useState<string | null>(null);
     const [selectedSigIndexToPlace, setSelectedSigIndexToPlace] = useState<number | null>(0);
-
-    const [isAddSignatoryModalOpen, setIsAddSignatoryModalOpen] = useState(false);
+    const [fallbackModalSig, setFallbackModalSig] = useState<any | null>(null);
     const [isRequestModalOpen, setIsRequestModalOpen] = useState(false);
     const [requestingSigIndex, setRequestingSigIndex] = useState<number | null>(null);
     const [requestEmail, setRequestEmail] = useState('');
@@ -405,6 +424,7 @@ const DocumentTransformer: React.FC<DocumentTransformerProps> = ({ company, user
             return;
         }
 
+        setLoadingMessage("Securing signing workflow details, compiling recipients, and generating secure invite links...");
         setIsLoading(true);
         setError(null);
         try {
@@ -708,6 +728,7 @@ const DocumentTransformer: React.FC<DocumentTransformerProps> = ({ company, user
             setError('Please enter the nature or purpose of the document to generate.');
             return;
         }
+        setLoadingMessage("Gemini-3.5-Flash is currently creating realistic legal terms, filling metadata and mapping layout structures.");
         setIsLoading(true);
         setError(null);
         setGeneratedDoc(null);
@@ -741,6 +762,7 @@ const DocumentTransformer: React.FC<DocumentTransformerProps> = ({ company, user
             return;
         }
 
+        setLoadingMessage("Compiling agreement clauses and preparing offline workspace canvas...");
         setIsLoading(true);
         setError(null);
         setGeneratedDoc(null);
@@ -843,6 +865,7 @@ const DocumentTransformer: React.FC<DocumentTransformerProps> = ({ company, user
             setError('Please input or paste raw content first.');
             return;
         }
+        setLoadingMessage("AI is processing raw draft content, styling headers, and building paragraphs structure...");
         setIsLoading(true);
         setError(null);
         setGeneratedDoc(null);
@@ -876,6 +899,7 @@ const DocumentTransformer: React.FC<DocumentTransformerProps> = ({ company, user
     const processUploadedFile = (file: File) => {
         setUploadedFileName(file.name);
         setError(null);
+        setLoadingMessage("Securing original document, running server parsing, and preparing fidelity pages...");
         setIsLoading(true);
 
         const reader = new FileReader();
@@ -1589,189 +1613,238 @@ ${company?.name || 'CraveBiZ Vendor'}`;
                                 </div>
                             )}
 
-                            {/* STEP 2: RECIPIENTS / SIGNERS CONFIGURATION */}
+                            {/* STEP 2: ADD SIGNATORIES CONFIGURATION */}
                             {wizardStep === 'signers' && (
-                                <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 animate-in fade-in duration-300">
-                                    {/* Left side: Add Signatory */}
-                                    <div className="lg:col-span-5 bg-white p-6 rounded-2xl border border-gray-200/50 shadow-sm space-y-4">
-                                        <h3 className="text-xs font-black text-gray-800 uppercase tracking-widest flex items-center gap-2">
-                                            <svg className="w-4 h-4 text-primary-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M18 9v3m0 0v3m0-3h3m-3 0H9m12 0a9 9 0 11-18 0 9 9 0 0118 0z" />
-                                            </svg>
-                                            Configure Recipient
-                                        </h3>
-                                        <p className="text-[11px] text-gray-400 font-semibold uppercase tracking-wider">Define roles, multi-signer order & security</p>
-
-                                        <div className="space-y-3">
-                                            <div>
-                                                <label className="block text-[10px] font-extrabold text-gray-400 uppercase tracking-wider mb-1">Full Name</label>
-                                                <input
-                                                    type="text"
-                                                    value={newSigName}
-                                                    onChange={(e) => setNewSigName(e.target.value)}
-                                                    placeholder="John Doe"
-                                                    className="w-full px-3 py-2 text-xs border border-gray-200 rounded-lg focus:outline-none focus:ring-1 focus:ring-primary-500 font-medium"
-                                                />
-                                            </div>
-                                            <div>
-                                                <label className="block text-[10px] font-extrabold text-gray-400 uppercase tracking-wider mb-1">Email Address</label>
-                                                <input
-                                                    type="email"
-                                                    value={newSigEmail}
-                                                    onChange={(e) => setNewSigEmail(e.target.value)}
-                                                    placeholder="john.doe@corporate.com"
-                                                    className="w-full px-3 py-2 text-xs border border-gray-200 rounded-lg focus:outline-none focus:ring-1 focus:ring-primary-500 font-medium"
-                                                />
-                                            </div>
-                                            <div>
-                                                <label className="block text-[10px] font-extrabold text-gray-400 uppercase tracking-wider mb-1">Corporate/Legal Title</label>
-                                                <input
-                                                    type="text"
-                                                    value={newSigTitle}
-                                                    onChange={(e) => setNewSigTitle(e.target.value)}
-                                                    placeholder="Chief Operations Officer"
-                                                    className="w-full px-3 py-2 text-xs border border-gray-200 rounded-lg focus:outline-none focus:ring-1 focus:ring-primary-500 font-medium"
-                                                />
-                                            </div>
-                                            <div className="grid grid-cols-2 gap-2">
-                                                <div>
-                                                    <label className="block text-[10px] font-extrabold text-gray-400 uppercase tracking-wider mb-1">Role Type</label>
-                                                    <select
-                                                        value={newSigType}
-                                                        onChange={(e) => setNewSigType(e.target.value as any)}
-                                                        className="w-full px-3 py-2 text-xs border border-gray-200 rounded-lg bg-white font-medium"
-                                                    >
-                                                        <option value="Main">Main Signatory</option>
-                                                        <option value="Witness">Witness</option>
-                                                    </select>
-                                                </div>
-                                                <div>
-                                                    <label className="block text-[10px] font-extrabold text-gray-400 uppercase tracking-wider mb-1">Signing Order</label>
-                                                    <input
-                                                        type="number"
-                                                        defaultValue={1}
-                                                        min={1}
-                                                        className="w-full px-3 py-2 text-xs border border-gray-200 rounded-lg font-medium"
-                                                    />
-                                                </div>
-                                            </div>
-
-                                            <div className="border-t border-gray-100 pt-3 space-y-2">
-                                                <label className="block text-[10px] font-black text-gray-500 uppercase tracking-wider">Verification Security</label>
-                                                <div className="flex items-center justify-between text-[11px] text-gray-600 font-medium bg-gray-50 p-2 rounded-lg">
-                                                    <span>🔒 Secure Access OTP Check</span>
-                                                    <input type="checkbox" defaultChecked className="rounded text-primary-600" />
-                                                </div>
-                                                <div className="flex items-center justify-between text-[11px] text-gray-600 font-medium bg-gray-50 p-2 rounded-lg">
-                                                    <span>📧 Double Email Validation</span>
-                                                    <input type="checkbox" defaultChecked className="rounded text-primary-600" />
-                                                </div>
-                                            </div>
+                                <div className="bg-white p-8 rounded-2xl border border-gray-200/50 shadow-sm space-y-6 animate-in fade-in duration-300">
+                                    <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-gray-100 pb-5">
+                                        <div>
+                                            <h3 className="text-sm font-black text-gray-800 uppercase tracking-wider flex items-center gap-2">
+                                                <svg className="w-4 h-4 text-primary-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0zm6 3a2 2 0 11-4 0 2 2 0 014 0zM7 10a2 2 0 11-4 0 2 2 0 014 0z" />
+                                                </svg>
+                                                Add Signatories
+                                            </h3>
+                                            <p className="text-xs text-gray-500 font-medium leading-relaxed mt-1">
+                                                Manage and structure the authorized signatories who will receive secure invite links to place their official signatures.
+                                            </p>
                                         </div>
-
                                         <button
-                                            onClick={() => {
-                                                if (!newSigName.trim()) { triggerToast("Name is required"); return; }
-                                                const newId = 'sig_' + Math.floor(Math.random() * 899999 + 100000);
-                                                const newSlot: SignatureInfo = {
-                                                    id: newId,
-                                                    type: 'type',
-                                                    value: '',
-                                                    name: newSigName.trim(),
-                                                    title: newSigTitle.trim() || 'Officer',
-                                                    date: '',
-                                                    signatoryType: newSigType,
-                                                    email: newSigEmail.trim() || `${newSigName.toLowerCase().replace(/\s/g, '')}@cravebiz.ai`,
-                                                    isSigned: false
-                                                };
-                                                setSignatories(prev => [...prev, newSlot]);
-                                                // Initialize active designer signer if not set
-                                                if (activeDesignerSignerId === 'creator' || activeDesignerSignerId === '') {
-                                                    setActiveDesignerSignerId(newId);
-                                                }
-                                                // Clear fields
-                                                setNewSigName('');
-                                                setNewSigEmail('');
-                                                setNewSigTitle('');
-                                                triggerToast("Signatory added successfully!");
-                                            }}
-                                            className="w-full py-3 bg-primary-600 hover:bg-primary-700 text-white text-[10px] font-black uppercase tracking-widest rounded-xl shadow-md transition-all flex items-center justify-center gap-2"
+                                            onClick={() => setIsAddSignatoryModalOpen(true)}
+                                            className="px-5 py-2.5 bg-primary-600 hover:bg-primary-700 text-white rounded-xl text-[10px] font-black uppercase tracking-widest shadow-sm transition-all flex items-center justify-center gap-2 self-start sm:self-center"
                                         >
                                             <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 9v3m0 0v3m0-3h3m-3 0H9m12 0a9 9 0 11-18 0 9 9 0 0118 0z" />
+                                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 4v16m8-8H4" />
                                             </svg>
-                                            Register Recipient Slot
+                                            Add Signatory
                                         </button>
                                     </div>
 
-                                    {/* Right side: Recipient List & Workflow Navigation */}
-                                    <div className="lg:col-span-7 bg-white p-6 rounded-2xl border border-gray-200/50 shadow-sm flex flex-col justify-between space-y-4">
-                                        <div className="space-y-4">
-                                            <h3 className="text-xs font-black text-gray-800 uppercase tracking-widest flex items-center gap-2">
-                                                <svg className="w-4 h-4 text-emerald-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-3 7h3m-3 4h3m-6-4h.01M9 16h.01" />
+                                    {/* Signatory Sequence List */}
+                                    <div className="space-y-3">
+                                        {signatories.length === 0 ? (
+                                            <div className="text-center py-16 border-2 border-dashed border-gray-150 rounded-2xl bg-gray-50/50 flex flex-col items-center justify-center space-y-3">
+                                                <svg className="w-10 h-10 text-gray-300" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="1.5" d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
                                                 </svg>
-                                                Active Recipient Sequence
-                                            </h3>
-                                            <p className="text-xs text-gray-500 font-medium leading-relaxed">
-                                                These individuals are authorized to receive e-sign requests. Ensure each slot contains correct email details for automatic token invitations.
-                                            </p>
-
-                                            <div className="space-y-2.5 max-h-[300px] overflow-y-auto pr-1">
-                                                {signatories.length === 0 ? (
-                                                    <div className="text-center py-10 border border-dashed border-gray-150 rounded-xl bg-gray-50/50 text-gray-400 text-xs font-bold uppercase tracking-widest">
-                                                        No Recipients Configured Yet
-                                                    </div>
-                                                ) : (
-                                                    signatories.map((sig, idx) => {
-                                                        const colors = ['bg-indigo-500', 'bg-pink-500', 'bg-emerald-500', 'bg-amber-500', 'bg-purple-500'];
-                                                        const colorClass = colors[idx % colors.length];
-                                                        return (
-                                                            <div key={sig.id || idx} className="p-3 bg-gray-50/50 border border-gray-150 rounded-xl flex items-center justify-between transition-all hover:bg-gray-50">
-                                                                <div className="flex items-center gap-3">
-                                                                    <div className={`w-3 h-3 rounded-full ${colorClass} flex-shrink-0 shadow-sm`}></div>
-                                                                    <div className="truncate">
-                                                                        <p className="text-xs font-black text-gray-800 truncate">{sig.name}</p>
-                                                                        <p className="text-[10px] text-gray-400 font-bold mt-0.5">{sig.title} • <span className="text-primary-600">{sig.signatoryType}</span></p>
-                                                                        <span className="text-[9px] text-gray-400 font-mono mt-0.5 block truncate">{sig.email}</span>
-                                                                    </div>
+                                                <div className="text-xs font-bold text-gray-400 uppercase tracking-widest">
+                                                    No Signatories Registered Yet
+                                                </div>
+                                                <button
+                                                    onClick={() => setIsAddSignatoryModalOpen(true)}
+                                                    className="px-4 py-2 border border-primary-100 hover:border-primary-200 text-primary-600 hover:text-primary-700 rounded-lg text-[9px] font-black uppercase tracking-widest transition-all bg-white shadow-sm"
+                                                >
+                                                    Register First Signatory
+                                                </button>
+                                            </div>
+                                        ) : (
+                                            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                                {signatories.map((sig, idx) => {
+                                                    const colors = ['bg-indigo-500', 'bg-pink-500', 'bg-emerald-500', 'bg-amber-500', 'bg-purple-500'];
+                                                    const colorClass = colors[idx % colors.length];
+                                                    return (
+                                                        <div key={sig.id || idx} className="p-4 bg-gray-50/40 border border-gray-100 hover:border-gray-200 rounded-xl flex items-center justify-between transition-all hover:bg-white hover:shadow-sm">
+                                                            <div className="flex items-center gap-3 truncate mr-2">
+                                                                <div className={`w-3 h-3 rounded-full ${colorClass} flex-shrink-0 shadow-sm`} />
+                                                                <div className="truncate">
+                                                                    <p className="text-xs font-black text-gray-800 truncate">{sig.name}</p>
+                                                                    <p className="text-[10px] text-gray-400 font-bold mt-0.5">
+                                                                        {sig.title} • <span className="text-primary-600 uppercase tracking-wider">{sig.signatoryType}</span>
+                                                                    </p>
+                                                                    <span className="text-[9px] text-gray-400 font-mono mt-0.5 block truncate">{sig.email}</span>
                                                                 </div>
-                                                                <button
-                                                                    onClick={() => setSignatories(prev => prev.filter(item => item.id !== sig.id))}
-                                                                    className="text-red-500 hover:text-red-700 text-[10px] font-bold uppercase tracking-widest p-1"
-                                                                >
-                                                                    Remove
-                                                                </button>
                                                             </div>
-                                                        );
-                                                    })
-                                                )}
+                                                            <button
+                                                                onClick={() => setSignatories(prev => prev.filter(item => item.id !== sig.id))}
+                                                                className="text-red-500 hover:text-red-700 text-[10px] font-bold uppercase tracking-widest p-2 hover:bg-red-50 rounded-lg transition-all flex-shrink-0"
+                                                            >
+                                                                Remove
+                                                            </button>
+                                                        </div>
+                                                    );
+                                                })}
+                                            </div>
+                                        )}
+                                    </div>
+
+                                    {/* Action Buttons */}
+                                    <div className="border-t border-gray-100 pt-6 flex justify-between items-center gap-4">
+                                        <button
+                                            onClick={() => setWizardStep('upload')}
+                                            className="px-5 py-3 border border-gray-200 rounded-xl hover:bg-gray-50 text-[10px] font-black uppercase tracking-widest text-gray-600 transition-all"
+                                        >
+                                            ← Back to Upload
+                                        </button>
+                                        <button
+                                            onClick={() => {
+                                                if (signatories.length === 0) {
+                                                    triggerToast("Please add at least one signatory recipient.");
+                                                    return;
+                                                }
+                                                // Set default active designer signatory
+                                                setActiveDesignerSignerId(signatories[0].id || 'creator');
+                                                setWizardStep('prepare');
+                                            }}
+                                            className="px-5 py-3 bg-primary-600 hover:bg-primary-700 text-white rounded-xl text-[10px] font-black uppercase tracking-widest shadow-md transition-all flex items-center gap-1.5"
+                                        >
+                                            Place Signature Fields →
+                                        </button>
+                                    </div>
+
+                                    {/* Centered Modal Dialog for Signatory Configuration */}
+                                    {isAddSignatoryModalOpen && (
+                                        <div className="fixed inset-0 z-50 overflow-y-auto flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-xs animate-in fade-in duration-200">
+                                            <div className="bg-white rounded-2xl border border-gray-200/50 shadow-2xl w-full max-w-lg overflow-hidden animate-in zoom-in-95 duration-200 flex flex-col">
+                                                {/* Modal Header */}
+                                                <div className="px-6 py-4 border-b border-gray-100 flex items-center justify-between bg-gray-50/50">
+                                                    <div>
+                                                        <h4 className="text-xs font-black text-gray-800 uppercase tracking-widest">
+                                                            Register New Signatory
+                                                        </h4>
+                                                        <p className="text-[10px] text-gray-400 mt-0.5 font-bold uppercase tracking-wider">
+                                                            Configure security and role descriptors
+                                                        </p>
+                                                    </div>
+                                                    <button
+                                                        onClick={() => setIsAddSignatoryModalOpen(false)}
+                                                        className="text-gray-400 hover:text-gray-600 p-1.5 hover:bg-gray-100 rounded-lg transition-all"
+                                                    >
+                                                        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M6 18L18 6M6 6l12 12" />
+                                                        </svg>
+                                                    </button>
+                                                </div>
+
+                                                {/* Modal Body / Form */}
+                                                <div className="p-6 space-y-4">
+                                                    <div>
+                                                        <label className="block text-[10px] font-extrabold text-gray-400 uppercase tracking-wider mb-1">Full Name</label>
+                                                        <input
+                                                            type="text"
+                                                            value={newSigName}
+                                                            onChange={(e) => setNewSigName(e.target.value)}
+                                                            placeholder="John Doe"
+                                                            className="w-full px-3 py-2.5 text-xs border border-gray-200 rounded-lg focus:outline-none focus:ring-1 focus:ring-primary-500 font-medium"
+                                                        />
+                                                    </div>
+                                                    <div>
+                                                        <label className="block text-[10px] font-extrabold text-gray-400 uppercase tracking-wider mb-1">Email Address</label>
+                                                        <input
+                                                            type="email"
+                                                            value={newSigEmail}
+                                                            onChange={(e) => setNewSigEmail(e.target.value)}
+                                                            placeholder="john.doe@corporate.com"
+                                                            className="w-full px-3 py-2.5 text-xs border border-gray-200 rounded-lg focus:outline-none focus:ring-1 focus:ring-primary-500 font-medium"
+                                                        />
+                                                    </div>
+                                                    <div>
+                                                        <label className="block text-[10px] font-extrabold text-gray-400 uppercase tracking-wider mb-1">Corporate/Legal Title</label>
+                                                        <input
+                                                            type="text"
+                                                            value={newSigTitle}
+                                                            onChange={(e) => setNewSigTitle(e.target.value)}
+                                                            placeholder="Chief Operations Officer"
+                                                            className="w-full px-3 py-2.5 text-xs border border-gray-200 rounded-lg focus:outline-none focus:ring-1 focus:ring-primary-500 font-medium"
+                                                        />
+                                                    </div>
+                                                    <div className="grid grid-cols-2 gap-4">
+                                                        <div>
+                                                            <label className="block text-[10px] font-extrabold text-gray-400 uppercase tracking-wider mb-1">Role Type</label>
+                                                            <select
+                                                                value={newSigType}
+                                                                onChange={(e) => setNewSigType(e.target.value as any)}
+                                                                className="w-full px-3 py-2.5 text-xs border border-gray-200 rounded-lg bg-white font-medium"
+                                                            >
+                                                                <option value="Main">Main Signatory</option>
+                                                                <option value="Witness">Witness</option>
+                                                            </select>
+                                                        </div>
+                                                        <div>
+                                                            <label className="block text-[10px] font-extrabold text-gray-400 uppercase tracking-wider mb-1">Signing Order</label>
+                                                            <input
+                                                                type="number"
+                                                                defaultValue={1}
+                                                                min={1}
+                                                                className="w-full px-3 py-2.5 text-xs border border-gray-200 rounded-lg font-medium"
+                                                            />
+                                                        </div>
+                                                    </div>
+
+                                                    <div className="border-t border-gray-100 pt-4 space-y-2">
+                                                        <label className="block text-[10px] font-black text-gray-500 uppercase tracking-wider mb-1">Verification Security</label>
+                                                        <div className="flex items-center justify-between text-xs text-gray-600 font-semibold bg-gray-50/50 border border-gray-100 p-2.5 rounded-xl">
+                                                            <span className="flex items-center gap-1.5">🔒 Secure Access OTP Check</span>
+                                                            <input type="checkbox" defaultChecked className="rounded text-primary-600" />
+                                                        </div>
+                                                        <div className="flex items-center justify-between text-xs text-gray-600 font-semibold bg-gray-50/50 border border-gray-100 p-2.5 rounded-xl">
+                                                            <span className="flex items-center gap-1.5">📧 Double Email Validation</span>
+                                                            <input type="checkbox" defaultChecked className="rounded text-primary-600" />
+                                                        </div>
+                                                    </div>
+                                                </div>
+
+                                                {/* Modal Footer */}
+                                                <div className="px-6 py-4 border-t border-gray-100 bg-gray-50 flex justify-end gap-3">
+                                                    <button
+                                                        onClick={() => setIsAddSignatoryModalOpen(false)}
+                                                        className="px-4 py-2 border border-gray-200 hover:bg-gray-100 text-[10px] font-black uppercase tracking-widest text-gray-600 rounded-lg transition-all"
+                                                    >
+                                                        Cancel
+                                                    </button>
+                                                    <button
+                                                        onClick={() => {
+                                                            if (!newSigName.trim()) { triggerToast("Name is required"); return; }
+                                                            const newId = 'sig_' + Math.floor(Math.random() * 899999 + 100000);
+                                                            const newSlot: SignatureInfo = {
+                                                                id: newId,
+                                                                type: 'type',
+                                                                value: '',
+                                                                name: newSigName.trim(),
+                                                                title: newSigTitle.trim() || 'Officer',
+                                                                date: '',
+                                                                signatoryType: newSigType,
+                                                                email: newSigEmail.trim() || `${newSigName.toLowerCase().replace(/\s/g, '')}@cravebiz.ai`,
+                                                                isSigned: false
+                                                            };
+                                                            setSignatories(prev => [...prev, newSlot]);
+                                                            // Initialize active designer signer if not set
+                                                            if (activeDesignerSignerId === 'creator' || activeDesignerSignerId === '') {
+                                                                setActiveDesignerSignerId(newId);
+                                                            }
+                                                            // Clear fields
+                                                            setNewSigName('');
+                                                            setNewSigEmail('');
+                                                            setNewSigTitle('');
+                                                            setIsAddSignatoryModalOpen(false);
+                                                            triggerToast("Signatory registered successfully!");
+                                                        }}
+                                                        className="px-5 py-2.5 bg-primary-600 hover:bg-primary-700 text-white text-[10px] font-black uppercase tracking-widest rounded-lg shadow-sm transition-all"
+                                                    >
+                                                        Register Signatory
+                                                    </button>
+                                                </div>
                                             </div>
                                         </div>
-
-                                        <div className="border-t border-gray-100 pt-4 flex justify-between items-center gap-4">
-                                            <button
-                                                onClick={() => setWizardStep('upload')}
-                                                className="px-5 py-3 border border-gray-200 rounded-xl hover:bg-gray-50 text-[10px] font-black uppercase tracking-widest text-gray-600 transition-all"
-                                            >
-                                                ← Back to Upload
-                                            </button>
-                                            <button
-                                                onClick={() => {
-                                                    if (signatories.length === 0) {
-                                                        triggerToast("Please add at least one signatory recipient.");
-                                                        return;
-                                                    }
-                                                    // Set default active designer signatory
-                                                    setActiveDesignerSignerId(signatories[0].id || 'creator');
-                                                    setWizardStep('prepare');
-                                                }}
-                                                className="px-5 py-3 bg-primary-600 hover:bg-primary-700 text-white rounded-xl text-[10px] font-black uppercase tracking-widest shadow-md transition-all flex items-center gap-1"
-                                            >
-                                                Design Field Overlays →
-                                            </button>
-                                        </div>
-                                    </div>
+                                    )}
                                 </div>
                             )}
 
@@ -1962,21 +2035,46 @@ ${company?.name || 'CraveBiZ Vendor'}`;
 
                                     {/* Signatory Invitation Links List */}
                                     <div className="space-y-4 max-w-2xl mx-auto text-left">
-                                        <h3 className="text-xs font-black text-gray-800 uppercase tracking-wider">Secure Access Tokens List</h3>
+                                        <h3 className="text-xs font-black text-gray-800 uppercase tracking-wider flex items-center gap-1.5">
+                                            <svg className="w-4 h-4 text-primary-600 animate-bounce" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M3 19v-8.93a2 2 0 01.89-1.664l8-4.8a2 2 0 012.22 0l8 4.8A2 2 0 0121 10.07V19M3 19a2 2 0 002 2h14a2 2 0 002-2M3 19l6.75-4.5M21 19l-6.75-4.5M3 10l6.75 4.5M21 10l-6.75 4.5m0 0l-1.14.76a2 2 0 01-2.22 0l-1.14-.76" />
+                                            </svg>
+                                            Secure Access Tokens & Automatic Invitations
+                                        </h3>
                                         <div className="space-y-3">
                                             {createdDocSignatories.map((sig, idx) => {
                                                 const secureLink = window.location.origin + '?token=' + sig.token;
                                                 return (
-                                                    <div key={sig.id || idx} className="p-4 bg-white border border-gray-150 rounded-xl flex flex-col md:flex-row md:items-center justify-between gap-3 shadow-sm hover:border-gray-300 transition-colors">
-                                                        <div className="truncate pr-2">
-                                                            <div className="flex items-center gap-2">
-                                                                <span className="w-2.5 h-2.5 rounded-full bg-indigo-500"></span>
-                                                                <p className="text-xs font-black text-gray-800 truncate">{sig.name}</p>
+                                                    <div key={sig.id || idx} className="p-4 bg-white border border-gray-150 rounded-xl flex flex-col gap-3 shadow-sm hover:border-gray-300 transition-colors">
+                                                        <div className="flex flex-col md:flex-row md:items-center justify-between gap-3">
+                                                            <div className="truncate pr-2">
+                                                                <div className="flex items-center gap-2">
+                                                                    <span className="w-2.5 h-2.5 rounded-full bg-indigo-500"></span>
+                                                                    <p className="text-xs font-black text-gray-800 truncate">{sig.name}</p>
+                                                                </div>
+                                                                <p className="text-[10px] text-gray-400 font-bold mt-0.5 uppercase tracking-wider">
+                                                                    {sig.role.replace('_', ' ')} • <span className="text-primary-600">{sig.email}</span>
+                                                                </p>
                                                             </div>
-                                                            <p className="text-[10px] text-gray-400 font-bold mt-0.5 uppercase tracking-wider">{sig.role.replace('_', ' ')} • <span className="text-primary-600">{sig.email}</span></p>
-                                                            <p className="text-[9px] text-indigo-600 font-mono mt-1 select-all truncate bg-indigo-50/50 p-1.5 rounded border border-indigo-100/50">{secureLink}</p>
+                                                            <div className="flex flex-wrap items-center gap-2">
+                                                                <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[9px] font-bold text-emerald-700 bg-emerald-50 border border-emerald-150">
+                                                                    <span className="w-1.5 h-1.5 bg-emerald-500 rounded-full animate-ping"></span>
+                                                                    📧 Delivery Status: Sent (Secure SSL)
+                                                                </span>
+                                                            </div>
                                                         </div>
-                                                        <div className="flex-shrink-0 flex items-center gap-2 mt-2 md:mt-0">
+
+                                                        <p className="text-[9px] text-indigo-600 font-mono select-all truncate bg-indigo-50/50 p-1.5 rounded border border-indigo-100/50">{secureLink}</p>
+                                                        
+                                                        <div className="flex items-center justify-end gap-2 mt-1 border-t border-gray-50 pt-2.5">
+                                                            <button
+                                                                onClick={() => {
+                                                                    setFallbackModalSig({ sig, secureLink });
+                                                                }}
+                                                                className="px-3 py-2 bg-indigo-50 hover:bg-indigo-100 text-indigo-700 text-[9px] font-black uppercase tracking-widest rounded-lg transition-all flex items-center gap-1"
+                                                            >
+                                                                <span>📋</span> Compose Invite Fallback
+                                                            </button>
                                                             <button
                                                                 onClick={() => {
                                                                     navigator.clipboard.writeText(secureLink);
@@ -2000,6 +2098,102 @@ ${company?.name || 'CraveBiZ Vendor'}`;
                                             })}
                                         </div>
                                     </div>
+
+                                    {/* Fallback Invitation Modal */}
+                                    {fallbackModalSig && (
+                                        <div className="fixed inset-0 z-50 overflow-y-auto flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-xs animate-in fade-in duration-200">
+                                            <div className="bg-white rounded-2xl border border-gray-200/50 shadow-2xl w-full max-w-lg overflow-hidden animate-in zoom-in-95 duration-200 flex flex-col text-left">
+                                                <div className="px-6 py-4 border-b border-gray-100 flex items-center justify-between bg-gray-50/50">
+                                                    <div>
+                                                        <h4 className="text-xs font-black text-gray-800 uppercase tracking-widest">
+                                                            📧 Fallback Invitation Message
+                                                        </h4>
+                                                        <p className="text-[10px] text-gray-400 mt-0.5 font-bold uppercase tracking-wider">
+                                                            Direct manual notification pipeline
+                                                        </p>
+                                                    </div>
+                                                    <button
+                                                        onClick={() => setFallbackModalSig(null)}
+                                                        className="text-gray-400 hover:text-gray-600 p-1.5 hover:bg-gray-100 rounded-lg transition-all"
+                                                    >
+                                                        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M6 18L18 6M6 6l12 12" />
+                                                        </svg>
+                                                    </button>
+                                                </div>
+
+                                                <div className="p-6 space-y-4">
+                                                    <div>
+                                                        <label className="block text-[10px] font-extrabold text-gray-400 uppercase tracking-wider mb-1">To</label>
+                                                        <div className="px-3 py-2 bg-gray-50 border border-gray-200 rounded-lg text-xs font-semibold text-gray-700">
+                                                            {fallbackModalSig.sig.name} &lt;{fallbackModalSig.sig.email}&gt;
+                                                        </div>
+                                                    </div>
+
+                                                    <div>
+                                                        <label className="block text-[10px] font-extrabold text-gray-400 uppercase tracking-wider mb-1">Email Subject</label>
+                                                        <div className="flex gap-2">
+                                                            <input
+                                                                type="text"
+                                                                readOnly
+                                                                value={`Action Required: Secure E-Sign Invitation for '${generatedDoc?.title || "your agreement"}'`}
+                                                                className="flex-1 px-3 py-2 bg-gray-50 border border-gray-200 rounded-lg text-xs font-medium text-gray-700 select-all"
+                                                            />
+                                                            <button
+                                                                onClick={() => {
+                                                                    navigator.clipboard.writeText(`Action Required: Secure E-Sign Invitation for '${generatedDoc?.title || "your agreement"}'`);
+                                                                    triggerToast("Subject copied!");
+                                                                }}
+                                                                className="px-3 py-1 bg-gray-100 hover:bg-gray-200 text-[10px] font-black uppercase tracking-widest text-gray-700 rounded-lg transition-all"
+                                                            >
+                                                                Copy
+                                                            </button>
+                                                        </div>
+                                                    </div>
+
+                                                    <div>
+                                                        <label className="block text-[10px] font-extrabold text-gray-400 uppercase tracking-wider mb-1">Message Body</label>
+                                                        <textarea
+                                                            rows={9}
+                                                            readOnly
+                                                            value={`Dear ${fallbackModalSig.sig.name},
+
+You are registered as a signatory for the document: '${generatedDoc?.title || "Service Agreement"}' with the corporate role of: ${fallbackModalSig.sig.role.replace('_', ' ').toUpperCase()}.
+
+Please click the secure access link below to review and sign the document:
+${fallbackModalSig.secureLink}
+
+Security ID: CRAVEBIZ-SECURE-${fallbackModalSig.sig.id}
+Verification: Two-Factor SSL Check Active
+
+Best Regards,
+CraveBiZ DocSignify Mail Delivery Agent`}
+                                                            className="w-full px-3 py-2 bg-gray-50 border border-gray-200 rounded-lg text-xs font-medium text-gray-700 font-mono select-all leading-relaxed"
+                                                        />
+                                                    </div>
+                                                </div>
+
+                                                <div className="px-6 py-4 border-t border-gray-100 bg-gray-50 flex justify-end gap-3">
+                                                    <button
+                                                        onClick={() => setFallbackModalSig(null)}
+                                                        className="px-4 py-2 border border-gray-200 hover:bg-gray-100 text-[10px] font-black uppercase tracking-widest text-gray-600 rounded-lg transition-all"
+                                                    >
+                                                        Close
+                                                    </button>
+                                                    <button
+                                                        onClick={() => {
+                                                            const bodyText = `Dear ${fallbackModalSig.sig.name},\n\nYou are registered as a signatory for the document: '${generatedDoc?.title || "Service Agreement"}' with the corporate role of: ${fallbackModalSig.sig.role.replace('_', ' ').toUpperCase()}.\n\nPlease click the secure access link below to review and sign the document:\n${fallbackModalSig.secureLink}\n\nSecurity ID: CRAVEBIZ-SECURE-${fallbackModalSig.sig.id}\nVerification: Two-Factor SSL Check Active\n\nBest Regards,\nCraveBiZ DocSignify Mail Delivery Agent`;
+                                                            navigator.clipboard.writeText(bodyText);
+                                                            triggerToast("Full email message body copied to clipboard!");
+                                                        }}
+                                                        className="px-5 py-2.5 bg-primary-600 hover:bg-primary-700 text-white text-[10px] font-black uppercase tracking-widest rounded-lg shadow-sm transition-all"
+                                                    >
+                                                        Copy Invitation Message
+                                                    </button>
+                                                </div>
+                                            </div>
+                                        </div>
+                                    )}
 
                                     {/* Simulated Invitation Send Controls */}
                                     <div className="border-t border-gray-100 pt-6 flex justify-center gap-4">
@@ -2302,8 +2496,10 @@ ${company?.name || 'CraveBiZ Vendor'}`;
                             {isLoading && (
                                 <div className="flex-1 flex flex-col justify-center items-center p-12 text-center">
                                     <div className="w-12 h-12 border-4 border-primary-100 border-t-primary-600 rounded-full animate-spin mb-4"></div>
-                                    <p className="font-black uppercase text-xs text-gray-600 tracking-wider">CraveBiZ AI Transformer operating...</p>
-                                    <p className="text-[11px] text-gray-400 mt-1 max-w-sm leading-relaxed">Gemini-3.5-Flash is currently creating realistic legal terms, filling metadata and mapping layout structures.</p>
+                                    <p className="font-black uppercase text-xs text-gray-600 tracking-wider">CraveBiZ Document Transformer operating...</p>
+                                    <p className="text-[11px] text-gray-400 mt-1 max-w-sm leading-relaxed">
+                                        {loadingMessage || "Gemini-3.5-Flash is currently creating realistic legal terms, filling metadata and mapping layout structures."}
+                                    </p>
                                 </div>
                             )}
 

@@ -450,6 +450,8 @@ export default function PublicSigningPortal({ docId, token, prefilledRecipient, 
                     page_number: targetSig.page_number,
                     x_position: targetSig.x_position,
                     y_position: targetSig.y_position,
+                    width: targetSig.width || 130,
+                    height: targetSig.height || 55,
                     signature_type: targetSig.signature_type || 'draw',
                     signature_image_url: finalSigImage
                 });

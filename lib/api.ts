@@ -1323,6 +1323,8 @@ class CraveBizApi {
           page_number: signature.page_number,
           x_position: signature.x_position,
           y_position: signature.y_position,
+          width: signature.width,
+          height: signature.height,
           signature_type: signature.signature_type,
           signature_image_url: signature.signature_image_url,
           created_at: new Date().toISOString()
