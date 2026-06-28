@@ -1,6 +1,7 @@
 import express from "express";
 import path from "path";
 import fs from "fs";
+import mammoth from "mammoth";
 import {
     generateTextResponse,
     transformDocument,
@@ -157,6 +158,59 @@ app.post("/api/signify/upload-file", (req, res) => {
     } catch (err: any) {
         console.error("DocSignify file upload error:", err);
         res.status(500).json({ error: err.message || "Internal server error saving document" });
+    }
+});
+
+// 1b. Parse uploaded document files on the server (handles mammoth/docx safely)
+app.post("/api/signify/parse-document", async (req, res) => {
+    try {
+        const { fileName, fileType, base64Data } = req.body;
+        if (!base64Data) {
+            return res.status(400).json({ error: "base64Data is required" });
+        }
+        
+        // Strip data URL prefixes if present
+        const cleanBase64 = base64Data.replace(/^data:[^;]+;base64,/, "");
+        const buffer = Buffer.from(cleanBase64, "base64");
+        
+        let extractedText = '';
+        let blocks: any[] = [];
+        
+        const isDocx = (fileName && (fileName.endsWith('.docx') || fileName.endsWith('.doc'))) || 
+                      (fileType && (fileType.includes('word') || fileType.includes('officedocument') || fileType.includes('docx')));
+                      
+        if (isDocx) {
+            const result = await mammoth.convertToHtml({ buffer });
+            extractedText = result.value || '';
+            
+            // Parse HTML into blocks
+            const htmlParts = extractedText.split('</p>').map(p => p.trim() + (p.trim() ? '</p>' : '')).filter(Boolean);
+            htmlParts.forEach((part, index) => {
+                if (part.replace(/<[^>]*>/g, '').trim() || part.includes('<img') || part.includes('<table')) {
+                    blocks.push({
+                        id: `p_l_${index}`,
+                        type: 'paragraph',
+                        content: { text: part }
+                    });
+                }
+            });
+        } else {
+            extractedText = `Document loaded: ${fileName || 'unnamed'}`;
+            blocks.push({
+                id: 'fallback_p_0',
+                type: 'paragraph',
+                content: { text: `Document loaded: ${fileName || 'unnamed'}.` }
+            });
+        }
+        
+        res.json({
+            success: true,
+            extractedText,
+            blocks
+        });
+    } catch (err: any) {
+        console.error("Document parsing error on server:", err);
+        res.status(500).json({ error: err.message || "Failed to parse document on server" });
     }
 });
 

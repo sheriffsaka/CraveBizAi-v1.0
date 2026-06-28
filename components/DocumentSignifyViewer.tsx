@@ -305,7 +305,9 @@ export const DocumentSignifyViewer: React.FC<DocumentSignifyViewerProps> = ({
         </div>
       )}
 
-      {!loading && !error && Array.from({ length: numPages }).map((_, idx) => {
+      {!error && (
+        <div className={`w-full flex flex-col items-center gap-6 ${loading ? 'invisible h-0 overflow-hidden' : 'visible'}`}>
+          {Array.from({ length: numPages }).map((_, idx) => {
         const pageNum = idx + 1;
         return (
           <div
@@ -541,6 +543,8 @@ export const DocumentSignifyViewer: React.FC<DocumentSignifyViewerProps> = ({
           </div>
         );
       })}
+        </div>
+      )}
     </div>
   );
 };

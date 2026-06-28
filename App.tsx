@@ -72,6 +72,7 @@ export default function App() {
   const [resetEmail, setResetEmail] = useState('');
   const [resetToken, setResetToken] = useState('');
   const isMounted = useRef(true);
+  const currentUserIdRef = useRef<string | null>(null);
 
   if (publicToken || publicDocId) {
     return (
@@ -117,6 +118,12 @@ export default function App() {
 
   const handleAuthSync = async (user: any) => {
     if (!isMounted.current || !user) return;
+    
+    // Guard: Prevent redundant syncs/resets on background token refresh
+    if (currentUserIdRef.current === user.id) {
+        return;
+    }
+    currentUserIdRef.current = user.id;
     
     // Only show full loading screen on initial load or if user changes
     const isInitialLoad = !currentUser;
@@ -190,6 +197,7 @@ export default function App() {
             }
         }
         else if (event === 'SIGNED_OUT' && isMounted.current) { 
+            currentUserIdRef.current = null;
             setCurrentUser(null); setIsLoading(false); setCompanies([]); setActiveTenantId(null); 
             setTenantData({ invoices: [], clients: [], services: [], generatedDocs: [] }); localStorage.removeItem('cravebiz_tenant'); 
         }
@@ -384,11 +392,25 @@ export default function App() {
               const savedId = saved?.id;
               if (savedId && (doc.originalFileBase64 || doc.originalFileUrl)) {
                   // Synchronize with modern DocSignify database tables
-                  const signatoriesMapped = (doc.signatures || []).map((s: any) => ({
+                  const signatoriesMapped = (doc.signatures || []).map((s: any, idx: number) => ({
+                      id: s.id || `sig-${idx}`,
                       name: s.name || 'Signatory',
                       email: s.email || '',
                       role: (s.signatoryType === 'Main' ? 'main_signatory' : s.signatoryType === 'Witness' ? 'witness' : 'additional_signatory') as DbDocumentSignatory['role']
                   }));
+                  const contentJson = {
+                      fields: (doc.signatures || []).map((s: any, idx: number) => ({
+                          id: `field_${s.id || 'sig-' + idx}`,
+                          type: 'signature',
+                          page_number: s.page_number || 1,
+                          x_position: s.x_position !== undefined ? s.x_position : 50,
+                          y_position: s.y_position !== undefined ? s.y_position : (80 + idx * 5),
+                          width: s.width || 140,
+                          height: s.height || 55,
+                          assigned_signer_id: s.id || `sig-${idx}`,
+                          required: true
+                      }))
+                  };
                   await api.createDocSignifyDocument(
                       savedId,
                       doc.documentType || 'Uploaded Agreement',
@@ -396,7 +418,8 @@ export default function App() {
                       currentUser?.id || 'owner',
                       doc.originalFileType || 'pdf',
                       doc.originalFileName || 'document.pdf',
-                      signatoriesMapped
+                      signatoriesMapped,
+                      contentJson
                   ).catch(err => {
                       console.warn("DocSignify tables sync warning:", err);
                   });

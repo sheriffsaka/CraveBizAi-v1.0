@@ -898,53 +898,60 @@ const DocumentTransformer: React.FC<DocumentTransformerProps> = ({ company, user
                 let blocks: DocumentBlock[] = [];
                 let mimeType = file.type;
 
-                if (file.name.endsWith('.pdf') || file.type === 'application/pdf') {
-                    mimeType = 'application/pdf';
-                    try {
-                        const arrayBuffer = await file.arrayBuffer();
-                        extractedText = await extractTextFromPdf(arrayBuffer);
-                        const parts = extractedText.split(/\n\s*\n/).map(p => p.trim()).filter(Boolean);
-                        parts.forEach((part, index) => {
-                            blocks.push({
-                                id: `p_l_${index}`,
-                                type: 'paragraph',
-                                content: { text: part }
-                            });
-                        });
-                    } catch (pdfErr) {
-                        console.warn("PDF text parsing warning:", pdfErr);
+                // Call server-side parsing first
+                try {
+                    const parsedResult = await api.parseDocumentFile(file.name, base64Data, file.type);
+                    if (parsedResult && parsedResult.success) {
+                        extractedText = parsedResult.extractedText;
+                        blocks = parsedResult.blocks;
                     }
-                } else if (file.name.endsWith('.docx') || file.type === 'application/vnd.openxmlformats-officedocument.wordprocessingml.document') {
-                    mimeType = 'docx-html';
-                    try {
-                        const arrayBuffer = await file.arrayBuffer();
-                        const result = await mammoth.convertToHtml({ arrayBuffer });
-                        extractedText = result.value || '';
-                        
-                        // Parse HTML into blocks for legacy previewers
-                        const htmlParts = extractedText.split('</p>').map(p => p.trim() + (p.trim() ? '</p>' : '')).filter(Boolean);
-                        htmlParts.forEach((part, index) => {
-                            if (part.replace(/<[^>]*>/g, '').trim() || part.includes('<img') || part.includes('<table')) {
+                } catch (parseErr) {
+                    console.warn("Server-side parsing failed, trying client fallback:", parseErr);
+                }
+
+                // If server-side didn't populate (or returned fallback), let's make sure we have basic parsing
+                if (blocks.length === 0 || !extractedText) {
+                    if (file.name.endsWith('.pdf') || file.type === 'application/pdf') {
+                        mimeType = 'application/pdf';
+                        try {
+                            const arrayBuffer = await file.arrayBuffer();
+                            extractedText = await extractTextFromPdf(arrayBuffer);
+                            const parts = extractedText.split(/\n\s*\n/).map(p => p.trim()).filter(Boolean);
+                            parts.forEach((part, index) => {
                                 blocks.push({
                                     id: `p_l_${index}`,
                                     type: 'paragraph',
                                     content: { text: part }
                                 });
-                            }
+                            });
+                        } catch (pdfErr) {
+                            console.warn("PDF text parsing warning:", pdfErr);
+                        }
+                    } else if (file.name.endsWith('.docx') || file.type === 'application/vnd.openxmlformats-officedocument.wordprocessingml.document') {
+                        mimeType = 'docx-html';
+                        extractedText = `Document loaded: ${file.name}`;
+                        blocks.push({
+                            id: 'fallback_p_0',
+                            type: 'paragraph',
+                            content: { text: `Document loaded: ${file.name}.` }
                         });
-                    } catch (docxErr) {
-                        console.warn("DOCX rendering extraction warning:", docxErr);
+                    } else if (file.type.startsWith('image/')) {
+                        mimeType = file.type;
+                        extractedText = `Image document: ${file.name}`;
+                        blocks.push({
+                            id: 'img_block',
+                            type: 'paragraph',
+                            content: { text: `[Image Document Preview: ${file.name}]` }
+                        });
+                    } else {
+                        throw new Error("Unsupported file format. Please upload PDF, DOCX, or Image (PNG/JPG/JPEG).");
                     }
-                } else if (file.type.startsWith('image/')) {
-                    mimeType = file.type;
-                    extractedText = `Image document: ${file.name}`;
-                    blocks.push({
-                        id: 'img_block',
-                        type: 'paragraph',
-                        content: { text: `[Image Document Preview: ${file.name}]` }
-                    });
                 } else {
-                    throw new Error("Unsupported file format. Please upload PDF, DOCX, or Image (PNG/JPG/JPEG).");
+                    if (file.name.endsWith('.pdf') || file.type === 'application/pdf') {
+                        mimeType = 'application/pdf';
+                    } else if (file.name.endsWith('.docx') || file.type === 'application/vnd.openxmlformats-officedocument.wordprocessingml.document') {
+                        mimeType = 'docx-html';
+                    }
                 }
 
                 if (!blocks || blocks.length === 0) {
@@ -1385,27 +1392,39 @@ ${company?.name || 'CraveBiZ Vendor'}`;
             </div>
 
             {/* Hub Tab Switcher */}
-            <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 sm:gap-0 bg-gray-100 p-1.5 rounded-xl border border-gray-200/50 my-6 shadow-sm">
+            <div className="flex flex-col sm:flex-row bg-gray-100 p-1.5 rounded-xl border border-gray-200/50 my-6 shadow-sm gap-1">
                 <button
                     onClick={() => { setActiveTab('generate'); setError(null); }}
-                    className={`py-3 text-xs font-black uppercase tracking-widest rounded-lg transition-all flex items-center justify-center gap-2 ${activeTab === 'generate' ? 'bg-white text-primary-900 shadow-md' : 'text-gray-600 hover:text-gray-900'}`}
+                    className={`flex-1 py-3 px-4 text-xs font-black uppercase tracking-widest rounded-lg transition-all flex items-center justify-center gap-2 ${
+                        activeTab === 'generate' 
+                            ? 'bg-white text-primary-900 shadow-sm border border-gray-200/40 font-bold' 
+                            : 'text-gray-600 hover:text-gray-900 hover:bg-gray-50/50'
+                    }`}
                 >
-                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 9v3m0 0v3m0-3h3m-3 0H9m12 0a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>
-                    DocGenerator
+                    <svg className="w-4 h-4 text-primary-600" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 9v3m0 0v3m0-3h3m-3 0H9m12 0a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>
+                    <span>DocGenerator</span>
                 </button>
                 <button
                     onClick={() => { setActiveTab('sign'); setError(null); }}
-                    className={`py-3 text-xs font-black uppercase tracking-widest rounded-lg transition-all flex items-center justify-center gap-2 ${activeTab === 'sign' ? 'bg-white text-primary-900 shadow-md' : 'text-gray-600 hover:text-gray-900'}`}
+                    className={`flex-1 py-3 px-4 text-xs font-black uppercase tracking-widest rounded-lg transition-all flex items-center justify-center gap-2 ${
+                        activeTab === 'sign' 
+                            ? 'bg-white text-primary-900 shadow-sm border border-gray-200/40 font-bold' 
+                            : 'text-gray-600 hover:text-gray-900 hover:bg-gray-50/50'
+                    }`}
                 >
-                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z"></path></svg>
-                    DocSignify
+                    <svg className="w-4 h-4 text-indigo-600" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z"></path></svg>
+                    <span>DocSignify</span>
                 </button>
                 <button
                     onClick={() => { setActiveTab('manage'); setError(null); }}
-                    className={`py-3 text-xs font-black uppercase tracking-widest rounded-lg transition-all flex items-center justify-center gap-2 ${activeTab === 'manage' ? 'bg-white text-primary-900 shadow-md' : 'text-gray-600 hover:text-gray-900'}`}
+                    className={`flex-1 py-3 px-4 text-xs font-black uppercase tracking-widest rounded-lg transition-all flex items-center justify-center gap-2 ${
+                        activeTab === 'manage' 
+                            ? 'bg-white text-primary-900 shadow-sm border border-gray-200/40 font-bold' 
+                            : 'text-gray-600 hover:text-gray-900 hover:bg-gray-50/50'
+                    }`}
                 >
-                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10"></path></svg>
-                    DocManager
+                    <svg className="w-4 h-4 text-emerald-600" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10"></path></svg>
+                    <span>DocManager</span>
                 </button>
             </div>
 
