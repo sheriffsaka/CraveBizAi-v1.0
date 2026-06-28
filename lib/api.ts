@@ -1140,7 +1140,7 @@ class CraveBizApi {
     ownerId: string,
     fileType: string,
     fileName: string,
-    signatories: { name: string; email: string; role: DbDocumentSignatory['role'] }[],
+    signatories: { id?: string; name: string; email: string; role: DbDocumentSignatory['role'] }[],
     contentJson?: any
   ): Promise<{ document: DbDocument; signatories: DbDocumentSignatory[] }> {
     try {
@@ -1160,7 +1160,7 @@ class CraveBizApi {
         
         if (!docError) {
           const signatoriesData = signatories.map(sig => ({
-            id: crypto.randomUUID(),
+            id: sig.id || crypto.randomUUID(),
             document_id: docId,
             name: sig.name,
             email: sig.email,

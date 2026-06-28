@@ -354,7 +354,9 @@ export const DocumentSignifyViewer: React.FC<DocumentSignifyViewerProps> = ({
                   const signatory = signatories.find(s => s.id === field.assigned_signer_id);
                   const isInteractive = !readOnly && !isDesignerMode && field.assigned_signer_id === activeSignatoryId;
                   const theme = getSignerColorClasses(field.assigned_signer_id);
-                  const isFilled = field.value !== undefined && field.value !== null && field.value !== '';
+                  const signatureForField = signatures.find(sig => sig.signatory_id === field.assigned_signer_id);
+                  const isFilled = (field.value !== undefined && field.value !== null && field.value !== '') || (field.type === 'signature' && !!signatureForField?.signature_image_url);
+                  const fieldValue = field.value || (field.type === 'signature' && signatureForField?.signature_image_url) || '';
                   
                   return (
                     <div
@@ -396,7 +398,7 @@ export const DocumentSignifyViewer: React.FC<DocumentSignifyViewerProps> = ({
                       <div className="flex-1 flex items-center justify-center overflow-hidden px-1">
                         {field.type === 'checkbox' ? (
                           <div className="flex items-center justify-center">
-                            {field.value === true || field.value === 'true' ? (
+                            {fieldValue === true || fieldValue === 'true' ? (
                               <CheckSquare className="w-5 h-5 text-indigo-600" />
                             ) : (
                               <Square className="w-5 h-5 text-slate-400" />
@@ -404,23 +406,23 @@ export const DocumentSignifyViewer: React.FC<DocumentSignifyViewerProps> = ({
                           </div>
                         ) : isFilled ? (
                           field.type === 'signature' || field.type === 'initial' || field.type === 'attachment' ? (
-                            String(field.value).startsWith('data:image/') ? (
+                            String(fieldValue).startsWith('data:image/') || String(fieldValue).startsWith('http') ? (
                               <img
-                                src={field.value}
+                                src={String(fieldValue)}
                                 alt="Overlay"
                                 className="max-h-full max-w-full object-contain mix-blend-multiply"
                                 referrerPolicy="no-referrer"
                               />
                             ) : (
-                              <span className="text-xs font-serif italic text-slate-800">{field.value}</span>
+                              <span className="text-xs font-serif italic text-slate-800">{fieldValue}</span>
                             )
                           ) : field.type === 'stamp' ? (
                             <div className="border border-red-500 text-red-500 text-[8px] p-0.5 rounded font-black text-center border-double border-4">
-                              {field.value}
+                              {fieldValue}
                             </div>
                           ) : (
                             <span className="text-[10px] font-bold text-slate-800 truncate leading-tight w-full text-center">
-                              {field.value}
+                              {fieldValue}
                             </span>
                           )
                         ) : (

@@ -391,21 +391,46 @@ const DocumentTransformer: React.FC<DocumentTransformerProps> = ({ company, user
         setIsLoading(true);
         setError(null);
         try {
+            const generateUUID = () => {
+                if (typeof window !== 'undefined' && window.crypto && window.crypto.randomUUID) {
+                    return window.crypto.randomUUID();
+                }
+                return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, function(c) {
+                    var r = Math.random() * 16 | 0, v = c === 'x' ? r : (r & 0x3 | 0x8);
+                    return v.toString(16);
+                });
+            };
+
             const docId = 'doc_' + Math.floor(Math.random() * 899999 + 100000);
             const originalFileUrl = generatedDoc?.originalFileUrl || generatedDoc?.originalFileBase64 || '';
             const fileName = generatedDoc?.originalFileName || 'secured_agreement.pdf';
             const fileType = generatedDoc?.originalFileType || 'pdf';
 
-            // Map standard DocSignify signatories
-            const mappedSigs = signatories.map(s => ({
-                name: s.name,
-                email: s.email || `${s.name.toLowerCase().replace(/\s/g, '')}@cravebiz-secure.com`,
-                role: s.signatoryType === 'Main' ? 'main_signatory' : 'witness' as any
+            // 1. Map temporary client-side IDs to standard secure UUIDs
+            const idMapping: { [key: string]: string } = {
+                'creator': user?.id || 'admin'
+            };
+
+            const mappedSigs = signatories.map(s => {
+                const dbId = generateUUID();
+                idMapping[s.id] = dbId;
+                return {
+                    id: dbId,
+                    name: s.name,
+                    email: s.email || `${s.name.toLowerCase().replace(/\s/g, '')}@cravebiz-secure.com`,
+                    role: (s.signatoryType === 'Main' ? 'main_signatory' : 'witness') as DbDocumentSignatory['role']
+                };
+            });
+
+            // 2. Map designerFields' assigned_signer_id to the database UUIDs
+            const mappedFields = designerFields.map(f => ({
+                ...f,
+                assigned_signer_id: idMapping[f.assigned_signer_id] || f.assigned_signer_id
             }));
 
             // Structure custom fields in the fallback database
             const contentJson = {
-                fields: designerFields,
+                fields: mappedFields,
                 htmlContent: generatedDoc?.originalFileType === 'docx-html' ? generatedDoc.blocks.map(b => b.content.text).join('') : ''
             };
 
@@ -1087,7 +1112,25 @@ const DocumentTransformer: React.FC<DocumentTransformerProps> = ({ company, user
                 alert('Please type your signature letters.');
                 return;
             }
-            value = selectedCursiveStyle.toString();
+            // Draw cursive text to a canvas to get a real transparent PNG data URL
+            const fontCanvas = window.document.createElement('canvas');
+            fontCanvas.width = 300;
+            fontCanvas.height = 100;
+            const ctx = fontCanvas.getContext('2d');
+            if (ctx) {
+                ctx.fillStyle = 'rgba(255, 255, 255, 0)'; // Transparent background
+                ctx.clearRect(0, 0, fontCanvas.width, fontCanvas.height);
+                const fonts = ["'Dancing Script', cursive", "'Great Vibes', cursive", "'Herr Von Muellerhoff', cursive", "'Homemade Apple', cursive"];
+                const fontStr = fonts[selectedCursiveStyle] || "'Dancing Script', cursive";
+                ctx.font = `bold 28px ${fontStr}`;
+                ctx.fillStyle = '#0f172a'; // Slate-900 ink
+                ctx.textAlign = 'center';
+                ctx.textBaseline = 'middle';
+                ctx.fillText(typedName, fontCanvas.width / 2, fontCanvas.height / 2);
+                value = fontCanvas.toDataURL('image/png');
+            } else {
+                value = selectedCursiveStyle.toString();
+            }
         } else if (sigType === 'upload') {
             if (!uploadedSigUrl) {
                 alert('Please upload an image representation of your signature.');
@@ -2271,6 +2314,8 @@ ${company?.name || 'CraveBiZ Vendor'}`;
                                                             fileUrl={generatedDoc.originalFileUrl || generatedDoc.originalFileBase64}
                                                             fileType={generatedDoc.originalFileType || 'pdf'}
                                                             htmlContent={generatedDoc.originalFileType === 'docx-html' ? generatedDoc.blocks.map(b => b.content.text).join('') : ''}
+                                                            fields={designerFields}
+                                                            activeSignatoryId={selectedSigIndexToPlace !== null ? signatories[selectedSigIndexToPlace]?.id : undefined}
                                                             signatures={signatories.map((s, idx) => ({
                                                                 id: s.id || `sig-${idx}`,
                                                                 document_id: editingDocId || 'temp',

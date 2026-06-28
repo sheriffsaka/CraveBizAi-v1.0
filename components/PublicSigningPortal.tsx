@@ -47,6 +47,7 @@ export default function PublicSigningPortal({ docId, token, prefilledRecipient, 
 
     // Signature State
     const [isSignModalOpen, setIsSignModalOpen] = useState(false);
+    const [selectedFieldId, setSelectedFieldId] = useState<string | null>(null);
     const [sigType, setSigType] = useState<'draw' | 'type' | 'upload'>('draw');
     const [typedName, setTypedName] = useState('');
     const [sigTitle, setSigTitle] = useState('Representative');
@@ -407,22 +408,36 @@ export default function PublicSigningPortal({ docId, token, prefilledRecipient, 
             try {
                 // Find existing signature template for this signatory
                 let targetSig = dbSignatures.find(s => s.signatory_id === dbSignatory.id);
+
+                // If there's a selected field, retrieve its coordinates and size
+                const clickedField = (dbDoc.content_json?.fields || []).find((f: any) => f.id === selectedFieldId);
+                const pageNum = clickedField ? clickedField.page_number : 1;
+                const xPos = clickedField ? clickedField.x_position : 50;
+                const yPos = clickedField ? clickedField.y_position : 85;
+                const w = clickedField ? clickedField.width : 140;
+                const h = clickedField ? clickedField.height : 60;
+
                 if (!targetSig) {
                     targetSig = {
                         id: 'sig-' + Math.random().toString(36).substr(2, 9),
                         document_id: dbDoc.id,
                         signatory_id: dbSignatory.id,
-                        page_number: 1,
-                        x_position: 50,
-                        y_position: 85,
-                        width: 140,
-                        height: 60,
+                        page_number: pageNum,
+                        x_position: xPos,
+                        y_position: yPos,
+                        width: w,
+                        height: h,
                         signature_image_url: finalSigImage,
                         signed_at: new Date().toISOString()
                     };
                 } else {
                     targetSig = {
                         ...targetSig,
+                        page_number: pageNum,
+                        x_position: xPos,
+                        y_position: yPos,
+                        width: w,
+                        height: h,
                         signature_image_url: finalSigImage,
                         signed_at: new Date().toISOString()
                     };
@@ -669,6 +684,16 @@ export default function PublicSigningPortal({ docId, token, prefilledRecipient, 
                                 fileUrl={dbDoc.original_file_url || dbDoc.original_file_base64 || ''}
                                 fileType={dbDoc.original_file_type || 'pdf'}
                                 htmlContent={dbDoc.content_json?.htmlContent || ''}
+                                fields={dbDoc.content_json?.fields || []}
+                                activeSignatoryId={dbSignatory?.id}
+                                onFieldClick={(fieldId) => {
+                                    if (dbSignatory && !alreadySigned) {
+                                        setSelectedFieldId(fieldId);
+                                        setTypedName(dbSignatory.name);
+                                        setSigTitle(dbSignatory.role.toUpperCase().replace('_', ' '));
+                                        setIsSignModalOpen(true);
+                                    }
+                                }}
                                 signatures={dbSignatures}
                                 signatories={dbSignatories}
                                 activeSignatory={dbSignatory}
