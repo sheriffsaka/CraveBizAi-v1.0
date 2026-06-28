@@ -18,6 +18,26 @@ export interface PreparedField {
   value?: any; // populated during signing
 }
 
+const loadPdfJS = (): Promise<any> => {
+  return new Promise((resolve, reject) => {
+    if ((window as any).pdfjsLib) {
+      resolve((window as any).pdfjsLib);
+      return;
+    }
+
+    const script = document.createElement('script');
+    script.src = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.4.120/pdf.min.js';
+    script.onload = () => {
+      (window as any).pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.4.120/pdf.worker.min.js';
+      resolve((window as any).pdfjsLib);
+    };
+    script.onerror = () => {
+      reject(new Error("Failed to load PDF rendering engine. Check your connection."));
+    };
+    document.head.appendChild(script);
+  });
+};
+
 interface DocumentSignifyViewerProps {
   fileUrl: string;
   fileType: string;
@@ -95,7 +115,7 @@ export const DocumentSignifyViewer: React.FC<DocumentSignifyViewerProps> = ({
     setLoading(true);
     setError(null);
     try {
-      const pdfjsLib = (window as any).pdfjsLib;
+      const pdfjsLib = await loadPdfJS();
       if (!pdfjsLib) {
         throw new Error("PDF.js engine is still loading. Please wait...");
       }

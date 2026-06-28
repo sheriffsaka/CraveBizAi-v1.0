@@ -52,30 +52,47 @@ const loadPdfJS = (): Promise<any> => {
 };
 
 const extractTextFromPdf = async (arrayBuffer: ArrayBuffer): Promise<string> => {
-    const pdfjsLib = await loadPdfJS();
-    const loadingTask = pdfjsLib.getDocument({ data: new Uint8Array(arrayBuffer) });
-    const pdf = await loadingTask.promise;
-    let fullText = '';
+    try {
+        const parsePromise = (async () => {
+            const pdfjsLib = await loadPdfJS();
+            const loadingTask = pdfjsLib.getDocument({ data: new Uint8Array(arrayBuffer) });
+            const pdf = await loadingTask.promise;
+            let fullText = '';
 
-    for (let pageNum = 1; pageNum <= pdf.numPages; pageNum++) {
-        const page = await pdf.getPage(pageNum);
-        const textContent = await page.getTextContent();
-        let lastY = -1;
-        let pageText = '';
-        
-        for (const item of textContent.items as any[]) {
-            const currentY = item.transform[5];
-            if (lastY !== -1 && Math.abs(currentY - lastY) > 5) {
-                pageText += '\n';
-            } else if (pageText.length > 0 && !pageText.endsWith(' ') && !item.str.startsWith(' ')) {
-                pageText += ' ';
+            for (let pageNum = 1; pageNum <= pdf.numPages; pageNum++) {
+                const page = await pdf.getPage(pageNum);
+                const textContent = await page.getTextContent();
+                let lastY = -1;
+                let pageText = '';
+                
+                for (const item of textContent.items as any[]) {
+                    const currentY = item.transform[5];
+                    if (lastY !== -1 && Math.abs(currentY - lastY) > 5) {
+                        pageText += '\n';
+                    } else if (pageText.length > 0 && !pageText.endsWith(' ') && !item.str.startsWith(' ')) {
+                        pageText += ' ';
+                    }
+                    pageText += item.str;
+                    lastY = currentY;
+                }
+                fullText += pageText + '\n\n';
             }
-            pageText += item.str;
-            lastY = currentY;
-        }
-        fullText += pageText + '\n\n';
+            return fullText;
+        })();
+
+        // Race with a 4-second timeout
+        const timeoutPromise = new Promise<string>((resolve) => {
+            setTimeout(() => {
+                console.warn("PDF extraction timed out after 4 seconds.");
+                resolve("[PDF Content - Extraction Timeout]");
+            }, 4000);
+        });
+
+        return await Promise.race([parsePromise, timeoutPromise]);
+    } catch (e) {
+        console.warn("Error inside extractTextFromPdf:", e);
+        return "[PDF Content - Extraction Failed]";
     }
-    return fullText;
 };
 
 interface DocumentTransformerProps {
@@ -930,8 +947,16 @@ const DocumentTransformer: React.FC<DocumentTransformerProps> = ({ company, user
                     throw new Error("Unsupported file format. Please upload PDF, DOCX, or Image (PNG/JPG/JPEG).");
                 }
 
-                setRawText(extractedText);
-                setReviewText(extractedText);
+                if (!blocks || blocks.length === 0) {
+                    blocks = [{
+                        id: 'fallback_p_0',
+                        type: 'paragraph',
+                        content: { text: `Document loaded: ${file.name}.` }
+                    }];
+                }
+
+                setRawText(extractedText || `Document loaded: ${file.name}`);
+                setReviewText(extractedText || `Document loaded: ${file.name}`);
 
                 const parsedDoc: GeneratedDocument = {
                     documentType: fileLabelClean(file.name) || "Uploaded Document",
@@ -1360,7 +1385,7 @@ ${company?.name || 'CraveBiZ Vendor'}`;
             </div>
 
             {/* Hub Tab Switcher */}
-            <div className="grid grid-cols-3 bg-gray-100 p-1.5 rounded-xl border border-gray-200/50 my-6 shadow-sm">
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 sm:gap-0 bg-gray-100 p-1.5 rounded-xl border border-gray-200/50 my-6 shadow-sm">
                 <button
                     onClick={() => { setActiveTab('generate'); setError(null); }}
                     className={`py-3 text-xs font-black uppercase tracking-widest rounded-lg transition-all flex items-center justify-center gap-2 ${activeTab === 'generate' ? 'bg-white text-primary-900 shadow-md' : 'text-gray-600 hover:text-gray-900'}`}
