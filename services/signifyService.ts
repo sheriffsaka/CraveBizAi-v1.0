@@ -41,6 +41,14 @@ function saveStore(store: SignifyStore) {
 }
 
 export class SignifyService {
+  static loadStore(): SignifyStore {
+    return loadStore();
+  }
+
+  static saveStore(store: SignifyStore) {
+    return saveStore(store);
+  }
+
   /**
    * Save an uploaded file locally and return its accessible URL.
    */

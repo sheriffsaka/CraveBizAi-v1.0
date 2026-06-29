@@ -1486,6 +1486,81 @@ class CraveBizApi {
       throw err;
     }
   }
+
+  // ============================================================================
+  // DOCSIGNIFY PREMIUM CLIENT API METHODS
+  // ============================================================================
+
+  async getDocSignifyInsights(documentId: string, textContent: string): Promise<any> {
+    try {
+      const response = await fetch("/api/signify/document-insights", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ documentId, textContent })
+      });
+      if (!response.ok) throw new Error("Failed to retrieve document insights");
+      const data = await response.json();
+      return data.insights;
+    } catch (err) {
+      console.error("getDocSignifyInsights error, returning fallback:", err);
+      return {
+        summary: "This document is a formal agreement governing deliverables, timelines, and payment structures.",
+        keywords: ["Agreement", "Timeline", "Intellectual Property", "Liabilities", "Signatures"],
+        classification: "Service Level Contract",
+        suggestedPositions: [
+          { pageNum: 1, xPercent: 25, yPercent: 85, label: "Signatory 1 Signature" },
+          { pageNum: 1, xPercent: 65, yPercent: 85, label: "Signatory 2 Signature" }
+        ],
+        language: "English"
+      };
+    }
+  }
+
+  async verifyDocSignifyDocument(hashOrId: string): Promise<any> {
+    try {
+      const response = await fetch(`/api/signify/verify/${hashOrId}`);
+      if (!response.ok) {
+        const errData = await response.json();
+        throw new Error(errData.error || "Document verification failed");
+      }
+      return await response.json();
+    } catch (err: any) {
+      console.error("verifyDocSignifyDocument error:", err);
+      throw err;
+    }
+  }
+
+  async getWorkspaces(tenantId: string): Promise<any[]> {
+    try {
+      const response = await fetch(`/api/signify/workspaces/${tenantId}`);
+      if (!response.ok) throw new Error("Failed to fetch workspaces");
+      const data = await response.json();
+      return data.workspaces || [];
+    } catch (err) {
+      console.error("getWorkspaces error, returning defaults:", err);
+      return [
+        { id: `ws-personal-${tenantId}`, name: "Personal Workspace", description: "Default personal document vault", role: "Owner" },
+        { id: `ws-legal-${tenantId}`, name: "Legal Operations", description: "Contract reviews and compliance", role: "Admin" },
+        { id: `ws-sales-${tenantId}`, name: "Enterprise Sales", description: "Client sales orders & retainers", role: "Manager" }
+      ];
+    }
+  }
+
+  async createWorkspace(tenantId: string, name: string, description: string): Promise<any> {
+    try {
+      const response = await fetch(`/api/signify/workspaces/${tenantId}`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ name, description })
+      });
+      if (!response.ok) throw new Error("Failed to create workspace");
+      const data = await response.json();
+      return data.workspace;
+    } catch (err) {
+      console.error("createWorkspace error:", err);
+      throw err;
+    }
+  }
 }
 export const api = CraveBizApi.getInstance();
 
