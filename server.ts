@@ -219,11 +219,11 @@ app.post("/api/signify/parse-document", async (req, res) => {
 app.post("/api/signify/documents", (req, res) => {
     try {
         const { id, title, originalFileUrl, ownerId, fileType, fileName, signatories, contentJson, content_json } = req.body;
-        if (!id || !title || !originalFileUrl || !ownerId || !signatories) {
-            return res.status(400).json({ error: "Missing required fields for document creation" });
+        if (!id || !title || !ownerId || !signatories) {
+            return res.status(400).json({ error: "Missing required fields for document creation: id, title, ownerId, or signatories" });
         }
         
-        const result = SignifyService.createDocument(id, title, originalFileUrl, ownerId, fileType || "pdf", fileName || "document.pdf", signatories, contentJson || content_json);
+        const result = SignifyService.createDocument(id, title, originalFileUrl || "", ownerId, fileType || "pdf", fileName || "document.pdf", signatories, contentJson || content_json);
         res.json({
             success: true,
             document: result.document,
