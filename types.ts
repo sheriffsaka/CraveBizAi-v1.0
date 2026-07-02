@@ -32,6 +32,7 @@ export interface BankAccount {
 export interface Company {
   id: string;
   ownerId?: string; 
+  organizationId?: string; // Links Workspace to Organization
   name: string;
   address: string;
   email: string;
@@ -79,6 +80,7 @@ export interface Invoice {
   companyId: string;
   invoiceNumber: string;
   clientId: string;
+  projectId?: string; // Links Invoice to Project
   issueDate: string;
   dueDate: string;
   items: InvoiceItem[];
@@ -105,6 +107,7 @@ export interface TenantData {
     services: Service[];
     invoices: Invoice[];
     generatedDocs: StoredGeneratedDoc[];
+    projects: Project[]; // Holds Workspace Projects
 }
 
 export interface AllTenantsData {
@@ -181,6 +184,7 @@ export interface GeneratedDocument {
   originalFileType?: string;
   originalFileName?: string;
   originalFileUrl?: string;
+  projectId?: string; // Links Generated Document to Project
 }
 
 export interface StoredGeneratedDoc extends GeneratedDocument {
@@ -235,3 +239,26 @@ export interface DbDocumentSignature {
   signature_image_url: string; // signature image base64 or storage url
   created_at: string;
 }
+
+export type ProjectStatus = 'Planning' | 'Proposal' | 'Negotiation' | 'Contract' | 'Signing' | 'Invoice' | 'Payment' | 'Completed' | 'Archived';
+
+export interface Project {
+  id: string;
+  companyId: string; // Represents the Workspace ID (Company)
+  clientId: string;
+  name: string;
+  description: string;
+  status: ProjectStatus;
+  value: number;
+  startDate: string;
+  endDate?: string;
+  createdAt: string;
+}
+
+export interface Organization {
+  id: string;
+  name: string;
+  ownerId: string;
+  createdAt: string;
+}
+

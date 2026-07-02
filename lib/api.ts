@@ -392,6 +392,101 @@ class CraveBizApi {
     if (error) throw error;
   }
 
+  async fetchProjects(companyId: string): Promise<Project[]> {
+    try {
+      const { data, error } = await supabase.from('projects').select('*').eq('company_id', companyId);
+      if (error) throw error;
+      return (data || []).map(p => ({
+        id: p.id,
+        companyId: p.company_id,
+        clientId: p.client_id,
+        name: p.name,
+        description: p.description || '',
+        status: p.status,
+        value: Number(p.value || 0),
+        startDate: p.start_date,
+        endDate: p.end_date,
+        createdAt: p.created_at
+      }));
+    } catch (dbErr) {
+      console.warn("Supabase projects table missing or select failed, trying local fallback:", dbErr);
+      const localProjects = localStorage.getItem(`cravebiz_projects_${companyId}`);
+      if (localProjects) {
+        return JSON.parse(localProjects);
+      }
+      const { mockTenantData } = await import('./data');
+      const tenantMock = mockTenantData[companyId];
+      if (tenantMock && tenantMock.projects) {
+        return tenantMock.projects;
+      }
+      return [];
+    }
+  }
+
+  async createProject(project: Omit<Project, 'id' | 'createdAt'>): Promise<Project> {
+    const id = generateId();
+    const createdAt = new Date().toISOString();
+    const newProject: Project = { ...project, id, createdAt };
+
+    try {
+      const { error } = await supabase.from('projects').insert({
+        id,
+        company_id: project.companyId,
+        client_id: project.clientId,
+        name: project.name,
+        description: project.description,
+        status: project.status,
+        value: project.value,
+        start_date: project.startDate,
+        end_date: project.endDate,
+        created_at: createdAt
+      });
+      if (error) throw error;
+    } catch (dbErr) {
+      console.warn("Supabase projects insert failed, trying local fallback:", dbErr);
+    }
+
+    const current = await this.fetchProjects(project.companyId);
+    const updated = [newProject, ...current.filter(p => p.id !== id)];
+    localStorage.setItem(`cravebiz_projects_${project.companyId}`, JSON.stringify(updated));
+
+    return newProject;
+  }
+
+  async updateProject(project: Project): Promise<void> {
+    try {
+      const { error } = await supabase.from('projects').update({
+        client_id: project.clientId,
+        name: project.name,
+        description: project.description,
+        status: project.status,
+        value: project.value,
+        start_date: project.startDate,
+        end_date: project.endDate
+      }).eq('id', project.id);
+      if (error) throw error;
+    } catch (dbErr) {
+      console.warn("Supabase projects update failed, trying local fallback:", dbErr);
+    }
+
+    const current = await this.fetchProjects(project.companyId);
+    const updated = current.map(p => p.id === project.id ? project : p);
+    localStorage.setItem(`cravebiz_projects_${project.companyId}`, JSON.stringify(updated));
+  }
+
+  async deleteProject(companyId: string, projectId: string): Promise<void> {
+    try {
+      const { error } = await supabase.from('projects').delete().eq('id', projectId);
+      if (error) throw error;
+    } catch (dbErr) {
+      console.warn("Supabase projects delete failed, trying local fallback:", dbErr);
+    }
+
+    const current = await this.fetchProjects(companyId);
+    const updated = current.filter(p => p.id !== projectId);
+    localStorage.setItem(`cravebiz_projects_${companyId}`, JSON.stringify(updated));
+  }
+
   async fetchServices(companyId: string): Promise<Service[]> {
     const { data, error } = await supabase.from('services').select('*').eq('company_id', companyId);
     if (error) throw error;

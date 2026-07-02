@@ -50,6 +50,7 @@ const Sidebar: React.FC<SidebarProps> = ({ activePage, setActivePage, companyNam
     { id: 'recurring-invoices', label: 'Recurring Invoices', icon: 'repeat' },
     { id: 'sent-receipts', label: 'Sent Receipts', icon: 'mail' },
     { id: 'clients', label: 'Clients', icon: 'clients' },
+    { id: 'projects', label: 'Projects', icon: 'projects' },
     { id: 'services', label: 'Services', icon: 'services' },
     { id: 'reports', label: 'Reports', icon: 'reports' },
     { id: 'payment-intelligence', label: 'Payment Intelligence', icon: 'reports' },

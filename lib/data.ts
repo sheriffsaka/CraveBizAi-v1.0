@@ -105,6 +105,30 @@ export const mockTenantData: AllTenantsData = {
         ],
         // FIX: The TenantData type requires a `generatedDocs` property.
         generatedDocs: [],
+        projects: [
+          {
+            id: 'proj1-cravebiz-inc',
+            companyId: 'cravebiz-inc',
+            clientId: 'c1-cravebiz-inc',
+            name: 'Enterprise Cloud Portal',
+            description: 'Phase 1 development of their modern web application, cloud infrastructure setup, and customer portal integration.',
+            status: 'Signing',
+            value: 750000,
+            startDate: '2023-10-01',
+            createdAt: '2023-10-01'
+          },
+          {
+            id: 'proj2-cravebiz-inc',
+            companyId: 'cravebiz-inc',
+            clientId: 'c2-cravebiz-inc',
+            name: 'Brand Identity Overhaul',
+            description: 'Redesigning color systems, logo, typography standards, and brand style guides for DigitalWave Inc.',
+            status: 'Proposal',
+            value: 250000,
+            startDate: '2023-11-05',
+            createdAt: '2023-11-01'
+          }
+        ],
     },
     'innovate-tech': {
         clients: [
@@ -137,6 +161,19 @@ export const mockTenantData: AllTenantsData = {
         ],
         // FIX: The TenantData type requires a `generatedDocs` property.
         generatedDocs: [],
+        projects: [
+          {
+            id: 'proj1-innovate-tech',
+            companyId: 'innovate-tech',
+            clientId: 'c1-innovate-tech',
+            name: 'Quantum SEO Blitz',
+            description: 'High-impact SEO positioning and indexing boost for local and international markets.',
+            status: 'Planning',
+            value: 150000,
+            startDate: '2023-11-10',
+            createdAt: '2023-11-01'
+          }
+        ],
     }
 };
 

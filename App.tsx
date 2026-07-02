@@ -22,12 +22,13 @@ import AdminDashboard from './components/AdminDashboard';
 import DocumentTransformer from './components/DocumentTransformer';
 import PaymentIntelligence from './components/PaymentIntelligence';
 import PublicSigningPortal from './components/PublicSigningPortal';
+import ProjectManagement from './components/ProjectManagement';
 import { api, supabase } from './lib/api';
 import { generateRenewalInvoiceSuggestion } from './services/aiGenerationService';
-import { Invoice, Client, Service, Company, User, TenantData, InvoiceStatus, AllTenantsData, GeneratedDocument, DbDocumentSignatory } from './types';
+import { Invoice, Client, Service, Company, User, TenantData, InvoiceStatus, AllTenantsData, GeneratedDocument, DbDocumentSignatory, Project } from './types';
 import Icon from './components/common/Icon';
 
-export type Page = 'dashboard' | 'invoices' | 'clients' | 'services' | 'reports' | 'settings' | 'create-invoice' | 'edit-invoice' | 'invoice-detail' | 'receipt-detail' | 'plain-invoice-detail' | 'recurring-invoices' | 'email-verification' | 'sent-receipts' | 'admin-dashboard' | 'document-transformer' | 'payment-intelligence';
+export type Page = 'dashboard' | 'invoices' | 'clients' | 'services' | 'reports' | 'settings' | 'create-invoice' | 'edit-invoice' | 'invoice-detail' | 'receipt-detail' | 'plain-invoice-detail' | 'recurring-invoices' | 'email-verification' | 'sent-receipts' | 'admin-dashboard' | 'document-transformer' | 'payment-intelligence' | 'projects';
 
 const stringifyError = (err: any): string => {
   if (!err) return "An unknown error occurred.";
@@ -61,7 +62,7 @@ export default function App() {
   const [companies, setCompanies] = useState<Company[]>([]);
   const [allUsers, setAllUsers] = useState<User[]>([]);
   const [allInvoices, setAllInvoices] = useState<Invoice[]>([]);
-  const [tenantData, setTenantData] = useState<TenantData>({ invoices: [], clients: [], services: [], generatedDocs: [] });
+  const [tenantData, setTenantData] = useState<TenantData>({ invoices: [], clients: [], services: [], generatedDocs: [], projects: [] });
   const [selectedInvoiceId, setSelectedInvoiceId] = useState<string | null>(null);
   const [downloadAction, setDownloadAction] = useState<'print' | 'word' | undefined>(undefined);
   const [isUserProfileModalOpen, setIsUserProfileModalOpen] = useState(false);
@@ -101,12 +102,13 @@ export default function App() {
     if (!tenantId || !isMounted.current) return;
     setIsDataSyncing(true);
     try {
-      const [inv, cli, srv, docs] = await Promise.all([
+      const [inv, cli, srv, docs, projs] = await Promise.all([
         api.fetchInvoices(tenantId), api.fetchClients(tenantId),
-        api.fetchServices(tenantId), api.fetchGeneratedDocs(tenantId)
+        api.fetchServices(tenantId), api.fetchGeneratedDocs(tenantId),
+        api.fetchProjects(tenantId)
       ]);
       if (isMounted.current) {
-          setTenantData({ invoices: inv, clients: cli, services: srv, generatedDocs: docs });
+          setTenantData({ invoices: inv, clients: cli, services: srv, generatedDocs: docs, projects: projs });
           setSyncError(null);
       }
     } catch (e) { 
@@ -199,7 +201,7 @@ export default function App() {
         else if (event === 'SIGNED_OUT' && isMounted.current) { 
             currentUserIdRef.current = null;
             setCurrentUser(null); setIsLoading(false); setCompanies([]); setActiveTenantId(null); 
-            setTenantData({ invoices: [], clients: [], services: [], generatedDocs: [] }); localStorage.removeItem('cravebiz_tenant'); 
+            setTenantData({ invoices: [], clients: [], services: [], generatedDocs: [], projects: [] }); localStorage.removeItem('cravebiz_tenant'); 
         }
     });
     return () => { isMounted.current = false; subscription.unsubscribe(); };
@@ -275,6 +277,42 @@ export default function App() {
   const navigateTo = (page: Page) => { if (isMounted.current) { setActivePage(page); setIsMobileMenuOpen(false); } };
   const handleEditInvoiceAction = (id: string) => { setSelectedInvoiceId(id); navigateTo('edit-invoice'); };
   const activeCompany = useMemo(() => activeTenantId ? companies.find(c => c.id === activeTenantId) || null : null, [activeTenantId, companies]);
+
+  const handleAddProject = async (proj: Omit<Project, 'id' | 'createdAt'>) => {
+    try {
+      const newProj = await api.createProject(proj);
+      setTenantData(prev => ({
+        ...prev,
+        projects: [newProj, ...prev.projects]
+      }));
+    } catch (e) {
+      alert("Error adding project: " + stringifyError(e));
+    }
+  };
+
+  const handleUpdateProject = async (proj: Project) => {
+    try {
+      await api.updateProject(proj);
+      setTenantData(prev => ({
+        ...prev,
+        projects: prev.projects.map(p => p.id === proj.id ? proj : p)
+      }));
+    } catch (e) {
+      alert("Error updating project: " + stringifyError(e));
+    }
+  };
+
+  const handleDeleteProject = async (companyId: string, projectId: string) => {
+    try {
+      await api.deleteProject(companyId, projectId);
+      setTenantData(prev => ({
+        ...prev,
+        projects: prev.projects.filter(p => p.id !== projectId)
+      }));
+    } catch (e) {
+      alert("Error deleting project: " + stringifyError(e));
+    }
+  };
 
   if (!isLoading && !currentUser) {
     return (
@@ -377,7 +415,7 @@ export default function App() {
         );
     }
 
-    const { invoices = [], clients = [], services = [], generatedDocs = [] } = tenantData;
+    const { invoices = [], clients = [], services = [], generatedDocs = [], projects = [] } = tenantData;
 
     switch (activePage) {
       case 'dashboard': return <Dashboard invoices={invoices} clients={clients} setActivePage={navigateTo} onViewInvoice={(id) => { setSelectedInvoiceId(id); navigateTo('invoice-detail'); }} onEditInvoice={handleEditInvoiceAction} onGenerateRenewal={handleGenerateRenewal} />;
@@ -579,6 +617,27 @@ export default function App() {
             }}
           />;
       }
+      case 'projects': return <ProjectManagement companyId={activeTenantId!} projects={projects} clients={clients} onAddProject={handleAddProject} onUpdateProject={handleUpdateProject} onDeleteProject={handleDeleteProject} onNavigateTo={(page, props) => {
+        if (page === 'create-invoice' && props?.prefillProject) {
+          const prefillCli = props.prefillClient;
+          const prefillProj = props.prefillProject;
+          setDraftRenewal({
+            clientId: prefillCli?.id,
+            projectId: prefillProj?.id,
+            total: prefillProj?.value || 0,
+            paymentTerms: `Project execution payment for: ${prefillProj?.name}`,
+            items: [
+              {
+                serviceId: '',
+                description: `Project milestones for ${prefillProj?.name}`,
+                quantity: 1,
+                price: prefillProj?.value || 0
+              }
+            ]
+          });
+        }
+        navigateTo(page as Page);
+      }} />;
       default: return <Dashboard invoices={invoices} clients={clients} setActivePage={navigateTo} onViewInvoice={(id) => { setSelectedInvoiceId(id); navigateTo('invoice-detail'); }} onEditInvoice={handleEditInvoiceAction} onGenerateRenewal={handleGenerateRenewal} />;
     }
   };
