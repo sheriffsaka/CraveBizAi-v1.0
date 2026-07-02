@@ -1,6 +1,6 @@
 
 import { createClient } from '@supabase/supabase-js';
-import { Invoice, Client, Service, Company, User, InvoiceStatus, BankAccount, InvoiceItem, InvoiceFrequency, GeneratedDocument, StoredGeneratedDoc, DocumentBlock, SignatureInfo, DbDocument, DbDocumentSignatory, DbDocumentSignature } from '../types';
+import { Invoice, Client, Service, Company, User, InvoiceStatus, BankAccount, InvoiceItem, InvoiceFrequency, GeneratedDocument, StoredGeneratedDoc, DocumentBlock, SignatureInfo, DbDocument, DbDocumentSignatory, DbDocumentSignature, WorkspaceRole, AuditLog, Project } from '../types';
 
 const SUPABASE_URL = 'https://dfqvgezjhudmnlyeycju.supabase.co';
 const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImRmcXZnZXpqaHVkbW5seWV5Y2p1Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjYyNDAyOTMsImV4cCI6MjA4MTgxNjI5M30.8VsHsDpychdSMJmrfnmkxi5ed8CygwErX3-RkVPXkUI';
@@ -617,7 +617,7 @@ class CraveBizApi {
       };
       await fetch('/api/public/documents', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: await this.getAuthHeaders(companyId),
         body: JSON.stringify({ doc: fullDoc })
       });
     } catch (fsErr) {
@@ -735,7 +735,9 @@ class CraveBizApi {
 
     // Merge with server-side public documents
     try {
-      const resp = await fetch('/api/public/documents');
+      const resp = await fetch('/api/public/documents', {
+        headers: await this.getAuthHeaders(companyId)
+      });
       if (resp.ok) {
         const fsDocsMap = await resp.json();
         const fsDocs = Object.values(fsDocsMap) as StoredGeneratedDoc[];
@@ -750,7 +752,9 @@ class CraveBizApi {
     }
     
     try {
-      const resp = await fetch('/api/public/signatures');
+      const resp = await fetch('/api/public/signatures', {
+        headers: await this.getAuthHeaders(companyId)
+      });
       if (resp.ok) {
         const sigMap = await resp.json();
         for (const doc of combined) {
@@ -1223,7 +1227,7 @@ class CraveBizApi {
       // 2. Fall back to local Express server file upload
       const response = await fetch("/api/signify/upload-file", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: await this.getAuthHeaders(),
         body: JSON.stringify({ fileName, fileType, base64Data })
       });
       if (!response.ok) {
@@ -1241,7 +1245,7 @@ class CraveBizApi {
     try {
       const response = await fetch("/api/signify/parse-document", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: await this.getAuthHeaders(),
         body: JSON.stringify({ fileName, fileType, base64Data })
       });
       if (!response.ok) {
@@ -1329,7 +1333,7 @@ class CraveBizApi {
         try {
           await fetch("/api/signify/documents", {
             method: "POST",
-            headers: { "Content-Type": "application/json" },
+            headers: await this.getAuthHeaders(),
             body: JSON.stringify({ 
               id: docId, 
               title, 
@@ -1352,7 +1356,7 @@ class CraveBizApi {
       // 2. Local Express fallback
       const response = await fetch("/api/signify/documents", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: await this.getAuthHeaders(),
         body: JSON.stringify({ id: docId, title, originalFileUrl, ownerId, fileType, fileName, signatories, contentJson })
       });
       if (!response.ok) {
@@ -1394,7 +1398,9 @@ class CraveBizApi {
       }
 
       // 2. Local Express fallback
-      const response = await fetch(`/api/signify/documents/${docId}`);
+      const response = await fetch(`/api/signify/documents/${docId}`, {
+        headers: await this.getAuthHeaders()
+      });
       if (!response.ok) {
         throw new Error("Failed to retrieve document details");
       }
@@ -1627,7 +1633,9 @@ class CraveBizApi {
 
   async getWorkspaces(tenantId: string): Promise<any[]> {
     try {
-      const response = await fetch(`/api/signify/workspaces/${tenantId}`);
+      const response = await fetch(`/api/signify/workspaces/${tenantId}`, {
+        headers: await this.getAuthHeaders(tenantId)
+      });
       if (!response.ok) throw new Error("Failed to fetch workspaces");
       const data = await response.json();
       return data.workspaces || [];
@@ -1645,7 +1653,7 @@ class CraveBizApi {
     try {
       const response = await fetch(`/api/signify/workspaces/${tenantId}`, {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: await this.getAuthHeaders(tenantId),
         body: JSON.stringify({ name, description })
       });
       if (!response.ok) throw new Error("Failed to create workspace");
@@ -1655,6 +1663,118 @@ class CraveBizApi {
       console.error("createWorkspace error:", err);
       throw err;
     }
+  }
+
+  async getAuthHeaders(companyId?: string): Promise<Record<string, string>> {
+    const headers: Record<string, string> = {
+      'Content-Type': 'application/json'
+    };
+    if (companyId) {
+      headers['X-Tenant-Id'] = companyId;
+    }
+    try {
+      const { data: { session } } = await supabase.auth.getSession();
+      if (session?.access_token) {
+        headers['Authorization'] = `Bearer ${session.access_token}`;
+      }
+    } catch (e) {
+      console.warn("Failed to retrieve auth token for headers:", e);
+    }
+    return headers;
+  }
+
+  async getUserRole(companyId: string, userId: string): Promise<WorkspaceRole> {
+    try {
+      const { data, error } = await supabase.from('company_members')
+        .select('role')
+        .eq('company_id', companyId)
+        .eq('user_id', userId)
+        .maybeSingle();
+      if (!error && data && data.role) {
+        const r = data.role.charAt(0).toUpperCase() + data.role.slice(1).toLowerCase();
+        if (['Owner', 'Admin', 'Manager', 'Member'].includes(r)) {
+          return r as WorkspaceRole;
+        }
+      }
+    } catch (e) {
+      console.warn("Error fetching user role, checking ownership fallback:", e);
+    }
+    
+    try {
+      const { data: comp } = await supabase.from('companies').select('owner_id').eq('id', companyId).maybeSingle();
+      if (comp && comp.owner_id === userId) {
+        return 'Owner';
+      }
+    } catch {}
+    
+    return 'Owner'; // Default fallback
+  }
+
+  async createAuditLog(log: Omit<AuditLog, 'id' | 'createdAt'>): Promise<AuditLog> {
+    const id = generateId();
+    const createdAt = new Date().toISOString();
+    const newLog: AuditLog = { ...log, id, createdAt };
+
+    try {
+      const { error } = await supabase.from('audit_logs').insert({
+        id,
+        company_id: log.companyId,
+        user_id: log.userId,
+        user_name: log.userName,
+        action: log.action,
+        resource: log.resource,
+        details: log.details,
+        created_at: createdAt
+      });
+      if (error) throw error;
+    } catch (dbErr) {
+      console.warn("Supabase audit_logs insert failed, using local fallback:", dbErr);
+    }
+
+    const current = await this.fetchAuditLogs(log.companyId);
+    const updated = [newLog, ...current].slice(0, 500);
+    localStorage.setItem(`cravebiz_audit_logs_${log.companyId}`, JSON.stringify(updated));
+
+    try {
+      await fetch('/api/audit-logs', {
+        method: 'POST',
+        headers: await this.getAuthHeaders(log.companyId),
+        body: JSON.stringify({ log: newLog })
+      });
+    } catch (err) {
+      console.warn("Failed to sync audit log to server:", err);
+    }
+
+    return newLog;
+  }
+
+  async fetchAuditLogs(companyId: string): Promise<AuditLog[]> {
+    try {
+      const { data, error } = await supabase.from('audit_logs')
+        .select('*')
+        .eq('company_id', companyId)
+        .order('created_at', { ascending: false });
+      if (!error && data) {
+        return data.map((d: any) => ({
+          id: d.id,
+          companyId: d.company_id,
+          userId: d.user_id,
+          userName: d.user_name,
+          action: d.action,
+          resource: d.resource,
+          details: d.details,
+          createdAt: d.created_at
+        }));
+      }
+    } catch (dbErr) {
+      console.warn("Supabase audit_logs fetch failed, using local fallback:", dbErr);
+    }
+
+    const localLogs = localStorage.getItem(`cravebiz_audit_logs_${companyId}`);
+    if (localLogs) {
+      return JSON.parse(localLogs);
+    }
+    return [];
   }
 }
 export const api = CraveBizApi.getInstance();

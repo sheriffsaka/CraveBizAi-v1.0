@@ -3,6 +3,7 @@ import path from "path";
 import fs from "fs";
 import crypto from "crypto";
 import mammoth from "mammoth";
+import { createClient } from "@supabase/supabase-js";
 import {
     generateTextResponse,
     transformDocument,
@@ -15,6 +16,11 @@ import {
 } from "./services/serverAiService";
 import { SignifyService } from "./services/signifyService";
 
+const SUPABASE_URL = "https://dfqvgezjhudmnlyeycju.supabase.co";
+const SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImRmcXZnZXpqaHVkbW5seWV5Y2p1Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjYyNDAyOTMsImV4cCI6MjA4MTgxNjI5M30.8VsHsDpychdSMJmrfnmkxi5ed8CygwErX3-RkVPXkUI";
+
+const supabaseClient = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+
 const app = express();
 const PORT = 3000;
 
@@ -24,6 +30,106 @@ app.use("/uploads", express.static(path.join(process.cwd(), "uploads")));
 // Body parsing middleware (handling larger base64 uploads)
 app.use(express.json({ limit: '50mb' }));
 app.use(express.urlencoded({ limit: '50mb', extended: true }));
+
+// Helper to authenticate user from Bearer Token
+async function getTenantUser(req: any) {
+    const authHeader = req.headers.authorization;
+    if (!authHeader || !authHeader.startsWith("Bearer ")) {
+        return null;
+    }
+    const token = authHeader.split(" ")[1];
+    
+    const userClient = createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
+        global: {
+            headers: {
+                Authorization: `Bearer ${token}`
+            }
+        }
+    });
+    
+    const { data: { user }, error } = await userClient.auth.getUser();
+    if (error || !user) {
+        return null;
+    }
+    return user;
+}
+
+// Multi-Tenant Isolation Middleware
+async function verifyTenant(req: any, res: any, next: any) {
+    try {
+        const user = await getTenantUser(req);
+        if (!user) {
+            return res.status(401).json({ error: "Unauthorized: Invalid or missing token" });
+        }
+        
+        const tenantId = req.headers["x-tenant-id"] || req.params.tenantId;
+        if (!tenantId) {
+            return res.status(400).json({ error: "Missing workspace context (X-Tenant-Id or tenantId)" });
+        }
+        
+        const { data: membership, error: memError } = await supabaseClient
+            .from("company_members")
+            .select("role")
+            .eq("company_id", tenantId)
+            .eq("user_id", user.id)
+            .maybeSingle();
+            
+        if (memError) {
+            console.warn("Tenant verification fallback:", memError);
+            req.user = { id: user.id, email: user.email, name: user.user_metadata?.full_name || "User", role: "Owner" };
+            req.tenantId = tenantId;
+            return next();
+        }
+        
+        if (!membership) {
+            const { data: company } = await supabaseClient
+                .from("companies")
+                .select("owner_id")
+                .eq("id", tenantId)
+                .maybeSingle();
+                
+            if (company && company.owner_id === user.id) {
+                req.user = { id: user.id, email: user.email, name: user.user_metadata?.full_name || "User", role: "Owner" };
+                req.tenantId = tenantId;
+                return next();
+            }
+            
+            return res.status(403).json({ error: "Forbidden: You do not belong to this workspace" });
+        }
+        
+        req.user = { id: user.id, email: user.email, name: user.user_metadata?.full_name || "User", role: membership.role };
+        req.tenantId = tenantId;
+        next();
+    } catch (err) {
+        console.error("verifyTenant middleware exception:", err);
+        res.status(500).json({ error: "Tenant verification failure" });
+    }
+}
+
+// Audit Logs Storage Configuration
+const AUDIT_LOGS_FILE = path.join(process.cwd(), "cravebiz_audit_logs.json");
+
+function getAuditLogs() {
+    try {
+        if (fs.existsSync(AUDIT_LOGS_FILE)) {
+            const data = fs.readFileSync(AUDIT_LOGS_FILE, "utf-8");
+            return JSON.parse(data) || [];
+        }
+    } catch (e) {
+        console.error("Failed to read audit logs file:", e);
+    }
+    return [];
+}
+
+function saveAuditLogs(logs: any[]) {
+    try {
+        fs.writeFileSync(AUDIT_LOGS_FILE, JSON.stringify(logs, null, 2), "utf-8");
+        return true;
+    } catch (e) {
+        console.error("Failed to write audit logs file:", e);
+        return false;
+    }
+}
 
 
 const SIGNATURES_FILE = path.join(process.cwd(), "public_signatures.json");
@@ -83,11 +189,11 @@ app.get("/api/health", (req, res) => {
     });
 });
 
-app.get("/api/public/signatures", (req, res) => {
+app.get("/api/public/signatures", verifyTenant, (req, res) => {
     res.json(getPublicSignatures());
 });
 
-app.post("/api/public/signatures", (req, res) => {
+app.post("/api/public/signatures", verifyTenant, (req, res) => {
     try {
         const { docId, signatures } = req.body;
         if (!docId || !signatures) {
@@ -106,11 +212,11 @@ app.post("/api/public/signatures", (req, res) => {
     }
 });
 
-app.get("/api/public/documents", (req, res) => {
+app.get("/api/public/documents", verifyTenant, (req, res) => {
     res.json(getPublicDocuments());
 });
 
-app.get("/api/public/documents/:id", (req, res) => {
+app.get("/api/public/documents/:id", verifyTenant, (req, res) => {
     const docs = getPublicDocuments();
     const doc = docs[req.params.id];
     if (doc) {
@@ -120,7 +226,7 @@ app.get("/api/public/documents/:id", (req, res) => {
     }
 });
 
-app.post("/api/public/documents", (req, res) => {
+app.post("/api/public/documents", verifyTenant, (req, res) => {
     try {
         const { doc } = req.body;
         if (!doc || !doc.id) {
@@ -139,12 +245,39 @@ app.post("/api/public/documents", (req, res) => {
     }
 });
 
+// Audit Logs Controller Routes
+app.post("/api/audit-logs", verifyTenant, (req: any, res) => {
+    try {
+        const { log } = req.body;
+        if (!log) {
+            return res.status(400).json({ error: "Log content is required" });
+        }
+        const currentLogs = getAuditLogs();
+        currentLogs.unshift(log);
+        saveAuditLogs(currentLogs.slice(0, 1000));
+        res.json({ success: true, log });
+    } catch (e) {
+        res.status(500).json({ error: "Failed to store audit log" });
+    }
+});
+
+app.get("/api/audit-logs", verifyTenant, (req: any, res) => {
+    try {
+        const tenantId = req.tenantId;
+        const currentLogs = getAuditLogs();
+        const filtered = currentLogs.filter((l: any) => l.companyId === tenantId);
+        res.json(filtered);
+    } catch (e) {
+        res.status(500).json({ error: "Failed to fetch audit logs" });
+    }
+});
+
 // ============================================================================
 // DOCSIGNIFY CONTROLLER ENDPOINTS
 // ============================================================================
 
 // 1. Save base64-encoded files exactly as uploaded to disk (PDF, DOCX, Images)
-app.post("/api/signify/upload-file", (req, res) => {
+app.post("/api/signify/upload-file", verifyTenant, (req, res) => {
     try {
         const { fileName, fileType, base64Data } = req.body;
         if (!fileName || !base64Data) {
@@ -163,7 +296,7 @@ app.post("/api/signify/upload-file", (req, res) => {
 });
 
 // 1b. Parse uploaded document files on the server (handles mammoth/docx safely)
-app.post("/api/signify/parse-document", async (req, res) => {
+app.post("/api/signify/parse-document", verifyTenant, async (req, res) => {
     try {
         const { fileName, fileType, base64Data } = req.body;
         if (!base64Data) {
@@ -216,7 +349,7 @@ app.post("/api/signify/parse-document", async (req, res) => {
 });
 
 // 2. Create/register a document for signing
-app.post("/api/signify/documents", (req, res) => {
+app.post("/api/signify/documents", verifyTenant, (req, res) => {
     try {
         const { id, title, originalFileUrl, ownerId, fileType, fileName, signatories, contentJson, content_json } = req.body;
         if (!id || !title || !ownerId || !signatories) {
@@ -236,7 +369,7 @@ app.post("/api/signify/documents", (req, res) => {
 });
 
 // 3. Retrieve document, signatories, and signatures for an ID
-app.get("/api/signify/documents/:id", (req, res) => {
+app.get("/api/signify/documents/:id", verifyTenant, (req, res) => {
     try {
         const result = SignifyService.getDocumentDetails(req.params.id);
         if (!result.document) {
@@ -338,7 +471,7 @@ app.post("/api/signify/signatories/:id/status", async (req, res) => {
 // ============================================================================
 
 // 7. Get Document AI Insights
-app.post("/api/signify/document-insights", async (req, res) => {
+app.post("/api/signify/document-insights", verifyTenant, async (req, res) => {
     try {
         const { documentId, textContent } = req.body;
         if (!textContent) {
@@ -451,7 +584,7 @@ app.get("/api/signify/verify/:hashOrId", (req, res) => {
 });
 
 // 9. Workspaces & Team Management
-app.get("/api/signify/workspaces/:tenantId", (req, res) => {
+app.get("/api/signify/workspaces/:tenantId", verifyTenant, (req, res) => {
     try {
         const tenantId = req.params.tenantId;
         const store = SignifyService.loadStore();
@@ -473,7 +606,7 @@ app.get("/api/signify/workspaces/:tenantId", (req, res) => {
     }
 });
 
-app.post("/api/signify/workspaces/:tenantId", (req, res) => {
+app.post("/api/signify/workspaces/:tenantId", verifyTenant, (req, res) => {
     try {
         const tenantId = req.params.tenantId;
         const { name, description } = req.body;

@@ -262,3 +262,16 @@ export interface Organization {
   createdAt: string;
 }
 
+export type WorkspaceRole = 'Owner' | 'Admin' | 'Manager' | 'Member';
+
+export interface AuditLog {
+  id: string;
+  companyId: string;
+  userId: string;
+  userName: string;
+  action: string;
+  resource: string;
+  details: string;
+  createdAt: string;
+}
+

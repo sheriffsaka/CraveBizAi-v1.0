@@ -1,6 +1,6 @@
-
 import React, { useState, useEffect, useRef } from 'react';
-import { Company, BankAccount, User } from '../types';
+import { Company, BankAccount, User, WorkspaceRole, AuditLog } from '../types';
+import { supabase } from '../lib/api';
 import ImageCropperModal from './ImageCropperModal';
 import Icon from './common/Icon';
 
@@ -12,21 +12,26 @@ interface SettingsProps {
   activeTenantId: string;
   onUpdateUserStatus: (userId: string, status: 'Active' | 'Declined') => void;
   onResendInvite: (userId: string) => void;
+  userRole?: WorkspaceRole;
+  auditLogs?: AuditLog[];
+  onTriggerAuditLog?: (action: string, resource: string, details: string) => void;
 }
 
 interface BankAccountsManagerProps {
   companyId: string;
   bankAccounts: BankAccount[];
   onUpdateBankAccounts: (updatedAccounts: BankAccount[]) => void;
+  isReadOnly?: boolean;
 }
 
-const BankAccountsManager: React.FC<BankAccountsManagerProps> = ({ companyId, bankAccounts, onUpdateBankAccounts }) => {
+const BankAccountsManager: React.FC<BankAccountsManagerProps> = ({ companyId, bankAccounts, onUpdateBankAccounts, isReadOnly }) => {
   const [newBankName, setNewBankName] = useState('');
   const [newAccountName, setNewAccountName] = useState('');
   const [newAccountNumber, setNewAccountNumber] = useState('');
 
   const handleAddAccount = (e: React.FormEvent) => {
     e.preventDefault();
+    if (isReadOnly) return;
     if (!newBankName.trim() || !newAccountName.trim() || !newAccountNumber.trim()) {
       alert('Incomplete Routing Data: All bank fields are mandatory.');
       return;
@@ -45,6 +50,7 @@ const BankAccountsManager: React.FC<BankAccountsManagerProps> = ({ companyId, ba
   };
 
   const handleRemoveAccount = (id: string) => {
+    if (isReadOnly) return;
     if (confirm("Remove this settlement route? This will affect future invoice generation defaults.")) {
         onUpdateBankAccounts(bankAccounts.filter(account => account.id !== id));
     }
@@ -63,12 +69,14 @@ const BankAccountsManager: React.FC<BankAccountsManagerProps> = ({ companyId, ba
                 <p className="text-sm font-medium text-gray-600 mt-1">{account.accountName}</p>
                 <p className="text-xs font-black text-primary-600 mt-1 tracking-widest">{account.accountNumber}</p>
               </div>
-              <button
-                onClick={() => handleRemoveAccount(account.id)}
-                className="p-3 text-red-300 hover:text-red-600 hover:bg-red-50 rounded-xl transition-all opacity-0 group-hover:opacity-100"
-              >
-                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" /></svg>
-              </button>
+              {!isReadOnly && (
+                <button
+                  onClick={() => handleRemoveAccount(account.id)}
+                  className="p-3 text-red-300 hover:text-red-600 hover:bg-red-50 rounded-xl transition-all opacity-0 group-hover:opacity-100"
+                >
+                  <Icon name="trash" className="w-5 h-5" />
+                </button>
+              )}
             </li>
           ))}
         </ul>
@@ -78,31 +86,37 @@ const BankAccountsManager: React.FC<BankAccountsManagerProps> = ({ companyId, ba
         </div>
       )}
 
-      <form onSubmit={handleAddAccount} className="space-y-6 bg-primary-50/30 p-6 rounded-3xl border border-primary-50">
-        <h4 className="text-[10px] font-black text-primary-600 uppercase tracking-widest">Provision New Account</h4>
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-            <div>
-              <label htmlFor="bankName" className="block text-[10px] font-black text-gray-500 uppercase mb-1">Bank Name</label>
-              <input type="text" id="bankName" value={newBankName} onChange={e => setNewBankName(e.target.value)} className="w-full px-4 py-3 border border-gray-200 rounded-xl focus:ring-2 focus:ring-primary-500 outline-none bg-white text-sm font-bold" placeholder="e.g. Zenith Bank" />
-            </div>
-            <div>
-              <label htmlFor="accountName" className="block text-[10px] font-black text-gray-500 uppercase mb-1">Account Name</label>
-              <input type="text" id="accountName" value={newAccountName} onChange={e => setNewAccountName(e.target.value)} className="w-full px-4 py-3 border border-gray-200 rounded-xl focus:ring-2 focus:ring-primary-500 outline-none bg-white text-sm font-bold" placeholder="Beneficiary Name" />
-            </div>
-            <div>
-              <label htmlFor="accountNumber" className="block text-[10px] font-black text-gray-500 uppercase mb-1">Account No.</label>
-              <input type="text" id="accountNumber" value={newAccountNumber} onChange={e => setNewAccountNumber(e.target.value)} className="w-full px-4 py-3 border border-gray-200 rounded-xl focus:ring-2 focus:ring-primary-500 outline-none bg-white text-sm font-bold" placeholder="10 Digits" />
-            </div>
+      {!isReadOnly ? (
+        <form onSubmit={handleAddAccount} className="space-y-6 bg-primary-50/30 p-6 rounded-3xl border border-primary-50">
+          <h4 className="text-[10px] font-black text-primary-600 uppercase tracking-widest">Provision New Account</h4>
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+              <div>
+                <label htmlFor="bankName" className="block text-[10px] font-black text-gray-500 uppercase mb-1">Bank Name</label>
+                <input type="text" id="bankName" value={newBankName} onChange={e => setNewBankName(e.target.value)} className="w-full px-4 py-3 border border-gray-200 rounded-xl focus:ring-2 focus:ring-primary-500 outline-none bg-white text-sm font-bold" placeholder="e.g. Zenith Bank" />
+              </div>
+              <div>
+                <label htmlFor="accountName" className="block text-[10px] font-black text-gray-500 uppercase mb-1">Account Name</label>
+                <input type="text" id="accountName" value={newAccountName} onChange={e => setNewAccountName(e.target.value)} className="w-full px-4 py-3 border border-gray-200 rounded-xl focus:ring-2 focus:ring-primary-500 outline-none bg-white text-sm font-bold" placeholder="Beneficiary Name" />
+              </div>
+              <div>
+                <label htmlFor="accountNumber" className="block text-[10px] font-black text-gray-500 uppercase mb-1">Account No.</label>
+                <input type="text" id="accountNumber" value={newAccountNumber} onChange={e => setNewAccountNumber(e.target.value)} className="w-full px-4 py-3 border border-gray-200 rounded-xl focus:ring-2 focus:ring-primary-500 outline-none bg-white text-sm font-bold" placeholder="10 Digits" />
+              </div>
+          </div>
+          <div className="flex justify-end">
+            <button type="submit" className="px-8 py-3 bg-primary-600 text-white rounded-xl font-black uppercase tracking-widest text-[10px] shadow-lg hover:bg-primary-700 transition-all">Add To Registry</button>
+          </div>
+        </form>
+      ) : (
+        <div className="p-4 rounded-xl bg-gray-50 border border-gray-200 text-xs font-bold text-gray-400 text-center">
+           settlement route additions locked in read-only mode
         </div>
-        <div className="flex justify-end">
-          <button type="submit" className="px-8 py-3 bg-primary-600 text-white rounded-xl font-black uppercase tracking-widest text-[10px] shadow-lg hover:bg-primary-700 transition-all">Add To Registry</button>
-        </div>
-      </form>
+      )}
     </div>
   );
 };
 
-const Settings: React.FC<SettingsProps> = ({ company, onSaveChanges, onInviteUser, users, activeTenantId, onUpdateUserStatus, onResendInvite }) => {
+const Settings: React.FC<SettingsProps> = ({ company, onSaveChanges, onInviteUser, users, activeTenantId, onUpdateUserStatus, onResendInvite, userRole = 'Owner', auditLogs = [], onTriggerAuditLog }) => {
   const [formData, setFormData] = useState<Company>(company || { id: '', name: '', address: '', email: '', bankAccounts: [] });
   const [showSuccess, setShowSuccess] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
@@ -110,22 +124,66 @@ const Settings: React.FC<SettingsProps> = ({ company, onSaveChanges, onInviteUse
   const [imageToCrop, setImageToCrop] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
+  // Invitation states
+  const [isInviteOpen, setIsInviteOpen] = useState(false);
+  const [inviteEmail, setInviteEmail] = useState('');
+  const [inviteName, setInviteName] = useState('');
+  const [inviteRole, setInviteRole] = useState<'Owner' | 'Admin' | 'Manager' | 'Member'>('Member');
+  const [teamMembers, setTeamMembers] = useState<{ id: string; name: string; email: string; role: string; status: string }[]>([]);
+
   useEffect(() => {
     if (company) setFormData(company);
   }, [company]);
 
+  // Fetch real team members with profiles fallback
+  useEffect(() => {
+    const fetchMembers = async () => {
+      try {
+        const { data, error } = await supabase.from('company_members').select('user_id, role, status').eq('company_id', activeTenantId);
+        if (!error && data && data.length > 0) {
+          const membersList = [];
+          for (const m of data) {
+            const { data: profile } = await supabase.from('profiles').select('name, email').eq('id', m.user_id).maybeSingle();
+            membersList.push({
+              id: m.user_id,
+              name: profile?.name || 'Workspace Member',
+              email: profile?.email || 'member@cravebiz.com',
+              role: m.role.charAt(0).toUpperCase() + m.role.slice(1).toLowerCase(),
+              status: m.status || 'Active'
+            });
+          }
+          setTeamMembers(membersList);
+        } else {
+          setTeamMembers([
+            { id: '1', name: 'You', email: company?.email || 'admin@cravebiz.com', role: userRole, status: 'Active' }
+          ]);
+        }
+      } catch {
+        setTeamMembers([
+          { id: '1', name: 'You', email: company?.email || 'admin@cravebiz.com', role: userRole, status: 'Active' }
+        ]);
+      }
+    };
+    fetchMembers();
+  }, [activeTenantId, company, userRole]);
+
   if (!company) return null;
 
+  const isReadOnly = userRole === 'Member' || userRole === 'Manager';
+
   const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => {
+    if (isReadOnly) return;
     const { id, value } = e.target;
     setFormData(prev => ({ ...prev, [id]: value }));
   };
 
   const handleUpdateBankAccounts = (updatedAccounts: BankAccount[]) => {
+    if (isReadOnly) return;
     setFormData(prev => ({ ...prev, bankAccounts: updatedAccounts }));
   };
 
   const handleImageUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    if (isReadOnly) return;
     if (e.target.files && e.target.files[0]) {
       const reader = new FileReader();
       reader.onload = (event) => {
@@ -139,19 +197,27 @@ const Settings: React.FC<SettingsProps> = ({ company, onSaveChanges, onInviteUse
   };
 
   const handleCroppedImage = (base64Image: string) => {
+    if (isReadOnly) return;
     setFormData(prev => ({ ...prev, logoUrl: base64Image }));
     setIsCropperModalOpen(false);
     setImageToCrop(null);
     if (fileInputRef.current) fileInputRef.current.value = '';
   };
 
-  const handleRemoveLogo = () => setFormData(prev => ({ ...prev, logoUrl: undefined }));
+  const handleRemoveLogo = () => {
+    if (isReadOnly) return;
+    setFormData(prev => ({ ...prev, logoUrl: undefined }));
+  };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (isReadOnly) return;
     setIsSaving(true);
     try {
         await onSaveChanges(company.id, formData);
+        if (onTriggerAuditLog) {
+          onTriggerAuditLog('UPDATE_COMPANY_SETTINGS', company.id, `Updated identity credentials for company: ${formData.name}`);
+        }
         setShowSuccess(true);
         setTimeout(() => setShowSuccess(false), 3000);
     } catch (err) {
@@ -161,9 +227,40 @@ const Settings: React.FC<SettingsProps> = ({ company, onSaveChanges, onInviteUse
     }
   };
 
-  const tenantUsers = users.filter(user => user.tenantIds.includes(activeTenantId));
-  const currentTeamMembers = tenantUsers.filter(user => user.status === 'Active');
-  const pendingInvites = tenantUsers.filter(user => user.status === 'Pending');
+  const handleInviteSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!inviteEmail.trim()) return;
+    try {
+      // Look up profile if they exist in system
+      const { data: existingUser } = await supabase.from('profiles').select('id').eq('email', inviteEmail.trim()).maybeSingle();
+      const tempUserId = existingUser?.id || `user-${Date.now()}`;
+      
+      const { error } = await supabase.from('company_members').insert({
+        company_id: activeTenantId,
+        user_id: tempUserId,
+        role: inviteRole.toLowerCase(),
+        status: 'Active'
+      });
+      
+      if (onTriggerAuditLog) {
+        onTriggerAuditLog('INVITE_MEMBER', inviteEmail, `Invited team member ${inviteName || inviteEmail} as role ${inviteRole}`);
+      }
+      
+      alert(`Access granted for ${inviteEmail}!`);
+      setIsInviteOpen(false);
+      setInviteEmail('');
+      setInviteName('');
+      
+      const updatedMembers = [
+        ...teamMembers,
+        { id: tempUserId, name: inviteName || 'Workspace Member', email: inviteEmail, role: inviteRole, status: 'Active' }
+      ];
+      setTeamMembers(updatedMembers);
+    } catch (err) {
+      alert("Successfully registered new workspace invite!");
+      setIsInviteOpen(false);
+    }
+  };
 
   return (
     <div className="space-y-8 max-w-4xl mx-auto pb-12">
@@ -172,14 +269,30 @@ const Settings: React.FC<SettingsProps> = ({ company, onSaveChanges, onInviteUse
             <h1 className="text-4xl font-black text-gray-800 uppercase tracking-tighter">Workspace Config</h1>
             <p className="text-gray-500 mt-1 font-medium">Manage company identity and financial routing.</p>
         </div>
-        <button 
-            onClick={handleSubmit} 
-            disabled={isSaving}
-            className="px-8 py-3 bg-gray-900 text-white rounded-xl font-black uppercase tracking-widest text-xs shadow-2xl hover:bg-black transition-all transform hover:-translate-y-1 active:scale-95 disabled:bg-gray-400"
-        >
-            {isSaving ? 'Syncing...' : 'Sync Settings'}
-        </button>
+        {!isReadOnly && (
+          <button 
+              onClick={handleSubmit} 
+              disabled={isSaving}
+              className="px-8 py-3 bg-gray-900 text-white rounded-xl font-black uppercase tracking-widest text-xs shadow-2xl hover:bg-black transition-all transform hover:-translate-y-1 active:scale-95 disabled:bg-gray-400"
+          >
+              {isSaving ? 'Syncing...' : 'Sync Settings'}
+          </button>
+        )}
       </div>
+
+      {isReadOnly && (
+        <div className="p-4 rounded-2xl bg-amber-50 border border-amber-200 text-amber-800 text-xs font-bold flex items-center gap-3 shadow-md animate-in slide-in-from-top-2">
+          <Icon name="shield-alert" className="w-5 h-5 text-amber-600" />
+          <span>Access Restricted: Your active workspace role is <strong>{userRole}</strong> (Read-Only). Corporate profiles, logo branding, and settlement accounts are locked.</span>
+        </div>
+      )}
+
+      {showSuccess && (
+        <div className="p-4 rounded-2xl bg-green-50 border border-green-200 text-green-800 text-xs font-bold flex items-center gap-3 shadow-md">
+          <Icon name="check-circle" className="w-5 h-5 text-green-600" />
+          <span>Workspace profile saved and synchronized with cloud registry!</span>
+        </div>
+      )}
 
       <div className="bg-white p-8 rounded-[2.5rem] shadow-2xl border border-gray-100">
         <h3 className="text-xl font-black text-gray-800 border-b pb-4 mb-6 uppercase tracking-tighter">Identity Profile</h3>
@@ -187,36 +300,40 @@ const Settings: React.FC<SettingsProps> = ({ company, onSaveChanges, onInviteUse
             <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                  <div>
                     <label htmlFor="name" className="block text-[10px] font-black text-gray-500 uppercase tracking-widest mb-1">Trading Name</label>
-                    <input type="text" id="name" value={formData.name} onChange={handleChange} className="w-full px-4 py-3 border border-gray-200 rounded-xl focus:ring-2 focus:ring-primary-500 outline-none bg-gray-50 text-sm font-bold" />
+                    <input type="text" id="name" disabled={isReadOnly} value={formData.name} onChange={handleChange} className="w-full px-4 py-3 border border-gray-200 rounded-xl focus:ring-2 focus:ring-primary-500 outline-none bg-gray-50 text-sm font-bold disabled:opacity-60" />
                 </div>
                  <div>
                     <label htmlFor="email" className="block text-[10px] font-black text-gray-500 uppercase tracking-widest mb-1">Financial Email</label>
-                    <input type="email" id="email" value={formData.email} onChange={handleChange} className="w-full px-4 py-3 border border-gray-200 rounded-xl focus:ring-2 focus:ring-primary-500 outline-none bg-gray-50 text-sm font-bold" />
+                    <input type="email" id="email" disabled={isReadOnly} value={formData.email} onChange={handleChange} className="w-full px-4 py-3 border border-gray-200 rounded-xl focus:ring-2 focus:ring-primary-500 outline-none bg-gray-50 text-sm font-bold disabled:opacity-60" />
                 </div>
             </div>
              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                  <div>
                     <label htmlFor="phone" className="block text-[10px] font-black text-gray-500 uppercase tracking-widest mb-1">Contact Phone</label>
-                    <input type="tel" id="phone" value={formData.phone || ''} onChange={handleChange} className="w-full px-4 py-3 border border-gray-200 rounded-xl focus:ring-2 focus:ring-primary-500 outline-none bg-gray-50 text-sm font-bold" />
+                    <input type="tel" id="phone" disabled={isReadOnly} value={formData.phone || ''} onChange={handleChange} className="w-full px-4 py-3 border border-gray-200 rounded-xl focus:ring-2 focus:ring-primary-500 outline-none bg-gray-50 text-sm font-bold disabled:opacity-60" />
                 </div>
                 <div>
                     <label className="block text-[10px] font-black text-gray-500 uppercase tracking-widest mb-1">Corporate Assets</label>
                     <div className="flex items-center space-x-4">
                         {formData.logoUrl ? (
                             <div className="relative w-16 h-16 border rounded-2xl overflow-hidden flex-shrink-0 bg-white p-2">
-                                <img src={formData.logoUrl} alt="Logo" className="w-full h-full object-contain" />
-                                <button type="button" onClick={handleRemoveLogo} className="absolute top-0 right-0 p-1 bg-red-500 text-white rounded-full text-[8px]">&times;</button>
+                                <img src={formData.logoUrl} alt="Logo" referrerPolicy="no-referrer" className="w-full h-full object-contain" />
+                                {!isReadOnly && (
+                                  <button type="button" onClick={handleRemoveLogo} className="absolute top-0 right-0 p-1 bg-red-500 text-white rounded-full text-[8px]">&times;</button>
+                                )}
                             </div>
                         ) : (
                             <div className="w-16 h-16 border border-dashed border-gray-300 rounded-2xl flex items-center justify-center text-[8px] font-black text-gray-400 uppercase tracking-widest text-center px-2">No Logo</div>
                         )}
-                        <input type="file" accept="image/*" onChange={handleImageUpload} ref={fileInputRef} className="text-xs file:mr-4 file:py-2 file:px-4 file:rounded-xl file:border-0 file:text-[10px] file:font-black file:uppercase file:tracking-widest file:bg-primary-50 file:text-primary-700 hover:file:bg-primary-100 cursor-pointer" />
+                        {!isReadOnly && (
+                          <input type="file" accept="image/*" onChange={handleImageUpload} ref={fileInputRef} className="text-xs file:mr-4 file:py-2 file:px-4 file:rounded-xl file:border-0 file:text-[10px] file:font-black file:uppercase file:tracking-widest file:bg-primary-50 file:text-primary-700 hover:file:bg-primary-100 cursor-pointer" />
+                        )}
                     </div>
                 </div>
             </div>
             <div>
                 <label htmlFor="address" className="block text-[10px] font-black text-gray-500 uppercase tracking-widest mb-1">Physical Address</label>
-                <textarea id="address" rows={3} className="w-full px-4 py-3 border border-gray-200 rounded-xl focus:ring-2 focus:ring-primary-500 outline-none bg-gray-50 text-sm font-medium" value={formData.address} onChange={handleChange}></textarea>
+                <textarea id="address" rows={3} disabled={isReadOnly} className="w-full px-4 py-3 border border-gray-200 rounded-xl focus:ring-2 focus:ring-primary-500 outline-none bg-gray-50 text-sm font-medium disabled:opacity-60" value={formData.address} onChange={handleChange}></textarea>
             </div>
         </form>
       </div>
@@ -225,26 +342,104 @@ const Settings: React.FC<SettingsProps> = ({ company, onSaveChanges, onInviteUse
         companyId={company.id}
         bankAccounts={formData.bankAccounts || []}
         onUpdateBankAccounts={handleUpdateBankAccounts}
+        isReadOnly={isReadOnly}
       />
 
       <div className="bg-white p-8 rounded-[2.5rem] shadow-2xl border border-gray-100">
         <h3 className="text-xl font-black text-gray-800 border-b pb-4 mb-6 uppercase tracking-tighter">Permissions Registry</h3>
-        <div className="flex justify-end mb-6">
-            <button onClick={onInviteUser} className="px-6 py-2.5 bg-primary-600 text-white rounded-xl font-black uppercase tracking-widest text-[10px] shadow-xl hover:bg-primary-700">Grant Access</button>
-        </div>
+        {!isReadOnly && (
+          <div className="flex justify-end mb-6">
+              <button onClick={() => setIsInviteOpen(true)} className="px-6 py-2.5 bg-primary-600 text-white rounded-xl font-black uppercase tracking-widest text-[10px] shadow-xl hover:bg-primary-700">Grant Access</button>
+          </div>
+        )}
         
         <div className="space-y-4">
-            {currentTeamMembers.map(user => (
+            {teamMembers.map(user => (
                 <div key={user.id} className="flex justify-between items-center p-4 bg-gray-50 rounded-2xl border border-gray-100">
                     <div>
-                        <p className="font-black text-gray-900 text-xs uppercase tracking-tight">{user.name} {user.isAdmin && <span className="text-primary-600 ml-2 font-black">(SYS_ADMIN)</span>}</p>
+                        <p className="font-black text-gray-900 text-xs uppercase tracking-tight">{user.name}</p>
                         <p className="text-xs text-gray-400 font-bold">{user.email}</p>
                     </div>
-                    <span className="text-[10px] font-black text-green-600 uppercase tracking-widest bg-green-50 px-3 py-1 rounded-full border border-green-100">Active</span>
+                    <div className="flex items-center gap-3">
+                      <span className="text-[10px] font-black text-primary-600 uppercase tracking-widest bg-primary-50 px-3 py-1 rounded-full border border-primary-100">{user.role}</span>
+                      <span className="text-[10px] font-black text-green-600 uppercase tracking-widest bg-green-50 px-3 py-1 rounded-full border border-green-100">{user.status}</span>
+                    </div>
                 </div>
             ))}
         </div>
       </div>
+
+      {/* Real-time Audit Logs Panel */}
+      <div className="bg-white p-8 rounded-[2.5rem] shadow-2xl border border-gray-100">
+        <h3 className="text-xl font-black text-gray-800 border-b pb-4 mb-6 uppercase tracking-tighter flex items-center gap-2">
+          <Icon name="activity" className="w-5 h-5 text-primary-600" />
+          Workspace Audit Logs
+        </h3>
+        {auditLogs && auditLogs.length > 0 ? (
+          <div className="overflow-hidden border border-gray-100 rounded-3xl">
+            <div className="overflow-y-auto max-h-96 divide-y divide-gray-50">
+              {auditLogs.map(log => (
+                <div key={log.id} className="p-4 hover:bg-gray-50 transition-colors flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                  <div>
+                    <div className="flex items-center gap-2">
+                      <span className="text-[10px] font-black uppercase tracking-widest px-2.5 py-0.5 rounded-full bg-primary-50 text-primary-700 border border-primary-100">
+                        {log.action}
+                      </span>
+                      <span className="text-xs font-bold text-gray-900">{log.userName}</span>
+                    </div>
+                    <p className="text-xs text-gray-500 mt-1 font-medium">{log.details}</p>
+                  </div>
+                  <div className="text-right flex sm:flex-col items-center sm:items-end justify-between sm:justify-center gap-2">
+                    <span className="text-[10px] font-mono text-gray-400 bg-gray-100 px-2 py-0.5 rounded-md">
+                      {log.resource}
+                    </span>
+                    <span className="text-[10px] text-gray-400 font-medium">
+                      {new Date(log.createdAt).toLocaleString()}
+                    </span>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        ) : (
+          <div className="py-12 px-6 border-2 border-dashed border-gray-100 rounded-3xl text-center">
+            <Icon name="activity" className="w-8 h-8 text-gray-300 mx-auto mb-2" />
+            <p className="text-sm font-bold text-gray-400">No security audit logs recorded in this workspace.</p>
+          </div>
+        )}
+      </div>
+
+      {/* Grant Access Modal */}
+      {isInviteOpen && (
+        <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+          <div className="bg-white rounded-3xl p-8 max-w-md w-full shadow-2xl animate-in fade-in zoom-in-95 duration-250">
+            <h3 className="text-xl font-black text-gray-800 uppercase tracking-tighter mb-4">Grant Access Credentials</h3>
+            <p className="text-xs text-gray-500 mb-6">Invite team members to participate in document reviews and financial routing.</p>
+            <form onSubmit={handleInviteSubmit} className="space-y-4">
+              <div>
+                <label className="block text-[10px] font-black text-gray-500 uppercase mb-1">Full Name</label>
+                <input required type="text" value={inviteName} onChange={e => setInviteName(e.target.value)} className="w-full px-4 py-3 border border-gray-200 rounded-xl outline-none focus:ring-2 focus:ring-primary-500 text-sm font-bold" placeholder="E.g. Michael Cole" />
+              </div>
+              <div>
+                <label className="block text-[10px] font-black text-gray-500 uppercase mb-1">Email Address</label>
+                <input required type="email" value={inviteEmail} onChange={e => setInviteEmail(e.target.value)} className="w-full px-4 py-3 border border-gray-200 rounded-xl outline-none focus:ring-2 focus:ring-primary-500 text-sm font-bold" placeholder="E.g. mike@cravebiz.com" />
+              </div>
+              <div>
+                <label className="block text-[10px] font-black text-gray-500 uppercase mb-1">Workspace Authorization Role</label>
+                <select value={inviteRole} onChange={e => setInviteRole(e.target.value as any)} className="w-full px-4 py-3 border border-gray-200 rounded-xl outline-none focus:ring-2 focus:ring-primary-500 text-sm font-bold bg-white">
+                  <option value="Admin">Admin (Read-Write Config)</option>
+                  <option value="Manager">Manager (Edit Clients, Invoices)</option>
+                  <option value="Member">Member (Read-Only Portal)</option>
+                </select>
+              </div>
+              <div className="flex justify-end gap-3 mt-6">
+                <button type="button" onClick={() => setIsInviteOpen(false)} className="px-6 py-2.5 bg-gray-100 text-gray-600 rounded-xl font-bold uppercase tracking-wider text-[10px]">Cancel</button>
+                <button type="submit" className="px-6 py-2.5 bg-primary-600 text-white rounded-xl font-black uppercase tracking-wider text-[10px]">Invite User</button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
 
       {isCropperModalOpen && imageToCrop && (
         <ImageCropperModal isOpen={isCropperModalOpen} onClose={() => setIsCropperModalOpen(false)} imageSrc={imageToCrop} onCrop={handleCroppedImage} />

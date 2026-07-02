@@ -25,7 +25,7 @@ import PublicSigningPortal from './components/PublicSigningPortal';
 import ProjectManagement from './components/ProjectManagement';
 import { api, supabase } from './lib/api';
 import { generateRenewalInvoiceSuggestion } from './services/aiGenerationService';
-import { Invoice, Client, Service, Company, User, TenantData, InvoiceStatus, AllTenantsData, GeneratedDocument, DbDocumentSignatory, Project } from './types';
+import { Invoice, Client, Service, Company, User, TenantData, InvoiceStatus, AllTenantsData, GeneratedDocument, DbDocumentSignatory, Project, WorkspaceRole, AuditLog } from './types';
 import Icon from './components/common/Icon';
 
 export type Page = 'dashboard' | 'invoices' | 'clients' | 'services' | 'reports' | 'settings' | 'create-invoice' | 'edit-invoice' | 'invoice-detail' | 'receipt-detail' | 'plain-invoice-detail' | 'recurring-invoices' | 'email-verification' | 'sent-receipts' | 'admin-dashboard' | 'document-transformer' | 'payment-intelligence' | 'projects';
@@ -59,6 +59,8 @@ export default function App() {
   const [syncError, setSyncError] = useState<string | null>(null);
   const [currentUser, setCurrentUser] = useState<User | null>(null);
   const [activeTenantId, setActiveTenantId] = useState<string | null>(() => localStorage.getItem('cravebiz_tenant'));
+  const [userRole, setUserRole] = useState<WorkspaceRole>('Owner');
+  const [auditLogs, setAuditLogs] = useState<AuditLog[]>([]);
   const [companies, setCompanies] = useState<Company[]>([]);
   const [allUsers, setAllUsers] = useState<User[]>([]);
   const [allInvoices, setAllInvoices] = useState<Invoice[]>([]);
@@ -95,8 +97,53 @@ export default function App() {
     'plain-invoice-detail': 'Document View', 'recurring-invoices': 'Recurring Invoices',
     'email-verification': 'Email Verification', 'sent-receipts': 'Sent Receipts',
     'admin-dashboard': 'System Console', 'document-transformer': 'SmartDocs',
-    'payment-intelligence': 'Payment Intelligence Board',
+    'payment-intelligence': 'Payment Intelligence Board', projects: 'Project Hub',
   };
+
+  const loadAuditLogs = async (tenantId: string) => {
+    try {
+      const logs = await api.fetchAuditLogs(tenantId);
+      if (isMounted.current) {
+        setAuditLogs(logs);
+      }
+    } catch (e) {
+      console.warn("Failed to load audit logs:", e);
+    }
+  };
+
+  const triggerAuditLog = async (action: string, resource: string, details: string) => {
+    if (!activeTenantId || !currentUser) return;
+    try {
+      await api.createAuditLog({
+        companyId: activeTenantId,
+        userId: currentUser.id,
+        userName: currentUser.name || currentUser.email || 'Workspace Member',
+        action,
+        resource,
+        details
+      });
+      await loadAuditLogs(activeTenantId);
+    } catch (e) {
+      console.warn("Failed to trigger audit log:", e);
+    }
+  };
+
+  useEffect(() => {
+    const syncRoleAndLogs = async () => {
+      if (activeTenantId && currentUser) {
+        try {
+          const role = await api.getUserRole(activeTenantId, currentUser.id);
+          if (isMounted.current) {
+            setUserRole(role);
+          }
+          await loadAuditLogs(activeTenantId);
+        } catch (e) {
+          console.warn("Failed to sync role/logs:", e);
+        }
+      }
+    };
+    syncRoleAndLogs();
+  }, [activeTenantId, currentUser]);
 
   const forceSyncData = async (tenantId: string) => {
     if (!tenantId || !isMounted.current) return;
@@ -110,6 +157,7 @@ export default function App() {
       if (isMounted.current) {
           setTenantData({ invoices: inv, clients: cli, services: srv, generatedDocs: docs, projects: projs });
           setSyncError(null);
+          await loadAuditLogs(tenantId);
       }
     } catch (e) { 
         setSyncError(stringifyError(e)); 
@@ -242,6 +290,7 @@ export default function App() {
     setIsDataSyncing(true);
     try {
         await api.updateInvoiceStatus(invoiceId, status);
+        await triggerAuditLog('UPDATE_INVOICE_STATUS', invoiceId, `Updated invoice status to ${status}`);
         await forceSyncData(activeTenantId!);
     } catch (e) { alert(`Status Error: ${stringifyError(e)}`); } 
     finally { if (isMounted.current) setIsDataSyncing(false); }
@@ -251,6 +300,7 @@ export default function App() {
     setIsDataSyncing(true);
     try {
         await api.deleteInvoice(id);
+        await triggerAuditLog('DELETE_INVOICE', id, `Deleted invoice record`);
         if (activeTenantId) await forceSyncData(activeTenantId);
         if (currentUser?.isAdmin) {
             const allInvs = await api.getAllInvoices();
@@ -281,6 +331,7 @@ export default function App() {
   const handleAddProject = async (proj: Omit<Project, 'id' | 'createdAt'>) => {
     try {
       const newProj = await api.createProject(proj);
+      await triggerAuditLog('CREATE_PROJECT', newProj.id, `Created project: ${proj.name}`);
       setTenantData(prev => ({
         ...prev,
         projects: [newProj, ...prev.projects]
@@ -293,6 +344,7 @@ export default function App() {
   const handleUpdateProject = async (proj: Project) => {
     try {
       await api.updateProject(proj);
+      await triggerAuditLog('UPDATE_PROJECT', proj.id, `Updated project details: ${proj.name}`);
       setTenantData(prev => ({
         ...prev,
         projects: prev.projects.map(p => p.id === proj.id ? proj : p)
@@ -305,6 +357,7 @@ export default function App() {
   const handleDeleteProject = async (companyId: string, projectId: string) => {
     try {
       await api.deleteProject(companyId, projectId);
+      await triggerAuditLog('DELETE_PROJECT', projectId, `Deleted project record`);
       setTenantData(prev => ({
         ...prev,
         projects: prev.projects.filter(p => p.id !== projectId)
@@ -539,14 +592,25 @@ export default function App() {
             action={downloadAction} onActionComplete={() => setDownloadAction(undefined)}
         />;
       }
-      case 'settings': return <Settings company={activeCompany} onSaveChanges={async (id, det) => { 
-          try {
-              await api.updateCompany(id, det); 
-              await forceSyncData(id); 
-          } catch (e) {
-              setSyncError(stringifyError(e));
-          }
-      }} onInviteUser={()=>{}} users={[]} activeTenantId={activeTenantId!} onUpdateUserStatus={()=>{}} onResendInvite={()=>{}} />;
+      case 'settings': return <Settings 
+          company={activeCompany} 
+          onSaveChanges={async (id, det) => { 
+              try {
+                  await api.updateCompany(id, det); 
+                  await forceSyncData(id); 
+              } catch (e) {
+                  setSyncError(stringifyError(e));
+              }
+          }} 
+          onInviteUser={() => {}} 
+          users={[]} 
+          activeTenantId={activeTenantId!} 
+          onUpdateUserStatus={() => {}} 
+          onResendInvite={() => {}} 
+          userRole={userRole}
+          auditLogs={auditLogs}
+          onTriggerAuditLog={triggerAuditLog}
+      />;
       case 'clients': return <ClientList companyId={activeTenantId!} clients={clients} onAddClient={async (c) => { 
           try {
               await api.createClient(c); 
@@ -587,7 +651,8 @@ export default function App() {
                   invoices: allInvoices.filter(inv => inv.companyId === c.id),
                   clients: [],
                   services: [],
-                  generatedDocs: []
+                  generatedDocs: [],
+                  projects: []
               };
           });
           return <AdminDashboard 
