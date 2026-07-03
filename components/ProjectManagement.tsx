@@ -2,6 +2,7 @@ import React, { useState, useMemo } from 'react';
 import { Project, ProjectStatus, Client, StoredGeneratedDoc, Invoice } from '../types';
 import { motion, AnimatePresence } from 'motion/react';
 import Icon from './common/Icon';
+import PaymentModal from './PaymentModal';
 
 interface ProjectManagementProps {
   companyId: string;
@@ -13,6 +14,8 @@ interface ProjectManagementProps {
   onUpdateProject: (project: Project) => void;
   onDeleteProject: (companyId: string, projectId: string) => void;
   onNavigateTo: (page: string, props?: any) => void;
+  onRecordPayment?: (invoiceId: string, amount: number) => Promise<void>;
+  onSendReceipt?: (invoiceId: string) => Promise<void>;
 }
 
 const LIFECYCLE_STAGES: { status: ProjectStatus; label: string; desc: string; icon: string; actionText?: string; actionPage?: string }[] = [
@@ -48,13 +51,19 @@ export default function ProjectManagement({
   onAddProject,
   onUpdateProject,
   onDeleteProject,
-  onNavigateTo
+  onNavigateTo,
+  onRecordPayment,
+  onSendReceipt
 }: ProjectManagementProps) {
   const [viewMode, setViewMode] = useState<'board' | 'list'>('board');
   const [selectedProjectId, setSelectedProjectId] = useState<string | null>(projects[0]?.id || null);
   const [isAddModalOpen, setIsAddModalOpen] = useState(false);
   const [isEditModalOpen, setIsEditModalOpen] = useState(false);
   const [editingProject, setEditingProject] = useState<Project | null>(null);
+  
+  // Payment quick action states
+  const [isPaymentModalOpen, setIsPaymentModalOpen] = useState(false);
+  const [paymentActiveInvoice, setPaymentActiveInvoice] = useState<Invoice | null>(null);
 
   // Form states
   const [formName, setFormName] = useState('');
@@ -484,6 +493,144 @@ export default function ProjectManagement({
                         )}
                       </div>
                     )}
+
+                    {/* Live Collection & Settlement Tracker for Payment Stage */}
+                    {selectedProject.status === 'Payment' && (
+                      <div className="bg-white p-4 rounded-xl border border-gray-200/60 space-y-4 shadow-sm">
+                        <div className="flex justify-between items-center">
+                          <span className="text-[10px] font-black text-gray-700 uppercase tracking-widest flex items-center gap-1.5">
+                            <span className="w-2.5 h-2.5 rounded-full bg-yellow-500 animate-pulse"></span>
+                            Live Collection & Settlement Tracker
+                          </span>
+                          {projectInvoices.length > 0 && (
+                            <span className="text-[9px] font-black uppercase px-2 py-0.5 bg-yellow-50 text-yellow-700 rounded-full border border-yellow-100">
+                              {projectInvoices.length} Invoice(s)
+                            </span>
+                          )}
+                        </div>
+                        
+                        {projectInvoices.length === 0 ? (
+                          <div className="text-[11px] text-gray-500 bg-gray-50 p-3 rounded-lg border border-dashed border-gray-200 leading-relaxed space-y-2">
+                            <p>No billing record is currently linked to this project.</p>
+                            <button
+                              onClick={() => {
+                                onNavigateTo('create-invoice', {
+                                  prefillProject: selectedProject,
+                                  prefillClient: clients.find(c => c.id === selectedProject.clientId)
+                                });
+                              }}
+                              className="px-2.5 py-1 bg-primary-600 text-white rounded text-[10px] font-bold hover:bg-primary-700 transition-colors"
+                            >
+                              Create Invoice & Link Project ➔
+                            </button>
+                          </div>
+                        ) : (
+                          <div className="space-y-4">
+                            {projectInvoices.map((inv) => {
+                              const amtPaid = inv.amountPaid || 0;
+                              const outstanding = inv.total - amtPaid;
+                              const isPaid = outstanding <= 0 || inv.status === 'paid';
+                              const pct = inv.total > 0 ? Math.min(100, Math.round((amtPaid / inv.total) * 100)) : 0;
+                              
+                              return (
+                                <div key={inv.id} className="text-xs bg-gray-50/50 p-4 rounded-lg border border-gray-150 space-y-3">
+                                  <div className="flex justify-between items-start gap-2">
+                                    <div>
+                                      <div className="font-bold text-gray-800 truncate max-w-[150px]">{inv.invoiceNumber}</div>
+                                      <div className="text-[9px] text-gray-400 font-bold uppercase tracking-wider mt-0.5">
+                                        Due: {new Date(inv.dueDate).toLocaleDateString()}
+                                      </div>
+                                    </div>
+                                    <div className="flex flex-col items-end gap-1">
+                                      <span className={`text-[9px] px-1.5 py-0.5 rounded-md font-black uppercase tracking-wider border ${
+                                        isPaid ? 'bg-emerald-100 text-emerald-800 border-emerald-200' :
+                                        inv.status === 'sent' ? 'bg-indigo-100 text-indigo-800 border-indigo-200 animate-pulse' :
+                                        inv.status === 'overdue' ? 'bg-rose-100 text-rose-800 border-rose-200' :
+                                        'bg-gray-100 text-gray-700 border-gray-200'
+                                      }`}>
+                                        {isPaid ? 'paid' : inv.status}
+                                      </span>
+                                      {inv.isReceiptSent && (
+                                        <span className="text-[8px] px-1 bg-blue-50 text-blue-700 rounded border border-blue-100 font-bold uppercase tracking-wider">
+                                          Receipt Sent ✓
+                                        </span>
+                                      )}
+                                    </div>
+                                  </div>
+
+                                  {/* Settlement progress bar */}
+                                  <div className="space-y-1.5">
+                                    <div className="flex justify-between text-[10px] text-gray-500 font-medium">
+                                      <span>Settlement Progress</span>
+                                      <span className="font-bold text-gray-700">{pct}%</span>
+                                    </div>
+                                    <div className="w-full bg-gray-200 h-2 rounded-full overflow-hidden">
+                                      <div className="bg-primary-600 h-full transition-all duration-500" style={{ width: `${pct}%` }}></div>
+                                    </div>
+                                    <div className="flex justify-between text-[10px] text-gray-600 pt-1">
+                                      <span>Paid: <b className="font-bold text-gray-800">₦{amtPaid.toLocaleString()}</b></span>
+                                      <span>Total: <b className="font-bold text-gray-800">₦{inv.total.toLocaleString()}</b></span>
+                                    </div>
+                                  </div>
+
+                                  {/* Interactive Payment & Receipt Actions */}
+                                  <div className="flex gap-2 pt-2 border-t border-gray-150">
+                                    {!isPaid && onRecordPayment && (
+                                      <button
+                                        onClick={() => {
+                                          setPaymentActiveInvoice(inv);
+                                          setIsPaymentModalOpen(true);
+                                        }}
+                                        className="flex-1 py-1 px-2.5 bg-primary-600 text-white rounded text-[10px] font-bold hover:bg-primary-700 transition-colors shadow-sm"
+                                      >
+                                        Record Payment
+                                      </button>
+                                    )}
+                                    {isPaid && !inv.isReceiptSent && onSendReceipt && (
+                                      <button
+                                        onClick={async () => {
+                                          await onSendReceipt(inv.id);
+                                          alert(`Success: Receipt issued for ${inv.invoiceNumber}!`);
+                                        }}
+                                        className="flex-1 py-1 px-2.5 bg-emerald-600 text-white rounded text-[10px] font-bold hover:bg-emerald-700 transition-colors shadow-sm"
+                                      >
+                                        Issue Receipt ✓
+                                      </button>
+                                    )}
+                                    {isPaid && inv.isReceiptSent && (
+                                      <div className="flex-1 bg-emerald-50 text-emerald-700 p-1.5 rounded border border-emerald-100 text-[10px] font-bold text-center">
+                                        🎉 Receipt Issued & Sent!
+                                      </div>
+                                    )}
+                                  </div>
+                                </div>
+                              );
+                            })}
+
+                            {/* Phase Advancement Suggestion */}
+                            {projectInvoices.length > 0 && projectInvoices.every(i => (i.amountPaid || 0) >= i.total || i.status === 'paid') && (
+                              <div className="bg-emerald-50 border border-emerald-200 rounded-xl p-4 text-center space-y-3 shadow-sm">
+                                <p className="text-xs text-emerald-800 font-extrabold leading-normal">
+                                  🎉 All project milestones and billing items are fully paid and settled!
+                                </p>
+                                <button
+                                  onClick={() => {
+                                    onUpdateProject({
+                                      ...selectedProject,
+                                      status: 'Completed'
+                                    });
+                                    alert("Congratulations! Project advanced to Completed stage.");
+                                  }}
+                                  className="w-full py-2 bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs uppercase tracking-wider rounded-lg shadow-md transition-all active:scale-95"
+                                >
+                                  Advance to Completed Stage ➔
+                                </button>
+                              </div>
+                            )}
+                          </div>
+                        )}
+                      </div>
+                    )}
                   </div>
 
                   {/* Connected Actions inside CRM Pipeline */}
@@ -651,6 +798,22 @@ export default function ProjectManagement({
           </div>
         )}
       </AnimatePresence>
+
+      {isPaymentModalOpen && paymentActiveInvoice && onRecordPayment && (
+        <PaymentModal
+          isOpen={isPaymentModalOpen}
+          onClose={() => {
+            setIsPaymentModalOpen(false);
+            setPaymentActiveInvoice(null);
+          }}
+          invoice={paymentActiveInvoice}
+          onConfirmPayment={async (amt) => {
+            await onRecordPayment(paymentActiveInvoice.id, amt);
+            setIsPaymentModalOpen(false);
+            setPaymentActiveInvoice(null);
+          }}
+        />
+      )}
     </div>
   );
 }

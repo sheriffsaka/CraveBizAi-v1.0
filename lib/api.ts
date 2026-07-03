@@ -297,7 +297,8 @@ class CraveBizApi {
         selected_bank_account_id: invoice.selectedBankAccountId || null,
         manual_bank_name: invoice.manualBankName || null,
         manual_account_name: invoice.manualAccountName || null,
-        manual_account_number: invoice.manualAccountNumber || null
+        manual_account_number: invoice.manualAccountNumber || null,
+        is_receipt_sent: !!invoice.isReceiptSent
     };
 
     const performUpdate = async (currentPayload: any): Promise<void> => {

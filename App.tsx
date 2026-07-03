@@ -301,6 +301,31 @@ export default function App() {
     finally { if (isMounted.current) setIsDataSyncing(false); }
   }
 
+  const handleSendReceipt = async (invoiceId: string) => {
+    const inv = tenantData.invoices.find(i => i.id === invoiceId);
+    if (!inv) return;
+
+    const updatedInvoice: Invoice = { ...inv, isReceiptSent: true };
+
+    setTenantData(prev => ({
+        ...prev,
+        invoices: prev.invoices.map(i => i.id === invoiceId ? updatedInvoice : i)
+    }));
+
+    setIsDataSyncing(true);
+    try {
+        await api.updateInvoice(updatedInvoice);
+        await triggerAuditLog('ISSUE_RECEIPT', invoiceId, `Issued receipt for invoice ${inv.invoiceNumber}`);
+        setSyncError(null);
+    } catch (e) {
+        console.error("Receipt sync failed:", e);
+        if (activeTenantId) await forceSyncData(activeTenantId);
+        alert("Failed to sync receipt to cloud vault. Re-synchronizing...");
+    } finally {
+        if (isMounted.current) setIsDataSyncing(false);
+    }
+  };
+
   const handleDeleteInvoice = async (id: string) => {
     setIsDataSyncing(true);
     try {
@@ -582,7 +607,7 @@ export default function App() {
         return <InvoiceDetail 
             invoice={inv} client={cli} services={services} company={activeCompany} 
             onUpdateStatus={handleUpdateInvoiceStatus} onRecordPayment={handleRecordPayment}
-            onGenerateReceipt={()=>{}} allTenantInvoices={invoices} onEditInvoice={handleEditInvoiceAction} 
+            onGenerateReceipt={handleSendReceipt} allTenantInvoices={invoices} onEditInvoice={handleEditInvoiceAction} 
             onViewPlainInvoice={(id, act) => { setSelectedInvoiceId(id); setDownloadAction(act); navigateTo('plain-invoice-detail'); }} 
             onViewTemplate={()=>{}} onSendInvoice={async (id) => { 
                 try {
@@ -591,7 +616,7 @@ export default function App() {
                 } catch (e) {
                     setSyncError(stringifyError(e));
                 }
-            }} onSendReceipt={()=>{}} 
+            }} onSendReceipt={handleSendReceipt} 
         />;
       }
       case 'plain-invoice-detail': {
@@ -694,7 +719,7 @@ export default function App() {
             }}
           />;
       }
-      case 'projects': return <ProjectManagement companyId={activeTenantId!} projects={projects} clients={clients} generatedDocs={generatedDocs} invoices={invoices} onAddProject={handleAddProject} onUpdateProject={handleUpdateProject} onDeleteProject={handleDeleteProject} onNavigateTo={(page, props) => {
+      case 'projects': return <ProjectManagement companyId={activeTenantId!} projects={projects} clients={clients} generatedDocs={generatedDocs} invoices={invoices} onAddProject={handleAddProject} onUpdateProject={handleUpdateProject} onDeleteProject={handleDeleteProject} onRecordPayment={handleRecordPayment} onSendReceipt={handleSendReceipt} onNavigateTo={(page, props) => {
         if (page === 'create-invoice' && props?.prefillProject) {
           const prefillCli = props.prefillClient;
           const prefillProj = props.prefillProject;
