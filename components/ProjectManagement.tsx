@@ -1,5 +1,5 @@
 import React, { useState, useMemo } from 'react';
-import { Project, ProjectStatus, Client } from '../types';
+import { Project, ProjectStatus, Client, StoredGeneratedDoc } from '../types';
 import { motion, AnimatePresence } from 'motion/react';
 import Icon from './common/Icon';
 
@@ -7,6 +7,7 @@ interface ProjectManagementProps {
   companyId: string;
   projects: Project[];
   clients: Client[];
+  generatedDocs?: StoredGeneratedDoc[];
   onAddProject: (project: Omit<Project, 'id' | 'createdAt'>) => void;
   onUpdateProject: (project: Project) => void;
   onDeleteProject: (companyId: string, projectId: string) => void;
@@ -18,7 +19,7 @@ const LIFECYCLE_STAGES: { status: ProjectStatus; label: string; desc: string; ic
   { status: 'Proposal', label: '2. Proposal', desc: 'Draft and send smart document proposal with detailed quotes.', icon: 'edit', actionText: 'Create Proposal Document', actionPage: 'document-transformer' },
   { status: 'Negotiation', label: '3. Negotiation', desc: 'Collaborate on adjustments, prices, and service schedules.', icon: 'repeat' },
   { status: 'Contract', label: '4. Contract', desc: 'Review legal clauses, security, and payment terms.', icon: 'edit', actionText: 'Generate Agreement Contract', actionPage: 'document-transformer' },
-  { status: 'Signing', label: '5. Signing', desc: 'Collect secure electronic signatures through DocSignify.', icon: 'clients' },
+  { status: 'Signing', label: '5. Signing', desc: 'Collect secure electronic signatures through DocSignify.', icon: 'clients', actionText: 'Collect Electronic Signatures', actionPage: 'document-transformer' },
   { status: 'Invoice', label: '6. Invoice', desc: 'Automatically generate and issue invoice for contract payment.', icon: 'invoices', actionText: 'Create New Invoice', actionPage: 'create-invoice' },
   { status: 'Payment', label: '7. Payment', desc: 'Process payment, monitor collection, and issue receipts.', icon: 'reports' },
   { status: 'Completed', label: '8. Completed', desc: 'All deliverables met, final receipts issued, and values recognized.', icon: 'mail' },
@@ -41,6 +42,7 @@ export default function ProjectManagement({
   companyId,
   projects,
   clients,
+  generatedDocs = [],
   onAddProject,
   onUpdateProject,
   onDeleteProject,
@@ -64,6 +66,11 @@ export default function ProjectManagement({
   const selectedProject = useMemo(() => {
     return projects.find(p => p.id === selectedProjectId) || projects[0] || null;
   }, [projects, selectedProjectId]);
+
+  const projectDocs = useMemo(() => {
+    if (!selectedProject) return [];
+    return generatedDocs.filter(d => d.projectId === selectedProject.id);
+  }, [generatedDocs, selectedProject]);
 
   const openAddModal = () => {
     setFormName('');
@@ -343,14 +350,74 @@ export default function ProjectManagement({
 
                 {/* Integration Stage Guidance Details */}
                 <div className="flex-1 bg-gray-50 border rounded-xl p-5 mt-auto flex flex-col justify-between space-y-4">
-                  <div>
-                    <h5 className="text-sm font-bold text-gray-900 flex items-center">
-                      <Icon name={LIFECYCLE_STAGES[activeStageIndex]?.icon || 'dashboard'} className="w-5 h-5 text-primary-600 mr-2" />
-                      Active Phase: {LIFECYCLE_STAGES[activeStageIndex]?.label}
-                    </h5>
-                    <p className="text-xs text-gray-600 mt-2 leading-relaxed">
-                      {LIFECYCLE_STAGES[activeStageIndex]?.desc}
-                    </p>
+                  <div className="space-y-4">
+                    <div>
+                      <h5 className="text-sm font-bold text-gray-900 flex items-center">
+                        <Icon name={LIFECYCLE_STAGES[activeStageIndex]?.icon || 'dashboard'} className="w-5 h-5 text-primary-600 mr-2" />
+                        Active Phase: {LIFECYCLE_STAGES[activeStageIndex]?.label}
+                      </h5>
+                      <p className="text-xs text-gray-600 mt-2 leading-relaxed">
+                        {LIFECYCLE_STAGES[activeStageIndex]?.desc}
+                      </p>
+                    </div>
+
+                    {/* Live Signature Tracking for Signing Stage */}
+                    {selectedProject.status === 'Signing' && (
+                      <div className="bg-white p-4 rounded-xl border border-gray-200/60 space-y-3 shadow-sm">
+                        <div className="flex justify-between items-center">
+                          <span className="text-[10px] font-black text-gray-700 uppercase tracking-widest flex items-center gap-1.5">
+                            <span className="w-2.5 h-2.5 rounded-full bg-rose-500 animate-pulse"></span>
+                            DocSignify Real-time Tracker
+                          </span>
+                          {projectDocs.length > 0 && (
+                            <span className="text-[9px] font-black uppercase px-2 py-0.5 bg-primary-50 text-primary-700 rounded-full border border-primary-100">
+                              {projectDocs.length} Agreement(s)
+                            </span>
+                          )}
+                        </div>
+                        
+                        {projectDocs.length === 0 ? (
+                          <div className="text-[11px] text-gray-500 bg-gray-50 p-3 rounded-lg border border-dashed border-gray-200 leading-relaxed">
+                            No electronic signing session is currently linked to this project. Click the button below to generate a pre-filled e-sign agreement and register signatories.
+                          </div>
+                        ) : (
+                          <div className="space-y-3">
+                            {projectDocs.map((doc) => {
+                              const sigs = doc.signatures || [];
+                              const totalSigs = sigs.length;
+                              const signedSigs = sigs.filter(s => s.isSigned).length;
+                              const pct = totalSigs > 0 ? Math.round((signedSigs / totalSigs) * 100) : 0;
+                              
+                              return (
+                                <div key={doc.id} className="text-xs bg-gray-50/50 p-3 rounded-lg border border-gray-150 space-y-2">
+                                  <div className="flex justify-between items-start gap-2">
+                                    <div className="font-bold text-gray-800 truncate max-w-[180px]">{doc.documentType}</div>
+                                    <span className={`text-[9px] px-1.5 py-0.5 rounded-md font-black uppercase tracking-wider ${
+                                      signedSigs === totalSigs ? 'bg-emerald-100 text-emerald-800 border border-emerald-200' : 'bg-amber-100 text-amber-800 border border-amber-200'
+                                    }`}>
+                                      {signedSigs}/{totalSigs} SIGNED ({pct}%)
+                                    </span>
+                                  </div>
+                                  <div className="w-full bg-gray-200 h-1.5 rounded-full overflow-hidden">
+                                    <div className="bg-emerald-500 h-full transition-all duration-500" style={{ width: `${pct}%` }}></div>
+                                  </div>
+                                  <div className="grid grid-cols-2 gap-1.5 pt-1.5 border-t border-gray-100">
+                                    {sigs.map((sig, sIdx) => (
+                                      <div key={sig.id || sIdx} className="flex items-center justify-between text-[10px] text-gray-600 bg-white px-2 py-1 rounded border border-gray-100">
+                                        <span className="font-medium truncate max-w-[85px]">{sig.name}</span>
+                                        <span className={sig.isSigned ? "text-emerald-600 font-bold" : "text-amber-600 font-semibold animate-pulse"}>
+                                          {sig.isSigned ? "✓ Signed" : "⏳ Pending"}
+                                        </span>
+                                      </div>
+                                    ))}
+                                  </div>
+                                </div>
+                              );
+                            })}
+                          </div>
+                        )}
+                      </div>
+                    )}
                   </div>
 
                   {/* Connected Actions inside CRM Pipeline */}
@@ -365,6 +432,7 @@ export default function ProjectManagement({
                           const actPage = LIFECYCLE_STAGES[activeStageIndex].actionPage;
                           if (actPage) {
                             onNavigateTo(actPage, {
+                              initialTab: selectedProject.status === 'Signing' ? 'sign' : 'generate',
                               prefillProject: selectedProject,
                               prefillClient: clients.find(c => c.id === selectedProject.clientId)
                             });

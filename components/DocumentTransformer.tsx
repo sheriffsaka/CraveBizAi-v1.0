@@ -3,7 +3,7 @@ import React, { useState, useRef, useEffect } from 'react';
 // @ts-ignore
 import mammoth from 'mammoth';
 import { transformDocument, generateDocumentFromPurpose, reviewDocumentContent } from '../services/aiGenerationService';
-import { GeneratedDocument, DocumentBlock, HeaderBlock, MetadataBlock, TableBlock, SummaryBlock, Company, User, StoredGeneratedDoc, DocumentReviewResult, SignatureInfo, DbDocumentSignatory, DbDocumentSignature } from '../types';
+import { GeneratedDocument, DocumentBlock, HeaderBlock, MetadataBlock, TableBlock, SummaryBlock, Company, User, StoredGeneratedDoc, DocumentReviewResult, SignatureInfo, DbDocumentSignatory, DbDocumentSignature, Project, Client } from '../types';
 import EditableBlock from './EditableBlock';
 import Icon from './common/Icon';
 import { DocumentSignifyViewer, PreparedField } from './DocumentSignifyViewer';
@@ -119,6 +119,9 @@ interface DocumentTransformerProps {
     generatedDocs: StoredGeneratedDoc[];
     onSaveDoc: (doc: GeneratedDocument, id?: string) => Promise<string | undefined>;
     onDeleteDoc: (id: string) => Promise<void>;
+    initialTab?: 'generate' | 'sign' | 'manage' | 'verify';
+    prefillProject?: Project;
+    prefillClient?: Client;
 }
 
 const TEMPLATES = [
@@ -295,7 +298,16 @@ function compileDocumentOffline(purpose: string, companyContext: any): Generated
     };
 }
 
-const DocumentTransformer: React.FC<DocumentTransformerProps> = ({ company, user, generatedDocs, onSaveDoc, onDeleteDoc }) => {
+const DocumentTransformer: React.FC<DocumentTransformerProps> = ({ 
+    company, 
+    user, 
+    generatedDocs, 
+    onSaveDoc, 
+    onDeleteDoc,
+    initialTab,
+    prefillProject,
+    prefillClient
+}) => {
     // Tab State: generate (Purpose-made), sign (E-Signature), manage (Workspace Archive), verify (Integrity Verification)
     const [activeTab, setActiveTab] = useState<'generate' | 'sign' | 'manage' | 'verify'>('generate');
     const [useLocalCompiler, setUseLocalCompiler] = useState(false);
@@ -462,6 +474,113 @@ const DocumentTransformer: React.FC<DocumentTransformerProps> = ({ company, user
         };
         loadWorkspaces();
     }, [company?.id]);
+
+    // Prefill Project and Client logic on mount/update
+    useEffect(() => {
+        if (initialTab) {
+            setActiveTab(initialTab);
+        }
+        if (prefillProject) {
+            // Find if there is an existing generated document linked to this project or match by name
+            const existingDoc = generatedDocs.find(d => d.projectId === prefillProject.id) ||
+                generatedDocs.find(d => d.documentType.toLowerCase().includes(prefillProject.name.toLowerCase()));
+                
+            if (existingDoc) {
+                setGeneratedDoc({
+                    documentType: existingDoc.documentType,
+                    blocks: existingDoc.blocks,
+                    signatures: existingDoc.signatures || [],
+                    projectId: prefillProject.id
+                });
+                setEditingDocId(existingDoc.id);
+                if (existingDoc.signatures && existingDoc.signatures.length > 0) {
+                    setSignatories(existingDoc.signatures);
+                }
+            } else {
+                // Let's create a dynamic project contract shell so they don't start from scratch!
+                const clientName = prefillClient?.companyName || prefillClient?.name || 'Client Representative';
+                const formattedValue = new Intl.NumberFormat('en-NG', { style: 'currency', currency: 'NGN' }).format(prefillProject.value);
+                const projectContractShell: GeneratedDocument = {
+                    documentType: `${prefillProject.name} - Service Agreement`,
+                    projectId: prefillProject.id,
+                    blocks: [
+                        {
+                            id: 'block-header',
+                            type: 'header',
+                            content: {
+                                companyName: company?.name || 'CraveBiZ',
+                                address: company?.address || '',
+                                phone: company?.phone || '',
+                                email: company?.email || '',
+                                website: company?.website || ''
+                            }
+                        },
+                        {
+                            id: 'block-meta',
+                            type: 'metadata',
+                            content: {
+                                documentTitle: 'SERVICE EXECUTION AGREEMENT',
+                                clientName: clientName,
+                                preparedBy: user?.full_name || 'CraveBiZ Representative',
+                                date: new Date().toLocaleDateString(),
+                                reference: `CB-${prefillProject.id.slice(0, 5).toUpperCase()}`
+                            }
+                        },
+                        {
+                            id: 'block-title',
+                            type: 'title',
+                            content: { text: `Project Execution Contract: ${prefillProject.name}` }
+                        },
+                        {
+                            id: 'block-p1',
+                            type: 'paragraph',
+                            content: { text: `This Agreement is entered into between ${company?.name || 'CraveBiZ'} (hereinafter "Provider") and ${clientName} (hereinafter "Client") to govern the execution, delivery, and payment terms of the project "${prefillProject.name}".` }
+                        },
+                        {
+                            id: 'block-p2',
+                            type: 'paragraph',
+                            content: { text: `The project will commence on ${new Date(prefillProject.startDate).toLocaleDateString()} with an estimated completion target. The agreed total consideration for services rendered under this agreement is ${formattedValue}, payable in accordance with milestone completions and standard billing terms.` }
+                        },
+                        {
+                            id: 'block-footer',
+                            type: 'footer',
+                            content: { text: "Prepared and formatted locally via CraveBiZ Secure eSign offline module." }
+                        }
+                    ]
+                };
+
+                // Let's auto-initialize signatories:
+                const creatorSlot: SignatureInfo = {
+                    id: 'creator',
+                    type: 'type',
+                    value: '',
+                    name: user?.full_name || company?.name || 'Authorized Provider',
+                    title: 'Authorized Representative',
+                    date: '',
+                    signatoryType: 'Main',
+                    email: user?.email || '',
+                    isSigned: false
+                };
+                
+                const clientSlot: SignatureInfo = {
+                    id: 'client-sig',
+                    type: 'type',
+                    value: '',
+                    name: prefillClient?.name || 'Client Signatory',
+                    title: 'Authorized Representative',
+                    date: '',
+                    signatoryType: 'Main',
+                    email: prefillClient?.email || '',
+                    isSigned: false
+                };
+
+                projectContractShell.signatures = [creatorSlot, clientSlot];
+                setGeneratedDoc(projectContractShell);
+                setSignatories([creatorSlot, clientSlot]);
+                setEditingDocId(null);
+            }
+        }
+    }, [initialTab, prefillProject, prefillClient, generatedDocs]);
 
     const handleCreateWorkspace = async () => {
         if (!newWorkspaceName.trim()) return;
@@ -1639,7 +1758,11 @@ ${company?.name || 'CraveBiZ Vendor'}`;
         const updatedBlocks = generatedDoc.blocks.map(block =>
             block.id === blockId ? { ...block, content: newContent } : block
         );
-        const nextDoc = { ...generatedDoc, blocks: updatedBlocks };
+        const nextDoc = { 
+            ...generatedDoc, 
+            blocks: updatedBlocks,
+            projectId: prefillProject?.id || generatedDoc.projectId
+        };
         setGeneratedDoc(nextDoc);
         // Auto-save any inline updates to our active working copy
         onSaveDoc({ ...nextDoc, signatures: signatories }, editingDocId || undefined).then(savedId => {
@@ -1651,7 +1774,8 @@ ${company?.name || 'CraveBiZ Vendor'}`;
         if (!generatedDoc) return;
         const savedDoc = {
             ...generatedDoc,
-            signatures: signatories
+            signatures: signatories,
+            projectId: prefillProject?.id || generatedDoc.projectId
         };
         onSaveDoc(savedDoc, editingDocId || undefined).then(savedId => {
             if (savedId) {
@@ -2104,6 +2228,44 @@ ${company?.name || 'CraveBiZ Vendor'}`;
                                         <span className="text-xs font-extrabold text-gray-700">Drag & Drop Documents Here</span>
                                         <span className="text-[10px] text-gray-450 font-bold mt-0.5 uppercase tracking-widest">Supports PDF, DOCX, and Images • Multi-file active</span>
                                     </div>
+
+                                    {/* Choice: Choose existing generated documents from Workspace Vault */}
+                                    {generatedDocs.length > 0 && !generatedDoc && (
+                                        <div className="space-y-2.5 mt-2">
+                                            <h3 className="text-[10px] font-black text-gray-400 uppercase tracking-widest">
+                                                Or Select an Existing Document from Workspace Vault
+                                            </h3>
+                                            <div className="grid grid-cols-1 md:grid-cols-2 gap-2.5 max-h-52 overflow-y-auto pr-1">
+                                                {generatedDocs.map((doc) => (
+                                                    <button
+                                                        key={doc.id}
+                                                        onClick={() => {
+                                                            setGeneratedDoc({
+                                                                documentType: doc.documentType,
+                                                                blocks: doc.blocks,
+                                                                signatures: doc.signatures || [],
+                                                                projectId: doc.projectId
+                                                            });
+                                                            setEditingDocId(doc.id);
+                                                            if (doc.signatures && doc.signatures.length > 0) {
+                                                                setSignatories(doc.signatures);
+                                                            }
+                                                            triggerToast(`Loaded "${doc.documentType}" from Workspace Vault!`);
+                                                        }}
+                                                        className="text-left bg-white p-3 border border-gray-200 rounded-xl hover:border-indigo-400 hover:shadow-sm transition-all flex flex-col justify-between"
+                                                    >
+                                                        <div>
+                                                            <div className="font-bold text-xs text-gray-800 truncate">{doc.documentType}</div>
+                                                            <div className="text-[9px] text-gray-400 font-bold uppercase tracking-wider mt-0.5">Created: {new Date(doc.createdAt).toLocaleDateString()}</div>
+                                                        </div>
+                                                        <div className="mt-2 text-[10px] font-black text-indigo-600 uppercase tracking-widest flex items-center gap-1" style={{ color: brandColor }}>
+                                                            <span>Select Document</span> ➔
+                                                        </div>
+                                                    </button>
+                                                ))}
+                                            </div>
+                                        </div>
+                                    )}
 
                                     {/* 2. Multi-Document Signing Session list */}
                                     {signingPackage.length > 0 && (

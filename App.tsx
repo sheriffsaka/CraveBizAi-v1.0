@@ -74,6 +74,11 @@ export default function App() {
   const [isResetPasswordOpen, setIsResetPasswordOpen] = useState(false);
   const [resetEmail, setResetEmail] = useState('');
   const [resetToken, setResetToken] = useState('');
+  const [docTransformerPrefill, setDocTransformerPrefill] = useState<{
+    initialTab?: 'generate' | 'sign' | 'manage' | 'verify';
+    prefillProject?: Project;
+    prefillClient?: Client;
+  } | null>(null);
   const isMounted = useRef(true);
   const currentUserIdRef = useRef<string | null>(null);
 
@@ -472,17 +477,24 @@ export default function App() {
 
     switch (activePage) {
       case 'dashboard': return <Dashboard invoices={invoices} clients={clients} setActivePage={navigateTo} onViewInvoice={(id) => { setSelectedInvoiceId(id); navigateTo('invoice-detail'); }} onEditInvoice={handleEditInvoiceAction} onGenerateRenewal={handleGenerateRenewal} />;
-      case 'document-transformer': return <DocumentTransformer company={activeCompany} user={currentUser} generatedDocs={generatedDocs} onSaveDoc={async (doc, id) => { 
-          try {
-              let saved;
-              if (id) {
-                  saved = await api.updateGeneratedDoc(activeTenantId!, id, doc);
-              } else {
-                  saved = await api.saveGeneratedDoc(activeTenantId!, doc); 
-              }
-              const savedId = saved?.id;
-              if (savedId && (doc.originalFileBase64 || doc.originalFileUrl)) {
-                  // Synchronize with modern DocSignify database tables
+      case 'document-transformer': return <DocumentTransformer 
+          company={activeCompany} 
+          user={currentUser} 
+          generatedDocs={generatedDocs} 
+          initialTab={docTransformerPrefill?.initialTab}
+          prefillProject={docTransformerPrefill?.prefillProject}
+          prefillClient={docTransformerPrefill?.prefillClient}
+          onSaveDoc={async (doc, id) => { 
+              try {
+                  let saved;
+                  if (id) {
+                      saved = await api.updateGeneratedDoc(activeTenantId!, id, doc);
+                  } else {
+                      saved = await api.saveGeneratedDoc(activeTenantId!, doc); 
+                  }
+                  const savedId = saved?.id;
+                  if (savedId && (doc.originalFileBase64 || doc.originalFileUrl)) {
+                      // Synchronize with modern DocSignify database tables
                   const signatoriesMapped = (doc.signatures || []).map((s: any, idx: number) => ({
                       id: s.id || `sig-${idx}`,
                       name: s.name || 'Signatory',
@@ -682,7 +694,7 @@ export default function App() {
             }}
           />;
       }
-      case 'projects': return <ProjectManagement companyId={activeTenantId!} projects={projects} clients={clients} onAddProject={handleAddProject} onUpdateProject={handleUpdateProject} onDeleteProject={handleDeleteProject} onNavigateTo={(page, props) => {
+      case 'projects': return <ProjectManagement companyId={activeTenantId!} projects={projects} clients={clients} generatedDocs={generatedDocs} onAddProject={handleAddProject} onUpdateProject={handleUpdateProject} onDeleteProject={handleDeleteProject} onNavigateTo={(page, props) => {
         if (page === 'create-invoice' && props?.prefillProject) {
           const prefillCli = props.prefillClient;
           const prefillProj = props.prefillProject;
@@ -699,6 +711,13 @@ export default function App() {
                 price: prefillProj?.value || 0
               }
             ]
+          });
+        }
+        if (page === 'document-transformer') {
+          setDocTransformerPrefill({
+            initialTab: props?.initialTab || 'sign',
+            prefillProject: props?.prefillProject,
+            prefillClient: props?.prefillClient
           });
         }
         navigateTo(page as Page);
