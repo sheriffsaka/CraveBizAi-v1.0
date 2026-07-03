@@ -253,6 +253,10 @@ export interface Project {
   startDate: string;
   endDate?: string;
   createdAt: string;
+  deliverablesChecklist?: { id: string; label: string; completed: boolean }[];
+  satisfactionRating?: number;
+  feedbackComments?: string;
+  completionDate?: string;
 }
 
 export interface Organization {

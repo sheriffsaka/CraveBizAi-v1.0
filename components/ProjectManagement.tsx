@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import { Project, ProjectStatus, Client, StoredGeneratedDoc, Invoice } from '../types';
 import { motion, AnimatePresence } from 'motion/react';
 import Icon from './common/Icon';
@@ -87,6 +87,67 @@ export default function ProjectManagement({
     if (!selectedProject) return [];
     return invoices.filter(i => i.projectId === selectedProject.id);
   }, [invoices, selectedProject]);
+
+  // Feedback closeout states
+  const [feedbackRating, setFeedbackRating] = useState<number>(5);
+  const [feedbackText, setFeedbackText] = useState<string>('');
+
+  useEffect(() => {
+    if (selectedProject) {
+      setFeedbackRating(selectedProject.satisfactionRating ?? 5);
+      setFeedbackText(selectedProject.feedbackComments ?? '');
+    }
+  }, [selectedProject?.id]);
+
+  const defaultDeliverables = useMemo(() => [
+    { id: 'signoff', label: 'Verify Final Client Sign-off Authenticated' },
+    { id: 'payment', label: 'All Milestone Payments Settled & Receipts Issued' },
+    { id: 'assets', label: 'Secure Handover of Assets & Deliverables' },
+    { id: 'review', label: 'Document Satisfaction Rating & Feedback' }
+  ], []);
+
+  const currentChecklist = useMemo(() => {
+    if (!selectedProject) return [];
+    if (selectedProject.deliverablesChecklist && selectedProject.deliverablesChecklist.length > 0) {
+      return selectedProject.deliverablesChecklist;
+    }
+    return defaultDeliverables.map(d => ({ ...d, completed: false }));
+  }, [selectedProject, defaultDeliverables]);
+
+  const handleToggleChecklist = (itemId: string, completed: boolean) => {
+    if (!selectedProject) return;
+    const checklist = currentChecklist.map(item => 
+      item.id === itemId ? { ...item, completed } : item
+    );
+    onUpdateProject({
+      ...selectedProject,
+      deliverablesChecklist: checklist
+    });
+  };
+
+  const handleSaveFeedback = () => {
+    if (!selectedProject) return;
+    const updatedChecklist = currentChecklist.map(item => 
+      item.id === 'review' ? { ...item, completed: true } : item
+    );
+    onUpdateProject({
+      ...selectedProject,
+      satisfactionRating: feedbackRating,
+      feedbackComments: feedbackText,
+      deliverablesChecklist: updatedChecklist
+    });
+    alert("Feedback and satisfaction rating saved successfully!");
+  };
+
+  const handleArchiveProject = () => {
+    if (!selectedProject) return;
+    onUpdateProject({
+      ...selectedProject,
+      status: 'Archived',
+      completionDate: new Date().toISOString()
+    });
+    alert(`Success: ${selectedProject.name} has been securely archived in compliance vaults.`);
+  };
 
   const openAddModal = () => {
     setFormName('');
@@ -629,6 +690,176 @@ export default function ProjectManagement({
                             )}
                           </div>
                         )}
+                      </div>
+                    )}
+
+                    {/* Live Project Closeout & Feedback for Completed Stage */}
+                    {selectedProject.status === 'Completed' && (
+                      <div className="bg-white p-4 rounded-xl border border-gray-200/60 space-y-4 shadow-sm">
+                        <div className="flex justify-between items-center">
+                          <span className="text-[10px] font-black text-gray-700 uppercase tracking-widest flex items-center gap-1.5">
+                            <span className="w-2.5 h-2.5 rounded-full bg-emerald-500 animate-pulse"></span>
+                            Project Closeout Workspace
+                          </span>
+                          <span className="text-[9px] font-black uppercase px-2 py-0.5 bg-emerald-50 text-emerald-700 rounded-full border border-emerald-100">
+                            Milestone 8
+                          </span>
+                        </div>
+
+                        {/* Financial & Delivery Summary */}
+                        <div className="bg-emerald-50/50 p-3 rounded-lg border border-emerald-100/80 grid grid-cols-2 gap-3 text-xs">
+                          <div>
+                            <span className="text-[10px] text-gray-500 block">Total Recognized Value:</span>
+                            <span className="font-extrabold text-emerald-800 text-sm">
+                              {new Intl.NumberFormat('en-NG', { style: 'currency', currency: 'NGN' }).format(selectedProject.value || 0)}
+                            </span>
+                          </div>
+                          <div>
+                            <span className="text-[10px] text-gray-500 block">Settled Billing:</span>
+                            <span className="font-bold text-gray-700 block mt-0.5">
+                              {projectInvoices.filter(i => i.status === 'paid' || (i.amountPaid || 0) >= i.total).length} of {projectInvoices.length} Paid
+                            </span>
+                          </div>
+                        </div>
+
+                        {/* Interactive Deliverables & Handover Checklist */}
+                        <div className="space-y-2">
+                          <span className="text-[10px] font-bold text-gray-500 uppercase tracking-wider block">
+                            Project Handover Checklist
+                          </span>
+                          <div className="space-y-1.5 bg-gray-50 p-3 rounded-lg border border-gray-150">
+                            {currentChecklist.map((item) => (
+                              <label key={item.id} className="flex items-center gap-2.5 text-xs text-gray-700 cursor-pointer select-none hover:bg-gray-150/50 p-1 rounded transition-colors">
+                                <input
+                                  type="checkbox"
+                                  checked={item.completed}
+                                  onChange={(e) => handleToggleChecklist(item.id, e.target.checked)}
+                                  className="rounded border-gray-300 text-primary-600 focus:ring-primary-500 h-4 w-4"
+                                />
+                                <span className={item.completed ? "line-through text-gray-400 font-medium" : "font-medium text-gray-700"}>
+                                  {item.label}
+                                </span>
+                              </label>
+                            ))}
+                          </div>
+                        </div>
+
+                        {/* Client Feedback & Rating Form */}
+                        <div className="space-y-3 pt-2 border-t border-gray-150">
+                          <span className="text-[10px] font-bold text-gray-500 uppercase tracking-wider block">
+                            Client Satisfaction Rating & Feedback
+                          </span>
+                          
+                          {/* Star Rating Controller */}
+                          <div className="flex gap-2">
+                            {[1, 2, 3, 4, 5].map((star) => (
+                              <button
+                                key={star}
+                                type="button"
+                                onClick={() => setFeedbackRating(star)}
+                                className="transition-all active:scale-95 focus:outline-none"
+                              >
+                                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill={star <= feedbackRating ? "#fbbf24" : "none"} stroke={star <= feedbackRating ? "#fbbf24" : "#d1d5db"} strokeWidth="2" className="w-6 h-6 transition-colors duration-200">
+                                  <polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2" />
+                                </svg>
+                              </button>
+                            ))}
+                          </div>
+
+                          <div className="space-y-1">
+                            <label className="text-[10px] text-gray-500 font-bold block">
+                              Client Feedback Notes / Testimonial
+                            </label>
+                            <textarea
+                              value={feedbackText}
+                              onChange={(e) => setFeedbackText(e.target.value)}
+                              placeholder="e.g. Client loved the final portal design, and confirmed value recognized..."
+                              className="w-full p-2.5 text-xs border border-gray-200 rounded-lg focus:outline-none focus:ring-1 focus:ring-primary-500/50 min-h-[60px]"
+                            />
+                          </div>
+
+                          <button
+                            type="button"
+                            onClick={handleSaveFeedback}
+                            className="w-full py-1.5 bg-gray-800 hover:bg-gray-900 text-white rounded-lg text-xs font-bold transition-all flex items-center justify-center gap-1 shadow-sm"
+                          >
+                            Save Satisfaction Review ✓
+                          </button>
+                        </div>
+
+                        {/* Final Archive Deal Action */}
+                        <div className="pt-3 border-t border-gray-150">
+                          <button
+                            type="button"
+                            onClick={handleArchiveProject}
+                            className="w-full py-2 bg-primary-600 hover:bg-primary-700 text-white font-extrabold text-xs uppercase tracking-wider rounded-lg shadow-md transition-all active:scale-95 flex items-center justify-center gap-1.5"
+                          >
+                            Archive Project Deal ➔
+                          </button>
+                          <p className="text-[9px] text-gray-400 text-center mt-1.5">
+                            Once archived, the project is locked and securely stored in compliance archives.
+                          </p>
+                        </div>
+                      </div>
+                    )}
+
+                    {/* Archived Stage View */}
+                    {selectedProject.status === 'Archived' && (
+                      <div className="bg-white p-4 rounded-xl border border-gray-200/60 space-y-4 shadow-sm text-center animate-fade-in">
+                        <div className="flex justify-center">
+                          <div className="bg-gray-100 p-3 rounded-full text-gray-500 border border-gray-200 shadow-sm">
+                            <svg xmlns="http://www.w3.org/2000/svg" width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="lucide lucide-shield-check"><path d="M20 13c0 5-3.5 7.5-7.66 9.7a1 1 0 0 1-.68 0C7.5 20.5 4 18 4 13V6a1 1 0 0 1 .76-.97l8-2a1 1 0 0 1 .48 0l8 2A1 1 0 0 1 20 6z"/><path d="m9 12 2 2 4-4"/></svg>
+                          </div>
+                        </div>
+                        <div>
+                          <h4 className="text-sm font-black text-gray-800 uppercase tracking-wider">Project Deal Secured & Archived</h4>
+                          <p className="text-[11px] text-gray-500 mt-1 leading-relaxed">
+                            This project record has completed all phases of the SaaS lifecycle and is locked in compliance vaults.
+                          </p>
+                        </div>
+
+                        {/* Closeout Metadata */}
+                        <div className="bg-gray-50 p-3 rounded-lg border border-gray-150 text-left text-xs space-y-2 max-w-sm mx-auto">
+                          <div className="flex justify-between">
+                            <span className="text-gray-500">Archived Date:</span>
+                            <span className="font-bold text-gray-700">
+                              {selectedProject.completionDate ? new Date(selectedProject.completionDate).toLocaleDateString() : new Date().toLocaleDateString()}
+                            </span>
+                          </div>
+                          {selectedProject.satisfactionRating && (
+                            <div className="flex justify-between items-center">
+                              <span className="text-gray-500">Satisfaction Score:</span>
+                              <div className="flex gap-0.5">
+                                {Array.from({ length: selectedProject.satisfactionRating }).map((_, i) => (
+                                  <svg key={i} xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="#fbbf24" className="w-3.5 h-3.5">
+                                    <polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2" />
+                                  </svg>
+                                ))}
+                              </div>
+                            </div>
+                          )}
+                          {selectedProject.feedbackComments && (
+                            <div className="border-t border-gray-200 pt-2 mt-1">
+                              <span className="text-[10px] text-gray-400 font-bold block uppercase tracking-wider">Recorded Testimonial:</span>
+                              <p className="text-[11px] text-gray-600 italic mt-0.5 leading-normal">
+                                "{selectedProject.feedbackComments}"
+                              </p>
+                            </div>
+                          )}
+                        </div>
+
+                        <button
+                          type="button"
+                          onClick={() => {
+                            onUpdateProject({
+                              ...selectedProject,
+                              status: 'Completed'
+                            });
+                          }}
+                          className="text-[10px] font-bold text-primary-600 hover:text-primary-700 hover:underline tracking-wider uppercase transition-colors"
+                        >
+                          ↩ Re-open Project Workspace
+                        </button>
                       </div>
                     )}
                   </div>
