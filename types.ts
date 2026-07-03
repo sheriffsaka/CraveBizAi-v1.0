@@ -257,6 +257,8 @@ export interface Project {
   satisfactionRating?: number;
   feedbackComments?: string;
   completionDate?: string;
+  compliancePolicy?: string;
+  vaultHash?: string;
 }
 
 export interface Organization {

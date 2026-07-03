@@ -3,6 +3,7 @@ import React, { useState, useMemo } from 'react';
 import { Invoice, Client, InvoiceStatus } from '../types';
 import InvoiceStatusBadge from './InvoiceStatusBadge';
 import Icon from './common/Icon';
+import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, Cell } from 'recharts';
 
 interface InvoiceListProps {
   invoices: Invoice[];
@@ -187,66 +188,170 @@ const InvoiceList: React.FC<InvoiceListProps> = ({ invoices, clients, limit, onV
     }
   };
 
+  const stats = useMemo(() => {
+    let totalInvoiced = 0;
+    let totalPaid = 0;
+    let totalOutstanding = 0;
+    let paidCount = 0;
+    let sentCount = 0;
+    let draftCount = 0;
+    let overdueCount = 0;
+
+    nonTemplateInvoices.forEach(inv => {
+      totalInvoiced += inv.total;
+      const paid = inv.amountPaid || 0;
+      totalPaid += paid;
+      totalOutstanding += (inv.total - paid);
+      
+      if (inv.status === 'Paid') paidCount++;
+      else if (inv.status === 'Sent') sentCount++;
+      else if (inv.status === 'Draft') draftCount++;
+      else if (inv.status === 'Overdue') overdueCount++;
+    });
+
+    const collectionRate = totalInvoiced > 0 ? (totalPaid / totalInvoiced) * 100 : 0;
+
+    return {
+      totalInvoiced,
+      totalPaid,
+      totalOutstanding,
+      collectionRate,
+      statusData: [
+        { name: 'Paid', value: paidCount, color: '#10B981' },
+        { name: 'Sent', value: sentCount, color: '#3B82F6' },
+        { name: 'Draft', value: draftCount, color: '#6B7280' },
+        { name: 'Overdue', value: overdueCount, color: '#EF4444' },
+      ].filter(d => d.value > 0)
+    };
+  }, [nonTemplateInvoices]);
+
   return (
-    <div className="bg-white rounded-xl shadow-md overflow-hidden">
-      <div className="p-4 border-b flex flex-col md:flex-row justify-between items-center space-y-3 md:space-y-0 md:space-x-4">
-          <h2 className="text-xl font-semibold">
-            {limit ? 'Recent Documents' : 'Full Registry'}
-          </h2>
-          {!limit && ( 
-            <div className="flex flex-col md:flex-row items-center space-y-3 md:space-y-0 md:space-x-4 w-full md:w-auto">
-                <div className="relative w-full md:w-64">
-                    <div className="absolute inset-y-0 left-0 flex items-center pl-3 pointer-events-none">
-                        <Icon name="search" className="w-5 h-5 text-gray-400" />
+    <div className="space-y-6">
+      {!limit && (
+        <>
+          {/* Summary Cards */}
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+            <div className="bg-white p-5 rounded-2xl shadow-sm border border-gray-100">
+              <p className="text-3xs font-black text-gray-400 uppercase tracking-widest mb-1">Total Invoiced</p>
+              <h3 className="text-2xl font-black text-gray-800">₦{stats.totalInvoiced.toLocaleString()}</h3>
+              <p className="text-4xs text-gray-400 mt-1">{nonTemplateInvoices.length} Invoices issued</p>
+            </div>
+            <div className="bg-white p-5 rounded-2xl shadow-sm border border-gray-100">
+              <p className="text-3xs font-black text-green-600 uppercase tracking-widest mb-1">Total Collected</p>
+              <h3 className="text-2xl font-black text-green-700">₦{stats.totalPaid.toLocaleString()}</h3>
+              <p className="text-4xs text-green-500 mt-1">Settled invoices</p>
+            </div>
+            <div className="bg-white p-5 rounded-2xl shadow-sm border border-gray-100">
+              <p className="text-3xs font-black text-red-500 uppercase tracking-widest mb-1">Total Outstanding</p>
+              <h3 className="text-2xl font-black text-red-600">₦{stats.totalOutstanding.toLocaleString()}</h3>
+              <p className="text-4xs text-red-400 mt-1">Pending collection</p>
+            </div>
+            <div className="bg-white p-5 rounded-2xl shadow-sm border border-gray-100">
+              <p className="text-3xs font-black text-primary-500 uppercase tracking-widest mb-1">Collection Efficiency</p>
+              <h3 className="text-2xl font-black text-primary-600">{stats.collectionRate.toFixed(1)}%</h3>
+              <p className="text-4xs text-primary-400 mt-1">Paid relative to invoiced</p>
+            </div>
+          </div>
+
+          {/* Charts Row */}
+          {nonTemplateInvoices.length > 0 && stats.statusData.length > 0 && (
+            <div className="bg-white p-6 rounded-2xl border border-gray-100 shadow-sm grid grid-cols-1 md:grid-cols-12 gap-6 items-center">
+              <div className="md:col-span-4">
+                <h4 className="text-sm font-black text-gray-700 uppercase tracking-wider mb-2">Invoice Status Overview</h4>
+                <p className="text-xs text-gray-400 leading-relaxed mb-4">
+                  Visual distribution of financial invoice items currently registered within this SME workspace. Use this to audit unpaid draft vs overdue bills.
+                </p>
+                <div className="space-y-2">
+                  {stats.statusData.map(status => (
+                    <div key={status.name} className="flex justify-between items-center text-xs">
+                      <div className="flex items-center gap-2">
+                        <span className="w-2.5 h-2.5 rounded-full" style={{ backgroundColor: status.color }}></span>
+                        <span className="font-bold text-gray-600">{status.name}</span>
+                      </div>
+                      <span className="font-black text-gray-800">{status.value} ({Math.round(status.value / nonTemplateInvoices.length * 100)}%)</span>
                     </div>
-                    <input
-                        type="text"
-                        placeholder="Search IDs, Clients..."
-                        value={searchTerm}
-                        onChange={(e) => { setSearchTerm(e.target.value); setCurrentPage(1); }}
-                        className="block w-full pl-10 pr-3 py-2 border border-gray-300 rounded-md leading-5 bg-white placeholder-gray-500 focus:outline-none focus:ring-primary-500 focus:border-primary-500 sm:text-sm"
-                    />
+                  ))}
                 </div>
+              </div>
+              <div className="md:col-span-8 h-48">
+                <ResponsiveContainer width="100%" height="100%">
+                  <BarChart data={stats.statusData} margin={{ top: 10, right: 10, left: -20, bottom: 0 }}>
+                    <XAxis dataKey="name" stroke="#94A3B8" fontSize={10} tickLine={false} axisLine={false} />
+                    <YAxis stroke="#94A3B8" fontSize={10} tickLine={false} axisLine={false} />
+                    <Tooltip cursor={{ fill: 'rgba(241, 245, 249, 0.5)' }} contentStyle={{ borderRadius: '8px', fontSize: '11px', fontWeight: 'bold' }} />
+                    <Bar dataKey="value" name="Invoices Count" radius={[8, 8, 0, 0]} maxBarSize={45}>
+                      {stats.statusData.map((entry, index) => (
+                        <Cell key={`cell-${index}`} fill={entry.color} />
+                      ))}
+                    </Bar>
+                  </BarChart>
+                </ResponsiveContainer>
+              </div>
             </div>
           )}
-      </div>
-      <InvoicesTable 
-        invoices={limit ? nonTemplateInvoices.slice(0, limit) : paginatedInvoices} 
-        clients={clients}
-        onViewInvoice={onViewInvoice}
-        onEditInvoice={onEditInvoice}
-        onDeleteInvoice={onDeleteInvoice}
-        sortKey={sortKey}
-        sortDirection={sortDirection}
-        onSort={handleSort}
-      />
-      {!limit && totalPages > 1 && (
-        <div className="p-4 border-t flex justify-center items-center space-x-2">
-            <button
-                onClick={() => handlePageChange(currentPage - 1)}
-                disabled={currentPage === 1}
-                className="px-3 py-1 bg-gray-200 text-gray-700 rounded-md hover:bg-gray-300 disabled:opacity-50 disabled:cursor-not-allowed"
-            >
-                Previous
-            </button>
-            {[...Array(totalPages)].map((_, index) => (
-                <button
-                    key={index}
-                    onClick={() => handlePageChange(index + 1)}
-                    className={`px-3 py-1 rounded-md ${currentPage === index + 1 ? 'bg-primary-600 text-white' : 'bg-gray-200 text-gray-700 hover:bg-gray-300'}`}
-                >
-                    {index + 1}
-                </button>
-            ))}
-            <button
-                onClick={() => handlePageChange(currentPage + 1)}
-                disabled={currentPage === totalPages}
-                className="px-3 py-1 bg-gray-200 text-gray-700 rounded-md hover:bg-gray-300 disabled:opacity-50 disabled:cursor-not-allowed"
-            >
-                Next
-            </button>
-        </div>
+        </>
       )}
+
+      <div className="bg-white rounded-xl shadow-md overflow-hidden">
+        <div className="p-4 border-b flex flex-col md:flex-row justify-between items-center space-y-3 md:space-y-0 md:space-x-4">
+            <h2 className="text-xl font-semibold">
+              {limit ? 'Recent Documents' : 'Full Registry'}
+            </h2>
+            {!limit && ( 
+              <div className="flex flex-col md:flex-row items-center space-y-3 md:space-y-0 md:space-x-4 w-full md:w-auto">
+                  <div className="relative w-full md:w-64">
+                      <div className="absolute inset-y-0 left-0 flex items-center pl-3 pointer-events-none">
+                          <Icon name="search" className="w-5 h-5 text-gray-400" />
+                      </div>
+                      <input
+                          type="text"
+                          placeholder="Search IDs, Clients..."
+                          value={searchTerm}
+                          onChange={(e) => { setSearchTerm(e.target.value); setCurrentPage(1); }}
+                          className="block w-full pl-10 pr-3 py-2 border border-gray-300 rounded-md leading-5 bg-white placeholder-gray-500 focus:outline-none focus:ring-primary-500 focus:border-primary-500 sm:text-sm"
+                      />
+                  </div>
+              </div>
+            )}
+        </div>
+        <InvoicesTable 
+          invoices={limit ? nonTemplateInvoices.slice(0, limit) : paginatedInvoices} 
+          clients={clients}
+          onViewInvoice={onViewInvoice}
+          onEditInvoice={onEditInvoice}
+          onDeleteInvoice={onDeleteInvoice}
+          sortKey={sortKey}
+          sortDirection={sortDirection}
+          onSort={handleSort}
+        />
+        {!limit && totalPages > 1 && (
+          <div className="p-4 border-t flex justify-center items-center space-x-2">
+              <button
+                  onClick={() => handlePageChange(currentPage - 1)}
+                  disabled={currentPage === 1}
+                  className="px-3 py-1 bg-gray-200 text-gray-700 rounded-md hover:bg-gray-300 disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                  Previous
+              </button>
+              {[...Array(totalPages)].map((_, index) => (
+                  <button
+                      key={index}
+                      onClick={() => handlePageChange(index + 1)}
+                      className={`px-3 py-1 rounded-md ${currentPage === index + 1 ? 'bg-primary-600 text-white' : 'bg-gray-200 text-gray-700 hover:bg-gray-300'}`}
+                  >
+                      {index + 1}
+                  </button>
+              ))}
+              <button
+                  onClick={() => handlePageChange(currentPage + 1)}
+                  disabled={currentPage === totalPages}
+                  className="px-3 py-1 bg-gray-200 text-gray-700 rounded-md hover:bg-gray-300 disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                  Next
+              </button>
+          </div>
+        )}
+      </div>
     </div>
   );
 };

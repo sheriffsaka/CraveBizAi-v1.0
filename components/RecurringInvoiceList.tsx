@@ -3,6 +3,7 @@ import React, { useState, useMemo } from 'react';
 import { Invoice, Client, InvoiceFrequency } from '../types';
 import InvoiceStatusBadge from './InvoiceStatusBadge';
 import Icon from './common/Icon';
+import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, Cell } from 'recharts';
 
 interface RecurringInvoiceListProps {
   invoices: Invoice[]; // These should already be filtered to be isRecurringTemplate: true
@@ -188,62 +189,172 @@ const RecurringInvoiceList: React.FC<RecurringInvoiceListProps> = ({ invoices, c
     }
   };
 
+  const stats = useMemo(() => {
+    let totalValue = 0;
+    let activeCount = 0;
+    let draftCount = 0;
+    let overdueCount = 0;
+    const frequencies: Record<string, { count: number; total: number }> = {
+      weekly: { count: 0, total: 0 },
+      monthly: { count: 0, total: 0 },
+      quarterly: { count: 0, total: 0 },
+      yearly: { count: 0, total: 0 }
+    };
+
+    invoices.forEach(inv => {
+      totalValue += inv.total;
+      if (inv.status === 'Paid' || inv.status === 'Sent') {
+        activeCount++;
+      } else if (inv.status === 'Draft') {
+        draftCount++;
+      } else {
+        overdueCount++;
+      }
+
+      const freq = inv.frequency?.toLowerCase() || 'monthly';
+      if (frequencies[freq]) {
+        frequencies[freq].count++;
+        frequencies[freq].total += inv.total;
+      } else {
+        frequencies[freq] = { count: 1, total: inv.total };
+      }
+    });
+
+    const frequencyData = Object.entries(frequencies).map(([name, data]) => ({
+      name: name.charAt(0).toUpperCase() + name.slice(1),
+      count: data.count,
+      value: data.total,
+      color: name === 'monthly' ? '#3B82F6' : name === 'weekly' ? '#10B981' : name === 'quarterly' ? '#F59E0B' : '#8B5CF6'
+    })).filter(d => d.count > 0);
+
+    return {
+      totalTemplates: invoices.length,
+      totalValue,
+      activeCount,
+      draftCount,
+      frequencyData
+    };
+  }, [invoices]);
+
   return (
-    <div className="bg-white rounded-xl shadow-md overflow-hidden">
-      <div className="p-4 border-b flex flex-col md:flex-row justify-between items-center space-y-3 md:space-y-0 md:space-x-4">
-          <h2 className="text-xl font-semibold">Recurring Invoices</h2>
-          <div className="flex flex-col md:flex-row items-center space-y-3 md:space-y-0 md:space-x-4 w-full md:w-auto">
-              <div className="relative w-full md:w-64">
-                  <div className="absolute inset-y-0 left-0 flex items-center pl-3 pointer-events-none">
-                      <Icon name="search" className="w-5 h-5 text-gray-400" />
-                  </div>
-                  <input
-                      type="text"
-                      placeholder="Search templates..."
-                      value={searchTerm}
-                      onChange={(e) => { setSearchTerm(e.target.value); setCurrentPage(1); }}
-                      className="block w-full pl-10 pr-3 py-2 border border-gray-300 rounded-md leading-5 bg-white placeholder-gray-500 focus:outline-none focus:ring-primary-500 focus:border-primary-500 sm:text-sm"
-                  />
-              </div>
-          </div>
+    <div className="space-y-6">
+      {/* Summary Cards */}
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+        <div className="bg-white p-5 rounded-2xl shadow-sm border border-gray-100">
+          <p className="text-3xs font-black text-gray-400 uppercase tracking-widest mb-1">Active Templates</p>
+          <h3 className="text-2xl font-black text-gray-800">{stats.totalTemplates}</h3>
+          <p className="text-4xs text-gray-400 mt-1">Total active subscriptions</p>
+        </div>
+        <div className="bg-white p-5 rounded-2xl shadow-sm border border-gray-100">
+          <p className="text-3xs font-black text-primary-500 uppercase tracking-widest mb-1">Contract Value</p>
+          <h3 className="text-2xl font-black text-primary-600">₦{stats.totalValue.toLocaleString()}</h3>
+          <p className="text-4xs text-primary-400 mt-1">Total value per cycle</p>
+        </div>
+        <div className="bg-white p-5 rounded-2xl shadow-sm border border-gray-100">
+          <p className="text-3xs font-black text-green-600 uppercase tracking-widest mb-1">Sending Status</p>
+          <h3 className="text-2xl font-black text-green-700">{stats.activeCount}</h3>
+          <p className="text-4xs text-green-500 mt-1">Templates active / sending</p>
+        </div>
+        <div className="bg-white p-5 rounded-2xl shadow-sm border border-gray-100">
+          <p className="text-3xs font-black text-amber-500 uppercase tracking-widest mb-1">Draft Templates</p>
+          <h3 className="text-2xl font-black text-amber-600">{stats.draftCount}</h3>
+          <p className="text-4xs text-amber-400 mt-1">Awaiting setup</p>
+        </div>
       </div>
-      <RecurringInvoicesTable 
-        invoices={paginatedInvoices}
-        clients={clients}
-        onViewInvoice={onViewInvoice}
-        onEditInvoice={onEditInvoice}
-        onDeleteInvoice={onDeleteInvoice}
-        sortKey={sortKey}
-        sortDirection={sortDirection}
-        onSort={handleSort}
-      />
-      {totalPages > 1 && (
-        <div className="p-4 border-t flex justify-center items-center space-x-2">
-            <button
-                onClick={() => handlePageChange(currentPage - 1)}
-                disabled={currentPage === 1}
-                className="px-3 py-1 bg-gray-200 text-gray-700 rounded-md hover:bg-gray-300 disabled:opacity-50 disabled:cursor-not-allowed"
-            >
-                Previous
-            </button>
-            {[...Array(totalPages)].map((_, index) => (
-                <button
-                    key={index}
-                    onClick={() => handlePageChange(index + 1)}
-                    className={`px-3 py-1 rounded-md ${currentPage === index + 1 ? 'bg-primary-600 text-white' : 'bg-gray-200 text-gray-700 hover:bg-gray-300'}`}
-                >
-                    {index + 1}
-                </button>
-            ))}
-            <button
-                onClick={() => handlePageChange(currentPage + 1)}
-                disabled={currentPage === totalPages}
-                className="px-3 py-1 bg-gray-200 text-gray-700 rounded-md hover:bg-gray-300 disabled:opacity-50 disabled:cursor-not-allowed"
-            >
-                Next
-            </button>
+
+      {/* Frequency Distribution Chart */}
+      {invoices.length > 0 && stats.frequencyData.length > 0 && (
+        <div className="bg-white p-6 rounded-2xl border border-gray-100 shadow-sm grid grid-cols-1 md:grid-cols-12 gap-6 items-center">
+          <div className="md:col-span-4">
+            <h4 className="text-sm font-black text-gray-700 uppercase tracking-wider mb-2">Template Frequency Breakdown</h4>
+            <p className="text-xs text-gray-400 leading-relaxed mb-4">
+              Overview of contract value distributions per billing cadence. Helps project periodic revenue pipelines.
+            </p>
+            <div className="space-y-2">
+              {stats.frequencyData.map(freq => (
+                <div key={freq.name} className="flex justify-between items-center text-xs">
+                  <div className="flex items-center gap-2">
+                    <span className="w-2.5 h-2.5 rounded-full" style={{ backgroundColor: freq.color }}></span>
+                    <span className="font-bold text-gray-600">{freq.name} ({freq.count})</span>
+                  </div>
+                  <span className="font-black text-gray-800">₦{freq.value.toLocaleString()}</span>
+                </div>
+              ))}
+            </div>
+          </div>
+          <div className="md:col-span-8 h-48">
+            <ResponsiveContainer width="100%" height="100%">
+              <BarChart data={stats.frequencyData} margin={{ top: 10, right: 10, left: -10, bottom: 0 }}>
+                <XAxis dataKey="name" stroke="#94A3B8" fontSize={10} tickLine={false} axisLine={false} />
+                <YAxis stroke="#94A3B8" fontSize={10} tickLine={false} axisLine={false} />
+                <Tooltip cursor={{ fill: 'rgba(241, 245, 249, 0.5)' }} formatter={(value: number) => [`₦${value.toLocaleString()}`, 'Total Value']} contentStyle={{ borderRadius: '8px', fontSize: '11px', fontWeight: 'bold' }} />
+                <Bar dataKey="value" name="Projected Cycle Income" radius={[8, 8, 0, 0]} maxBarSize={45}>
+                  {stats.frequencyData.map((entry, index) => (
+                    <Cell key={`cell-${index}`} fill={entry.color} />
+                  ))}
+                </Bar>
+              </BarChart>
+            </ResponsiveContainer>
+          </div>
         </div>
       )}
+
+      <div className="bg-white rounded-xl shadow-md overflow-hidden">
+        <div className="p-4 border-b flex flex-col md:flex-row justify-between items-center space-y-3 md:space-y-0 md:space-x-4">
+            <h2 className="text-xl font-semibold">Recurring Invoices</h2>
+            <div className="flex flex-col md:flex-row items-center space-y-3 md:space-y-0 md:space-x-4 w-full md:w-auto">
+                <div className="relative w-full md:w-64">
+                    <div className="absolute inset-y-0 left-0 flex items-center pl-3 pointer-events-none">
+                        <Icon name="search" className="w-5 h-5 text-gray-400" />
+                    </div>
+                    <input
+                        type="text"
+                        placeholder="Search templates..."
+                        value={searchTerm}
+                        onChange={(e) => { setSearchTerm(e.target.value); setCurrentPage(1); }}
+                        className="block w-full pl-10 pr-3 py-2 border border-gray-300 rounded-md leading-5 bg-white placeholder-gray-500 focus:outline-none focus:ring-primary-500 focus:border-primary-500 sm:text-sm"
+                    />
+                </div>
+            </div>
+        </div>
+        <RecurringInvoicesTable 
+          invoices={paginatedInvoices}
+          clients={clients}
+          onViewInvoice={onViewInvoice}
+          onEditInvoice={onEditInvoice}
+          onDeleteInvoice={onDeleteInvoice}
+          sortKey={sortKey}
+          sortDirection={sortDirection}
+          onSort={handleSort}
+        />
+        {totalPages > 1 && (
+          <div className="p-4 border-t flex justify-center items-center space-x-2">
+              <button
+                  onClick={() => handlePageChange(currentPage - 1)}
+                  disabled={currentPage === 1}
+                  className="px-3 py-1 bg-gray-200 text-gray-700 rounded-md hover:bg-gray-300 disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                  Previous
+              </button>
+              {[...Array(totalPages)].map((_, index) => (
+                  <button
+                      key={index}
+                      onClick={() => handlePageChange(index + 1)}
+                      className={`px-3 py-1 rounded-md ${currentPage === index + 1 ? 'bg-primary-600 text-white' : 'bg-gray-200 text-gray-700 hover:bg-gray-300'}`}
+                  >
+                      {index + 1}
+                  </button>
+              ))}
+              <button
+                  onClick={() => handlePageChange(currentPage + 1)}
+                  disabled={currentPage === totalPages}
+                  className="px-3 py-1 bg-gray-200 text-gray-700 rounded-md hover:bg-gray-300 disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                  Next
+              </button>
+          </div>
+        )}
+      </div>
     </div>
   );
 };

@@ -648,7 +648,7 @@ export default function App() {
           auditLogs={auditLogs}
           onTriggerAuditLog={triggerAuditLog}
       />;
-      case 'clients': return <ClientList companyId={activeTenantId!} clients={clients} onAddClient={async (c) => { 
+      case 'clients': return <ClientList companyId={activeTenantId!} clients={clients} invoices={invoices} onAddClient={async (c) => { 
           try {
               await api.createClient(c); 
               await forceSyncData(activeTenantId!); 
@@ -663,7 +663,7 @@ export default function App() {
               setSyncError(stringifyError(e));
           }
       }} />;
-      case 'services': return <ServiceList companyId={activeTenantId!} services={services} onAddService={async (s) => { 
+      case 'services': return <ServiceList companyId={activeTenantId!} services={services} invoices={invoices} onAddService={async (s) => { 
           try {
               await api.createService(s); 
               await forceSyncData(activeTenantId!); 
@@ -719,7 +719,7 @@ export default function App() {
             }}
           />;
       }
-      case 'projects': return <ProjectManagement companyId={activeTenantId!} projects={projects} clients={clients} generatedDocs={generatedDocs} invoices={invoices} onAddProject={handleAddProject} onUpdateProject={handleUpdateProject} onDeleteProject={handleDeleteProject} onRecordPayment={handleRecordPayment} onSendReceipt={handleSendReceipt} onNavigateTo={(page, props) => {
+      case 'projects': return <ProjectManagement companyId={activeTenantId!} projects={projects} clients={clients} generatedDocs={generatedDocs} invoices={invoices} auditLogs={auditLogs} onAddProject={handleAddProject} onUpdateProject={handleUpdateProject} onDeleteProject={handleDeleteProject} onRecordPayment={handleRecordPayment} onSendReceipt={handleSendReceipt} onNavigateTo={(page, props) => {
         if (page === 'create-invoice' && props?.prefillProject) {
           const prefillCli = props.prefillClient;
           const prefillProj = props.prefillProject;
