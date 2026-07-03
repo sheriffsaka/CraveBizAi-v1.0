@@ -188,7 +188,7 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ allTenantData, companie
           <StatCard title="Total Companies" value={companies.length.toString()} icon={<AdminDashboardIcon d="M3 21h18M3 7v14M21 7v14M6 21V3h12v18M9 7h1m-1 4h1m-1 4h1m4-12h1m-1 4h1m-1 4h1" />} />
           <StatCard title="Total Users" value={users.length.toString()} icon={<AdminDashboardIcon d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2M9 7a4 4 0 1 0 0-8 4 4 0 0 0 0 8Z" />} />
           <StatCard title="Total Invoices" value={stats.totalInvoices.toString()} icon={<AdminDashboardIcon d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />} />
-          <StatCard title="Platform Revenue" value={`₦${stats.totalRevenue.toLocaleString()}`} icon={<AdminDashboardIcon d="M12 1v22M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6" />} />
+          <StatCard title="Transaction Volume" value={`₦${stats.totalRevenue.toLocaleString()}`} icon={<AdminDashboardIcon d="M12 1v22M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6" />} />
         </div>
 
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
