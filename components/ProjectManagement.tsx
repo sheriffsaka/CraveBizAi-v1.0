@@ -1,5 +1,5 @@
 import React, { useState, useMemo } from 'react';
-import { Project, ProjectStatus, Client, StoredGeneratedDoc } from '../types';
+import { Project, ProjectStatus, Client, StoredGeneratedDoc, Invoice } from '../types';
 import { motion, AnimatePresence } from 'motion/react';
 import Icon from './common/Icon';
 
@@ -8,6 +8,7 @@ interface ProjectManagementProps {
   projects: Project[];
   clients: Client[];
   generatedDocs?: StoredGeneratedDoc[];
+  invoices?: Invoice[];
   onAddProject: (project: Omit<Project, 'id' | 'createdAt'>) => void;
   onUpdateProject: (project: Project) => void;
   onDeleteProject: (companyId: string, projectId: string) => void;
@@ -43,6 +44,7 @@ export default function ProjectManagement({
   projects,
   clients,
   generatedDocs = [],
+  invoices = [],
   onAddProject,
   onUpdateProject,
   onDeleteProject,
@@ -71,6 +73,11 @@ export default function ProjectManagement({
     if (!selectedProject) return [];
     return generatedDocs.filter(d => d.projectId === selectedProject.id);
   }, [generatedDocs, selectedProject]);
+
+  const projectInvoices = useMemo(() => {
+    if (!selectedProject) return [];
+    return invoices.filter(i => i.projectId === selectedProject.id);
+  }, [invoices, selectedProject]);
 
   const openAddModal = () => {
     setFormName('');
@@ -414,6 +421,65 @@ export default function ProjectManagement({
                                 </div>
                               );
                             })}
+                          </div>
+                        )}
+                      </div>
+                    )}
+
+                    {/* Live Invoice Tracking for Invoice Stage */}
+                    {selectedProject.status === 'Invoice' && (
+                      <div className="bg-white p-4 rounded-xl border border-gray-200/60 space-y-3 shadow-sm">
+                        <div className="flex justify-between items-center">
+                          <span className="text-[10px] font-black text-gray-700 uppercase tracking-widest flex items-center gap-1.5">
+                            <span className="w-2.5 h-2.5 rounded-full bg-amber-500 animate-pulse"></span>
+                            Live Invoice Tracker
+                          </span>
+                          {projectInvoices.length > 0 && (
+                            <span className="text-[9px] font-black uppercase px-2 py-0.5 bg-amber-50 text-amber-700 rounded-full border border-amber-100">
+                              {projectInvoices.length} Invoice(s)
+                            </span>
+                          )}
+                        </div>
+                        
+                        {projectInvoices.length === 0 ? (
+                          <div className="text-[11px] text-gray-500 bg-gray-50 p-3 rounded-lg border border-dashed border-gray-200 leading-relaxed">
+                            No billing record is currently linked to this project. Click the button below to prefill and draft a customized invoice for this client.
+                          </div>
+                        ) : (
+                          <div className="space-y-3">
+                            {projectInvoices.map((inv) => (
+                              <div key={inv.id} className="text-xs bg-gray-50/50 p-3 rounded-lg border border-gray-150 space-y-2">
+                                <div className="flex justify-between items-start gap-2">
+                                  <div>
+                                    <div className="font-bold text-gray-800 truncate max-w-[150px]">{inv.invoiceNumber}</div>
+                                    <div className="text-[9px] text-gray-400 font-bold uppercase tracking-wider mt-0.5">
+                                      Due: {new Date(inv.dueDate).toLocaleDateString()}
+                                    </div>
+                                  </div>
+                                  <span className={`text-[9px] px-1.5 py-0.5 rounded-md font-black uppercase tracking-wider border ${
+                                    inv.status === 'paid' ? 'bg-emerald-100 text-emerald-800 border-emerald-200' :
+                                    inv.status === 'sent' ? 'bg-indigo-100 text-indigo-800 border-indigo-200 animate-pulse' :
+                                    inv.status === 'overdue' ? 'bg-rose-100 text-rose-800 border-rose-200' :
+                                    'bg-gray-100 text-gray-700 border-gray-200'
+                                  }`}>
+                                    {inv.status}
+                                  </span>
+                                </div>
+                                <div className="flex justify-between items-center pt-2 border-t border-gray-150">
+                                  <span className="text-[10px] text-gray-500">Invoice Total:</span>
+                                  <span className="font-extrabold text-gray-800">
+                                    {new Intl.NumberFormat('en-NG', { style: 'currency', currency: 'NGN' }).format(inv.total)}
+                                  </span>
+                                </div>
+                                
+                                {inv.status === 'paid' && (
+                                  <div className="mt-1 bg-emerald-50/80 text-emerald-700 p-2 rounded border border-emerald-100 text-[10px] font-medium flex items-center gap-1.5">
+                                    <span>🎉</span>
+                                    <span>Payment Cleared! Ready to advance to the Next Phase.</span>
+                                  </div>
+                                )}
+                              </div>
+                            ))}
                           </div>
                         )}
                       </div>

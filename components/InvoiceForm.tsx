@@ -30,6 +30,7 @@ function calculateNextRecurrenceDate(currentDate: Date, frequency: InvoiceFreque
 
 const InvoiceForm: React.FC<InvoiceFormProps> = ({ initialInvoice, clients, services, onSave, onCancel, company }) => {
   const [clientId, setClientId] = useState<string>('');
+  const [projectId, setProjectId] = useState<string | undefined>(undefined);
   const [issueDate, setIssueDate] = useState<string>(new Date().toISOString().split('T')[0]);
   const [dueDate, setDueDate] = useState<string>('');
   const [items, setItems] = useState<InvoiceItem[]>([{ 
@@ -60,6 +61,7 @@ const InvoiceForm: React.FC<InvoiceFormProps> = ({ initialInvoice, clients, serv
         try {
           const draft = JSON.parse(savedDraft);
           if (draft.clientId) setClientId(draft.clientId);
+          if (draft.projectId) setProjectId(draft.projectId);
           if (draft.issueDate) setIssueDate(draft.issueDate);
           if (draft.dueDate) setDueDate(draft.dueDate);
           if (draft.items) setItems(draft.items);
@@ -81,19 +83,20 @@ const InvoiceForm: React.FC<InvoiceFormProps> = ({ initialInvoice, clients, serv
   useEffect(() => {
     if (!initialInvoice) {
       const draft = {
-        clientId, issueDate, dueDate, items, selectedBankAccountId,
+        clientId, projectId, issueDate, dueDate, items, selectedBankAccountId,
         manualBankName, manualAccountName, manualAccountNumber,
         paymentTerms, discount, frequency, nextRecurrenceDate
       };
       localStorage.setItem('cravebiz_invoice_draft', JSON.stringify(draft));
     }
-  }, [clientId, issueDate, dueDate, items, selectedBankAccountId, manualBankName, manualAccountName, manualAccountNumber, paymentTerms, discount, frequency, nextRecurrenceDate, initialInvoice]);
+  }, [clientId, projectId, issueDate, dueDate, items, selectedBankAccountId, manualBankName, manualAccountName, manualAccountNumber, paymentTerms, discount, frequency, nextRecurrenceDate, initialInvoice]);
 
   const clearDraft = () => localStorage.removeItem('cravebiz_invoice_draft');
 
   useEffect(() => {
     if (initialInvoice) {
       setClientId(initialInvoice.clientId);
+      setProjectId(initialInvoice.projectId);
       setIssueDate(initialInvoice.issueDate);
       setDueDate(initialInvoice.dueDate);
       setItems(initialInvoice.items);
@@ -107,6 +110,7 @@ const InvoiceForm: React.FC<InvoiceFormProps> = ({ initialInvoice, clients, serv
       setNextRecurrenceDate(initialInvoice.nextRecurrenceDate || '');
       setIsLoadingDescription(initialInvoice.items.map(() => false));
     } else {
+      setProjectId(undefined);
         if (company?.bankAccounts && company.bankAccounts.length > 0) {
             setSelectedBankAccountId(company.bankAccounts[0].id);
         } else {
@@ -173,7 +177,9 @@ const InvoiceForm: React.FC<InvoiceFormProps> = ({ initialInvoice, clients, serv
     id: initialInvoice?.id || 'preview',
     companyId: company?.id || '',
     invoiceNumber: initialInvoice?.invoiceNumber || `PREVIEW`,
-    clientId, issueDate, dueDate, items, total, 
+    clientId, 
+    projectId,
+    issueDate, dueDate, items, total, 
     discount,
     amountPaid: initialInvoice?.amountPaid || 0, 
     status,

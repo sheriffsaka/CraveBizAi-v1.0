@@ -84,6 +84,7 @@ class CraveBizApi {
     
     return (data || []).map(inv => ({
       id: inv.id, companyId: inv.company_id, invoiceNumber: inv.invoice_number, clientId: inv.client_id, 
+      projectId: inv.project_id,
       issueDate: inv.issue_date, dueDate: inv.due_date, total: Number(inv.total), status: inv.status as InvoiceStatus,
       discount: Number(inv.discount || 0),
       amountPaid: Number(inv.amount_paid || 0), 
@@ -179,6 +180,7 @@ class CraveBizApi {
     
     return (data || []).map(inv => ({
       id: inv.id, companyId: inv.company_id, invoiceNumber: inv.invoice_number, clientId: inv.client_id, 
+      projectId: inv.project_id,
       issueDate: inv.issue_date, dueDate: inv.due_date, total: Number(inv.total), status: inv.status as InvoiceStatus,
       discount: Number(inv.discount || 0),
       amountPaid: Number(inv.amount_paid || 0), 
@@ -207,6 +209,7 @@ class CraveBizApi {
         company_id: companyId,
         invoice_number: invNum,
         client_id: invoice.clientId,
+        project_id: invoice.projectId || null,
         issue_date: invoice.issueDate,
         due_date: invoice.dueDate,
         total: invoice.total,
@@ -281,6 +284,7 @@ class CraveBizApi {
   async updateInvoice(invoice: Invoice): Promise<void> {
     const fullPayload: any = {
         client_id: invoice.clientId,
+        project_id: invoice.projectId || null,
         issue_date: invoice.issueDate,
         due_date: invoice.dueDate,
         total: invoice.total,

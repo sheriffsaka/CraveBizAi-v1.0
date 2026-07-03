@@ -694,7 +694,7 @@ export default function App() {
             }}
           />;
       }
-      case 'projects': return <ProjectManagement companyId={activeTenantId!} projects={projects} clients={clients} generatedDocs={generatedDocs} onAddProject={handleAddProject} onUpdateProject={handleUpdateProject} onDeleteProject={handleDeleteProject} onNavigateTo={(page, props) => {
+      case 'projects': return <ProjectManagement companyId={activeTenantId!} projects={projects} clients={clients} generatedDocs={generatedDocs} invoices={invoices} onAddProject={handleAddProject} onUpdateProject={handleUpdateProject} onDeleteProject={handleDeleteProject} onNavigateTo={(page, props) => {
         if (page === 'create-invoice' && props?.prefillProject) {
           const prefillCli = props.prefillClient;
           const prefillProj = props.prefillProject;
