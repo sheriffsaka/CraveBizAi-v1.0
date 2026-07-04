@@ -245,19 +245,43 @@ const Reports: React.FC<ReportsProps> = ({invoices, clients, services}) => {
         <p className="text-gray-500 mt-1 font-medium">Deep financial intelligence gathered from SME operations.</p>
       </div>
 
-      <div className="flex items-center space-x-4 mb-6 print-hidden">
-        <label htmlFor="dateRange" className="text-[10px] font-black text-gray-400 uppercase tracking-widest">Temporal Context:</label>
-        <select
-          id="dateRange"
-          value={dateRange}
-          onChange={(e) => setDateRange(e.target.value as DateRange)}
-          className="px-4 py-2 border-2 border-gray-100 rounded-xl focus:border-primary-500 outline-none text-xs font-black uppercase tracking-widest bg-white"
+      <div className="flex items-center justify-between flex-wrap gap-4 mb-6 print-hidden">
+        <div className="flex items-center space-x-4">
+          <label htmlFor="dateRange" className="text-[10px] font-black text-gray-400 uppercase tracking-widest">Temporal Context:</label>
+          <select
+            id="dateRange"
+            value={dateRange}
+            onChange={(e) => setDateRange(e.target.value as DateRange)}
+            className="px-4 py-2 border-2 border-gray-100 rounded-xl focus:border-primary-500 outline-none text-xs font-black uppercase tracking-widest bg-white"
+          >
+            <option value="all_time">Archive</option>
+            <option value="last_30_days">Last 30 Days</option>
+            <option value="this_quarter">Current Quarter</option>
+            <option value="this_year">Current Fiscal Year</option>
+          </select>
+        </div>
+
+        <button
+          id="export-ledger-btn"
+          onClick={() => {
+            const csvData = filteredInvoices.map(inv => ({
+              id: inv.id,
+              clientName: clients.find(c => c.id === inv.clientId)?.companyName || 'Unknown',
+              total: inv.total,
+              status: inv.status,
+              issueDate: inv.issueDate,
+              dueDate: inv.dueDate,
+            }));
+            const csvString = convertToCsv(csvData, ['id', 'clientName', 'total', 'status', 'issueDate', 'dueDate']);
+            downloadCsv(csvString, `CraveBiZ_Financials_${dateRange}_${Date.now()}.csv`);
+          }}
+          className="bg-slate-900 text-white hover:bg-slate-850 px-5 py-2.5 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all shadow-md flex items-center gap-2 cursor-pointer"
         >
-          <option value="all_time">Archive</option>
-          <option value="last_30_days">Last 30 Days</option>
-          <option value="this_quarter">Current Quarter</option>
-          <option value="this_year">Current Fiscal Year</option>
-        </select>
+          <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
+          </svg>
+          Export Data Ledger (CSV)
+        </button>
       </div>
 
       <div className="bg-white p-8 rounded-[2.5rem] shadow-2xl border border-gray-100 transition-shadow">
@@ -276,7 +300,7 @@ const Reports: React.FC<ReportsProps> = ({invoices, clients, services}) => {
                   disabled={isLoadingReport}
               ></textarea>
               <div className="flex justify-end">
-                  <button type="submit" className="bg-primary-600 text-white px-10 py-4 rounded-2xl font-black uppercase tracking-widest text-xs shadow-xl hover:bg-primary-700 transition-all disabled:bg-gray-300" disabled={isLoadingReport || !reportQuery.trim()}>
+                  <button type="submit" className="bg-primary-600 text-white px-10 py-4 rounded-2xl font-black uppercase tracking-widest text-xs shadow-xl hover:bg-primary-700 transition-all disabled:bg-gray-300 cursor-pointer" disabled={isLoadingReport || !reportQuery.trim()}>
                       {isLoadingReport ? "Analyzing..." : "Query Database"}
                   </button>
               </div>
@@ -291,7 +315,7 @@ const Reports: React.FC<ReportsProps> = ({invoices, clients, services}) => {
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
         <StatCard title="Computed Revenue" value={`₦${totalRevenue.toLocaleString()}`} icon={<ReportsIcon d="M12 2v20M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6" />} />
         <StatCard title="Audit Count" value={totalInvoicesOverall.toString()} icon={<ReportsIcon d="M15 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7Z" />} />
-        <StatCard title="Paid Units" value={paidInvoicesCount.toString()} icon={<ReportsIcon d="M22 11.08V12a10 10 0 1 1-5.93-9.14" />} />
+        <StatCard title="Average Payment Term" value={`${averagePaymentTermDays} Days`} icon={<ReportsIcon d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />} />
         <StatCard title="Client Nodes" value={clients.length.toString()} icon={<ReportsIcon d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2" />} />
       </div>
 
@@ -326,6 +350,119 @@ const Reports: React.FC<ReportsProps> = ({invoices, clients, services}) => {
                 </PieChart>
             </ResponsiveContainer>
            </div>
+        </div>
+      </div>
+
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
+        <div className="bg-white p-8 rounded-[2.5rem] shadow-2xl border border-gray-100">
+          <h3 className="text-xl font-black text-gray-800 mb-6 uppercase tracking-tighter">Client Lifetime Value (LTV)</h3>
+          {clientLifetimeValue.length > 0 ? (
+            <div style={{ width: '100%', height: 300 }}>
+              <ResponsiveContainer>
+                <BarChart data={clientLifetimeValue.slice(0, 5)} layout="vertical" margin={{ top: 5, right: 30, left: 40, bottom: 5 }}>
+                  <CartesianGrid strokeDasharray="3 3" vertical={true} horizontal={false} stroke="#f3f4f6" />
+                  <XAxis type="number" tickFormatter={(v) => `₦${(v/1000).toFixed(0)}k`} tick={{fill: '#9ca3af', fontSize: 10, fontWeight: 900}} axisLine={false} tickLine={false} />
+                  <YAxis dataKey="companyName" type="category" tick={{fill: '#4b5563', fontSize: 10, fontWeight: 900}} axisLine={false} tickLine={false} width={120} />
+                  <Tooltip formatter={(value: number) => [`₦${value.toLocaleString()}`, "LTV"]} />
+                  <Bar dataKey="totalRevenue" fill="#10b981" radius={[0, 4, 4, 0]} barSize={20} />
+                </BarChart>
+              </ResponsiveContainer>
+            </div>
+          ) : (
+            <div className="h-[300px] flex items-center justify-center text-gray-400 italic font-bold">No Client Transactions Located</div>
+          )}
+        </div>
+
+        <div className="bg-white p-8 rounded-[2.5rem] shadow-2xl border border-gray-100">
+          <h3 className="text-xl font-black text-gray-800 mb-6 uppercase tracking-tighter">Service Revenue Contribution</h3>
+          {revenueByService.length > 0 ? (
+            <div style={{ width: '100%', height: 300 }}>
+              <ResponsiveContainer>
+                <PieChart>
+                  <Pie data={revenueByService} cx="50%" cy="50%" innerRadius={60} outerRadius={80} paddingAngle={5} fill="#8884d8" dataKey="revenue" nameKey="name" label={(entry) => `${entry.name}: ₦${(entry.value/1000).toFixed(0)}k`}>
+                    {revenueByService.map((entry, index) => (
+                      <Cell key={`cell-${index}`} fill={['#6366f1', '#f59e0b', '#ec4899', '#8b5cf6', '#14b8a6'][index % 5]} />
+                    ))}
+                  </Pie>
+                  <Tooltip formatter={(value: number) => `₦${value.toLocaleString()}`} />
+                  <Legend />
+                </PieChart>
+              </ResponsiveContainer>
+            </div>
+          ) : (
+            <div className="h-[300px] flex items-center justify-center text-gray-400 italic font-bold">No Service Revenue History</div>
+          )}
+        </div>
+      </div>
+
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
+        <div className="bg-white p-8 rounded-[2.5rem] shadow-2xl border border-gray-100">
+          <h3 className="text-xl font-black text-gray-800 mb-6 uppercase tracking-tighter">Outstanding / Overdue Aging Bracket</h3>
+          <div style={{ width: '100%', height: 300 }}>
+            <ResponsiveContainer>
+              <BarChart data={overdueAgingData}>
+                <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f3f4f6" />
+                <XAxis dataKey="label" tick={{fill: '#9ca3af', fontSize: 10, fontWeight: 900}} axisLine={false} tickLine={false} />
+                <YAxis tickFormatter={(v) => `₦${(v/1000).toFixed(0)}k`} tick={{fill: '#9ca3af', fontSize: 10, fontWeight: 900}} axisLine={false} tickLine={false} />
+                <Tooltip formatter={(value: number) => [`₦${value.toLocaleString()}`, "Outstanding Amount"]} />
+                <Bar dataKey="amount" fill="#ef4444" radius={[4, 4, 0, 0]} />
+              </BarChart>
+            </ResponsiveContainer>
+          </div>
+        </div>
+
+        <div className="bg-white p-8 rounded-[2.5rem] shadow-2xl border border-gray-100 flex flex-col justify-between">
+          <div>
+            <h3 className="text-xl font-black text-gray-800 mb-6 uppercase tracking-tighter">Pipeline Conversion & Ticket Sizes</h3>
+            <div className="space-y-6">
+              <div>
+                <div className="flex justify-between items-center mb-1">
+                  <span className="text-xs font-black uppercase text-gray-500">Draft ➔ Dispatch Rate</span>
+                  <span className="text-xs font-black text-primary-600">{invoiceConversionRates.draftToSent.toFixed(1)}%</span>
+                </div>
+                <div className="w-full bg-gray-100 h-2.5 rounded-full overflow-hidden">
+                  <div className="bg-primary-600 h-full rounded-full transition-all duration-500" style={{ width: `${Math.min(100, invoiceConversionRates.draftToSent)}%` }}></div>
+                </div>
+              </div>
+
+              <div>
+                <div className="flex justify-between items-center mb-1">
+                  <span className="text-xs font-black uppercase text-gray-500">Dispatch ➔ Settlement Rate</span>
+                  <span className="text-xs font-black text-emerald-600">{invoiceConversionRates.sentToPaid.toFixed(1)}%</span>
+                </div>
+                <div className="w-full bg-gray-100 h-2.5 rounded-full overflow-hidden">
+                  <div className="bg-emerald-500 h-full rounded-full transition-all duration-500" style={{ width: `${Math.min(100, invoiceConversionRates.sentToPaid)}%` }}></div>
+                </div>
+              </div>
+
+              <div>
+                <div className="flex justify-between items-center mb-1">
+                  <span className="text-xs font-black uppercase text-gray-500">Global Ledger Pay-through Rate</span>
+                  <span className="text-xs font-black text-indigo-600">{invoiceConversionRates.totalPaidRate.toFixed(1)}%</span>
+                </div>
+                <div className="w-full bg-gray-100 h-2.5 rounded-full overflow-hidden">
+                  <div className="bg-indigo-600 h-full rounded-full transition-all duration-500" style={{ width: `${Math.min(100, invoiceConversionRates.totalPaidRate)}%` }}></div>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <div className="mt-8 pt-6 border-t border-gray-100">
+            <h4 className="text-xs font-black uppercase text-gray-400 tracking-wider mb-3">Average Invoice Ticket size</h4>
+            {averageInvoiceValueOverTime.length > 0 ? (
+              <div style={{ width: '100%', height: 120 }}>
+                <ResponsiveContainer>
+                  <LineChart data={averageInvoiceValueOverTime}>
+                    <XAxis dataKey="name" tick={{fill: '#9ca3af', fontSize: 8, fontWeight: 900}} axisLine={false} tickLine={false} />
+                    <Tooltip formatter={(value: number) => [`₦${value.toLocaleString()}`, "Avg Value"]} />
+                    <Line type="monotone" dataKey="avgValue" stroke="#6366f1" strokeWidth={3} dot={{ r: 4 }} activeDot={{ r: 6 }} />
+                  </LineChart>
+                </ResponsiveContainer>
+              </div>
+            ) : (
+              <span className="text-xs font-bold text-gray-400 italic">No historical timeline dataset.</span>
+            )}
+          </div>
         </div>
       </div>
     </div>
