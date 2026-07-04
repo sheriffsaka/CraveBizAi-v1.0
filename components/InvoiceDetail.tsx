@@ -22,7 +22,7 @@ interface InvoiceDetailProps {
   onSendReceipt: (invoiceId: string) => void;
 }
 
-const InvoiceDetail: React.FC<InvoiceDetailProps> = ({ invoice, client, services, company, onUpdateStatus, onViewPlainInvoice, onSendInvoice, onEditInvoice, onRecordPayment }) => {
+const InvoiceDetail: React.FC<InvoiceDetailProps> = ({ invoice, client, services, company, onUpdateStatus, onViewPlainInvoice, onSendInvoice, onEditInvoice, onRecordPayment, onGenerateReceipt, onSendReceipt }) => {
     const [invoiceSummary, setInvoiceSummary] = useState<string | null>(null);
     const [isLoadingSummary, setIsLoadingSummary] = useState(false);
     const [isSending, setIsSending] = useState(false);
@@ -120,7 +120,7 @@ ${company?.name || 'The Team'}`;
 
         {invoice.status === InvoiceStatus.Paid && (
           <button 
-              onClick={() => onViewPlainInvoice(invoice.id, 'print')} 
+              onClick={() => onGenerateReceipt(invoice.id)} 
               disabled={invoice.id === 'preview'} 
               className="px-6 py-2.5 bg-green-600 text-white rounded-xl font-black uppercase tracking-widest text-xs shadow-lg hover:bg-green-700 transition-all transform hover:-translate-y-0.5 disabled:bg-gray-400 flex items-center gap-2"
           >

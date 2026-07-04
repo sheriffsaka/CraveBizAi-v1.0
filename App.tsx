@@ -18,6 +18,7 @@ import UserProfileModal from './components/UserProfileModal';
 import PlainInvoiceDetail from './components/PlainInvoiceDetail';
 import RecurringInvoiceList from './components/RecurringInvoiceList';
 import SentReceiptsList from './components/SentReceiptsList';
+import ReceiptDetail from './components/ReceiptDetail';
 import AdminDashboard from './components/AdminDashboard';
 import DocumentTransformer from './components/DocumentTransformer';
 import PaymentIntelligence from './components/PaymentIntelligence';
@@ -568,7 +569,16 @@ export default function App() {
       }} />;
       case 'invoices': return <InvoiceList invoices={invoices} clients={clients} onViewInvoice={(id) => { setSelectedInvoiceId(id); navigateTo('invoice-detail'); }} onEditInvoice={handleEditInvoiceAction} onDeleteInvoice={handleDeleteInvoice} />;
       case 'recurring-invoices': return <RecurringInvoiceList invoices={invoices.filter(i => i.isRecurringTemplate)} clients={clients} onViewInvoice={(id) => { setSelectedInvoiceId(id); navigateTo('invoice-detail'); }} onEditInvoice={handleEditInvoiceAction} onDeleteInvoice={handleDeleteInvoice} />;
-      case 'sent-receipts': return <SentReceiptsList invoices={invoices.filter(i => i.isReceiptSent)} clients={clients} onViewInvoice={(id) => { setSelectedInvoiceId(id); navigateTo('invoice-detail'); }} onEditInvoice={handleEditInvoiceAction} />;
+      case 'sent-receipts': return <SentReceiptsList invoices={invoices.filter(i => i.isReceiptSent)} clients={clients} onViewInvoice={(id) => { setSelectedInvoiceId(id); navigateTo('receipt-detail'); }} onEditInvoice={handleEditInvoiceAction} />;
+      case 'receipt-detail': {
+        const inv = invoices.find(i => i.id === selectedInvoiceId);
+        if (!inv) return <div className="text-center py-20 italic text-gray-400">Document synchronized or unavailable.</div>;
+        const cli = clients.find(c => c.id === inv.clientId) || { id: '', companyId: '', name: 'Guest', email: '', companyName: 'Guest' };
+        return <ReceiptDetail 
+            invoice={inv} client={cli} services={services} company={activeCompany!} 
+            onBack={() => navigateTo('sent-receipts')}
+        />;
+      }
       case 'create-invoice': {
           if (!activeCompany) return <div className="text-center py-20 italic">Awaiting synchronization...</div>;
           return <CreateInvoice clients={clients} services={services} company={activeCompany} initialDraft={draftRenewal} onAddInvoice={async (i) => { 
@@ -607,7 +617,10 @@ export default function App() {
         return <InvoiceDetail 
             invoice={inv} client={cli} services={services} company={activeCompany} 
             onUpdateStatus={handleUpdateInvoiceStatus} onRecordPayment={handleRecordPayment}
-            onGenerateReceipt={handleSendReceipt} allTenantInvoices={invoices} onEditInvoice={handleEditInvoiceAction} 
+            onGenerateReceipt={async (id) => {
+                await handleSendReceipt(id);
+                navigateTo('receipt-detail');
+            }} allTenantInvoices={invoices} onEditInvoice={handleEditInvoiceAction} 
             onViewPlainInvoice={(id, act) => { setSelectedInvoiceId(id); setDownloadAction(act); navigateTo('plain-invoice-detail'); }} 
             onViewTemplate={()=>{}} onSendInvoice={async (id) => { 
                 try {

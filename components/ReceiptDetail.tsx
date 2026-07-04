@@ -8,9 +8,10 @@ interface ReceiptDetailProps {
   client: Client;
   services: Service[];
   company: Company;
+  onBack: () => void;
 }
 
-const ReceiptDetail: React.FC<ReceiptDetailProps> = ({ invoice, client, services, company }) => {
+const ReceiptDetail: React.FC<ReceiptDetailProps> = ({ invoice, client, services, company, onBack }) => {
     
     const getServiceName = (serviceId: string) => {
         return services.find(s => s.id === serviceId)?.name || 'Custom Item';
@@ -195,19 +196,27 @@ const ReceiptDetail: React.FC<ReceiptDetailProps> = ({ invoice, client, services
   return (
     <div className="min-h-screen bg-gray-700 flex flex-col items-center py-10 overflow-auto">
       {/* Action Buttons */}
-      <div className="w-[210mm] flex justify-end space-x-4 mb-6 print-hidden">
+      <div className="w-[210mm] flex justify-between items-center mb-6 print-hidden">
         <button 
-          onClick={handlePdfExport} 
-          className="flex items-center px-4 py-2 bg-green-700 text-white rounded shadow hover:bg-green-800 font-bold text-sm"
+          onClick={onBack} 
+          className="flex items-center px-4 py-2 bg-gray-600 text-white rounded shadow hover:bg-gray-500 font-bold text-sm"
         >
-          Download PDF
+          <Icon name="reports" className="w-4 h-4 mr-2" /> Back
         </button>
-        <button 
-          onClick={downloadAsWord} 
-          className="flex items-center px-4 py-2 bg-blue-600 text-white rounded shadow hover:bg-blue-700 font-bold text-sm"
-        >
-          <Icon name="download-word" className="w-5 h-5 mr-2" /> Download Word
-        </button>
+        <div className="flex space-x-4">
+          <button 
+            onClick={handlePdfExport} 
+            className="flex items-center px-4 py-2 bg-green-700 text-white rounded shadow hover:bg-green-800 font-bold text-sm"
+          >
+            Download PDF
+          </button>
+          <button 
+            onClick={downloadAsWord} 
+            className="flex items-center px-4 py-2 bg-blue-600 text-white rounded shadow hover:bg-blue-700 font-bold text-sm"
+          >
+            <Icon name="download-word" className="w-5 h-5 mr-2" /> Download Word
+          </button>
+        </div>
       </div>
 
       {/* Screen Layout - A4 Paper Simulation */}
