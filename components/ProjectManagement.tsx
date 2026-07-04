@@ -3,6 +3,7 @@ import { Project, ProjectStatus, Client, StoredGeneratedDoc, Invoice, AuditLog }
 import { motion, AnimatePresence } from 'motion/react';
 import Icon from './common/Icon';
 import PaymentModal from './PaymentModal';
+import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, Cell } from 'recharts';
 
 interface ProjectManagementProps {
   companyId: string;
@@ -346,6 +347,59 @@ locked.
     return map;
   }, [projects]);
 
+  const stats = useMemo(() => {
+    let totalValue = 0;
+    let activeCount = 0;
+    let completedCount = 0;
+    
+    const stageValues: Record<ProjectStatus, number> = {
+      Planning: 0,
+      Proposal: 0,
+      Negotiation: 0,
+      Contract: 0,
+      Signing: 0,
+      Invoice: 0,
+      Payment: 0,
+      Completed: 0,
+      Archived: 0
+    };
+    
+    projects.forEach(p => {
+      totalValue += p.value;
+      if (p.status === 'Completed' || p.status === 'Archived') {
+        completedCount++;
+      } else {
+        activeCount++;
+      }
+      if (stageValues[p.status] !== undefined) {
+        stageValues[p.status] += p.value;
+      }
+    });
+
+    const avgValue = projects.length > 0 ? totalValue / projects.length : 0;
+
+    const pipelineChartData = LIFECYCLE_STAGES.map(stage => ({
+      name: stage.status,
+      value: stageValues[stage.status] || 0,
+      color: stage.status === 'Planning' ? '#3B82F6' :
+             stage.status === 'Proposal' ? '#8B5CF6' :
+             stage.status === 'Negotiation' ? '#6366F1' :
+             stage.status === 'Contract' ? '#F59E0B' :
+             stage.status === 'Signing' ? '#EC4899' :
+             stage.status === 'Invoice' ? '#F59E0B' :
+             stage.status === 'Payment' ? '#EAB308' :
+             stage.status === 'Completed' ? '#10B981' : '#6B7280'
+    })).filter(d => d.value > 0);
+
+    return {
+      totalValue,
+      activeCount,
+      completedCount,
+      avgValue,
+      pipelineChartData
+    };
+  }, [projects]);
+
   const getClientName = (clientId: string) => {
     const client = clients.find(c => c.id === clientId);
     return client ? client.companyName : 'Unknown Client';
@@ -392,6 +446,67 @@ locked.
           </button>
         </div>
       </div>
+
+      {/* Summary Cards */}
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+        <div className="bg-white p-5 rounded-2xl shadow-sm border border-gray-100">
+          <p className="text-3xs font-black text-gray-400 uppercase tracking-widest mb-1">Pipeline Portfolio</p>
+          <h3 className="text-2xl font-black text-gray-800">${stats.totalValue.toLocaleString()}</h3>
+          <p className="text-4xs text-gray-400 mt-1">{projects.length} Deals total</p>
+        </div>
+        <div className="bg-white p-5 rounded-2xl shadow-sm border border-gray-100">
+          <p className="text-3xs font-black text-primary-500 uppercase tracking-widest mb-1">Active Accounts</p>
+          <h3 className="text-2xl font-black text-primary-600">{stats.activeCount}</h3>
+          <p className="text-4xs text-primary-400 mt-1">Deals in pipeline</p>
+        </div>
+        <div className="bg-white p-5 rounded-2xl shadow-sm border border-gray-100">
+          <p className="text-3xs font-black text-green-600 uppercase tracking-widest mb-1">Completed Deals</p>
+          <h3 className="text-2xl font-black text-green-700">{stats.completedCount}</h3>
+          <p className="text-4xs text-green-500 mt-1">Successfully closed out</p>
+        </div>
+        <div className="bg-white p-5 rounded-2xl shadow-sm border border-gray-100">
+          <p className="text-3xs font-black text-indigo-500 uppercase tracking-widest mb-1">Average Deal Size</p>
+          <h3 className="text-2xl font-black text-indigo-600">${Math.round(stats.avgValue).toLocaleString()}</h3>
+          <p className="text-4xs text-indigo-400 mt-1">Per individual project</p>
+        </div>
+      </div>
+
+      {/* Deal Pipeline Chart */}
+      {projects.length > 0 && stats.pipelineChartData.length > 0 && (
+        <div className="bg-white p-6 rounded-2xl border border-gray-100 shadow-sm grid grid-cols-1 md:grid-cols-12 gap-6 items-center animate-fade-in">
+          <div className="md:col-span-4">
+            <h4 className="text-sm font-black text-gray-700 uppercase tracking-wider mb-2">Deal Value Pipeline by Stage</h4>
+            <p className="text-xs text-gray-400 leading-relaxed mb-4">
+              Visualizes total contract value distributed across lifecycle stages. Accelerate and track payments through active phases.
+            </p>
+            <div className="space-y-2 max-h-48 overflow-y-auto pr-1">
+              {stats.pipelineChartData.map(stage => (
+                <div key={stage.name} className="flex justify-between items-center text-xs">
+                  <div className="flex items-center gap-2">
+                    <span className="w-2.5 h-2.5 rounded-full" style={{ backgroundColor: stage.color }}></span>
+                    <span className="font-bold text-gray-600">{stage.name}</span>
+                  </div>
+                  <span className="font-black text-gray-800">${stage.value.toLocaleString()}</span>
+                </div>
+              ))}
+            </div>
+          </div>
+          <div className="md:col-span-8 h-48">
+            <ResponsiveContainer width="100%" height="100%">
+              <BarChart data={stats.pipelineChartData} margin={{ top: 10, right: 10, left: 10, bottom: 0 }}>
+                <XAxis dataKey="name" stroke="#94A3B8" fontSize={10} tickLine={false} axisLine={false} />
+                <YAxis stroke="#94A3B8" fontSize={10} tickLine={false} axisLine={false} formatter={(value: number) => `$${(value / 1000).toLocaleString()}k`} />
+                <Tooltip cursor={{ fill: 'rgba(241, 245, 249, 0.5)' }} formatter={(value: number) => [`$${value.toLocaleString()}`, 'Pipeline Value']} contentStyle={{ borderRadius: '8px', fontSize: '11px', fontWeight: 'bold' }} />
+                <Bar dataKey="value" name="Deal Value" radius={[8, 8, 0, 0]} maxBarSize={40}>
+                  {stats.pipelineChartData.map((entry, index) => (
+                    <Cell key={`cell-${index}`} fill={entry.color} />
+                  ))}
+                </Bar>
+              </BarChart>
+            </ResponsiveContainer>
+          </div>
+        </div>
+      )}
 
       {/* Main Interactive View */}
       {viewMode === 'board' ? (

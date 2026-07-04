@@ -3,6 +3,7 @@ import React, { useState, useMemo } from 'react';
 import { Invoice, Client, InvoiceStatus } from '../types';
 import InvoiceStatusBadge from './InvoiceStatusBadge';
 import Icon from './common/Icon';
+import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, Cell } from 'recharts';
 
 interface SentReceiptsListProps {
   invoices: Invoice[]; // These should already be filtered to be isReceiptSent: true
@@ -144,6 +145,35 @@ const SentReceiptsList: React.FC<SentReceiptsListProps> = ({ invoices, clients, 
     }
   };
 
+  const stats = useMemo(() => {
+    let totalAmount = 0;
+    const clientReceipts: Record<string, { companyName: string; total: number }> = {};
+
+    invoices.forEach(inv => {
+      totalAmount += inv.total;
+      const clientName = clients.find(c => c.id === inv.clientId)?.companyName || 'Unknown Client';
+      if (!clientReceipts[inv.clientId]) {
+        clientReceipts[inv.clientId] = { companyName: clientName, total: 0 };
+      }
+      clientReceipts[inv.clientId].total += inv.total;
+    });
+
+    const clientChartData = Object.entries(clientReceipts).map(([id, data], idx) => ({
+      name: data.companyName,
+      value: data.total,
+      color: ['#10B981', '#3B82F6', '#F59E0B', '#8B5CF6', '#EC4899', '#6366F1'][idx % 6]
+    })).sort((a, b) => b.value - a.value).slice(0, 5);
+
+    const avgAmount = invoices.length > 0 ? totalAmount / invoices.length : 0;
+
+    return {
+      totalReceipts: invoices.length,
+      totalAmount,
+      avgAmount,
+      clientChartData
+    };
+  }, [invoices, clients]);
+
   const handleSort = (key: SortKey) => {
     if (sortKey === key) {
       setSortDirection(sortDirection === 'asc' ? 'desc' : 'asc');
@@ -154,24 +184,81 @@ const SentReceiptsList: React.FC<SentReceiptsListProps> = ({ invoices, clients, 
   };
 
   return (
-    <div className="bg-white rounded-xl shadow-md overflow-hidden">
-      <div className="p-4 border-b flex flex-col md:flex-row justify-between items-center space-y-3 md:space-y-0 md:space-x-4">
-          <h2 className="text-xl font-semibold">Sent Receipts</h2>
-          <div className="flex flex-col md:flex-row items-center space-y-3 md:space-y-0 md:space-x-4 w-full md:w-auto">
-              <div className="relative w-full md:w-64">
-                  <div className="absolute inset-y-0 left-0 flex items-center pl-3 pointer-events-none">
-                      <Icon name="search" className="w-5 h-5 text-gray-400" />
-                  </div>
-                  <input
-                      type="text"
-                      placeholder="Search receipts..."
-                      value={searchTerm}
-                      onChange={(e) => { setSearchTerm(e.target.value); setCurrentPage(1); }}
-                      className="block w-full pl-10 pr-3 py-2 border border-gray-300 rounded-md leading-5 bg-white placeholder-gray-500 focus:outline-none focus:ring-primary-500 focus:border-primary-500 sm:text-sm"
-                  />
-              </div>
-          </div>
+    <div className="space-y-6">
+      {/* Summary Cards */}
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+        <div className="bg-white p-5 rounded-2xl shadow-sm border border-gray-100">
+          <p className="text-3xs font-black text-gray-400 uppercase tracking-widest mb-1">Total Receipts Issued</p>
+          <h3 className="text-2xl font-black text-gray-800">{stats.totalReceipts}</h3>
+          <p className="text-4xs text-gray-400 mt-1">Paid invoices with verified receipts</p>
+        </div>
+        <div className="bg-white p-5 rounded-2xl shadow-sm border border-gray-100">
+          <p className="text-3xs font-black text-green-600 uppercase tracking-widest mb-1">Total Verified Revenue</p>
+          <h3 className="text-2xl font-black text-green-700">₦{stats.totalAmount.toLocaleString()}</h3>
+          <p className="text-4xs text-green-500 mt-1">Settled payments confirmed</p>
+        </div>
+        <div className="bg-white p-5 rounded-2xl shadow-sm border border-gray-100">
+          <p className="text-3xs font-black text-primary-500 uppercase tracking-widest mb-1">Average Receipt Value</p>
+          <h3 className="text-2xl font-black text-primary-600">₦{Math.round(stats.avgAmount).toLocaleString()}</h3>
+          <p className="text-4xs text-primary-400 mt-1">Per transaction average</p>
+        </div>
       </div>
+
+      {/* Receipts Analytics Chart */}
+      {invoices.length > 0 && stats.clientChartData.length > 0 && (
+        <div className="bg-white p-6 rounded-2xl border border-gray-100 shadow-sm grid grid-cols-1 md:grid-cols-12 gap-6 items-center animate-fade-in">
+          <div className="md:col-span-4">
+            <h4 className="text-sm font-black text-gray-700 uppercase tracking-wider mb-2">Top Customers by Verified Receipts</h4>
+            <p className="text-xs text-gray-400 leading-relaxed mb-4">
+              Breakdown of total settled payments by account. Focuses on top revenue drivers.
+            </p>
+            <div className="space-y-2">
+              {stats.clientChartData.map(client => (
+                <div key={client.name} className="flex justify-between items-center text-xs">
+                  <div className="flex items-center gap-2">
+                    <span className="w-2.5 h-2.5 rounded-full" style={{ backgroundColor: client.color }}></span>
+                    <span className="font-bold text-gray-600 truncate max-w-[150px]">{client.name}</span>
+                  </div>
+                  <span className="font-black text-gray-800">₦{client.value.toLocaleString()}</span>
+                </div>
+              ))}
+            </div>
+          </div>
+          <div className="md:col-span-8 h-48">
+            <ResponsiveContainer width="100%" height="100%">
+              <BarChart data={stats.clientChartData} margin={{ top: 10, right: 10, left: 10, bottom: 0 }}>
+                <XAxis dataKey="name" stroke="#94A3B8" fontSize={10} tickLine={false} axisLine={false} />
+                <YAxis stroke="#94A3B8" fontSize={10} tickLine={false} axisLine={false} formatter={(value: number) => `₦${(value / 1000).toLocaleString()}k`} />
+                <Tooltip cursor={{ fill: 'rgba(241, 245, 249, 0.5)' }} formatter={(value: number) => [`₦${value.toLocaleString()}`, 'Total Receipts']} contentStyle={{ borderRadius: '8px', fontSize: '11px', fontWeight: 'bold' }} />
+                <Bar dataKey="value" name="Settled Payments" radius={[8, 8, 0, 0]} maxBarSize={45}>
+                  {stats.clientChartData.map((entry, index) => (
+                    <Cell key={`cell-${index}`} fill={entry.color} />
+                  ))}
+                </Bar>
+              </BarChart>
+            </ResponsiveContainer>
+          </div>
+        </div>
+      )}
+
+      <div className="bg-white rounded-xl shadow-md overflow-hidden">
+        <div className="p-4 border-b flex flex-col md:flex-row justify-between items-center space-y-3 md:space-y-0 md:space-x-4">
+            <h2 className="text-xl font-semibold">Sent Receipts</h2>
+            <div className="flex flex-col md:flex-row items-center space-y-3 md:space-y-0 md:space-x-4 w-full md:w-auto">
+                <div className="relative w-full md:w-64">
+                    <div className="absolute inset-y-0 left-0 flex items-center pl-3 pointer-events-none">
+                        <Icon name="search" className="w-5 h-5 text-gray-400" />
+                    </div>
+                    <input
+                        type="text"
+                        placeholder="Search receipts..."
+                        value={searchTerm}
+                        onChange={(e) => { setSearchTerm(e.target.value); setCurrentPage(1); }}
+                        className="block w-full pl-10 pr-3 py-2 border border-gray-300 rounded-md leading-5 bg-white placeholder-gray-500 focus:outline-none focus:ring-primary-500 focus:border-primary-500 sm:text-sm"
+                    />
+                </div>
+            </div>
+        </div>
       <SentReceiptsTable 
         invoices={paginatedInvoices}
         clients={clients}
@@ -208,6 +295,7 @@ const SentReceiptsList: React.FC<SentReceiptsListProps> = ({ invoices, clients, 
             </button>
         </div>
       )}
+      </div>
     </div>
   );
 };
