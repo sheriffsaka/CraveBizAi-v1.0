@@ -4,6 +4,7 @@ import { Invoice, Client, InvoiceStatus } from '../types';
 import StatCard from './StatCard';
 import Icon from './common/Icon';
 import { generateClientPaymentHealthReport } from '../services/aiGenerationService';
+import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, Cell, PieChart, Pie, Legend } from 'recharts';
 
 interface PaymentIntelligenceProps {
   invoices: Invoice[];
@@ -117,6 +118,34 @@ const PaymentIntelligence: React.FC<PaymentIntelligenceProps> = ({ invoices, cli
     return { paidAhead, overdueCount, dueThisMonth, totalOutstanding };
   }, [clientMatrix]);
 
+  const clientChartData = useMemo(() => {
+    return clientMatrix.map(c => ({
+      name: c.client.companyName,
+      paid: c.totalPaid,
+      outstanding: c.totalOutstanding
+    })).filter(c => c.paid > 0 || c.outstanding > 0);
+  }, [clientMatrix]);
+
+  const coverageDistribution = useMemo(() => {
+    let paidCount = 0;
+    let unpaidCount = 0;
+    let overdueCount = 0;
+
+    clientMatrix.forEach(c => {
+      c.monthlyStatus.forEach(m => {
+        if (m.status === 'paid') paidCount++;
+        else if (m.status === 'unpaid') unpaidCount++;
+        else if (m.status === 'overdue') overdueCount++;
+      });
+    });
+
+    return [
+      { name: 'Paid Coverage', value: paidCount, color: '#10B981' },
+      { name: 'Unpaid Slots', value: unpaidCount, color: '#EAB308' },
+      { name: 'Overdue Slots', value: overdueCount, color: '#EF4444' }
+    ].filter(d => d.value > 0);
+  }, [clientMatrix]);
+
   const handleAnalyze = async (clientId: string) => {
     const clientData = clientMatrix.find(c => c.client.id === clientId);
     if (!clientData) return;
@@ -177,6 +206,83 @@ const PaymentIntelligence: React.FC<PaymentIntelligenceProps> = ({ invoices, cli
         <StatCard title="Due This Month" value={stats.dueThisMonth.toString()} change="Clients" changeType="decrease" icon={<Icon name="invoices" />} />
         <StatCard title="Overdue" value={stats.overdueCount.toString()} change="Clients" changeType="decrease" icon={<Icon name="reports" />} />
         <StatCard title="Total Outstanding" value={`₦${stats.totalOutstanding.toLocaleString()}`} change="Across Vault" changeType="decrease" icon={<Icon name="clients" />} />
+      </div>
+
+      {/* Interactive Charts Panel */}
+      <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
+        {/* Paid vs Outstanding Bar Chart */}
+        <div className="bg-white p-6 rounded-[2rem] border border-gray-100 shadow-xl lg:col-span-8 animate-fade-in flex flex-col justify-between">
+          <div>
+            <h4 className="text-sm font-black text-gray-700 uppercase tracking-wider mb-2">Settled vs Outstanding Balance by Client</h4>
+            <p className="text-xs text-gray-400 mb-4">
+              Detailed cash realization view per client. Evaluates real-time financial exposure.
+            </p>
+          </div>
+          <div className="h-64 w-full">
+            <ResponsiveContainer width="100%" height="100%">
+              <BarChart data={clientChartData} margin={{ top: 10, right: 10, left: 10, bottom: 5 }}>
+                <XAxis dataKey="name" stroke="#94A3B8" fontSize={10} tickLine={false} axisLine={false} />
+                <YAxis stroke="#94A3B8" fontSize={10} tickLine={false} axisLine={false} formatter={(value: number) => `₦${(value / 1000).toLocaleString()}k`} />
+                <Tooltip cursor={{ fill: 'rgba(241, 245, 249, 0.5)' }} formatter={(value: number, name: string) => [`₦${value.toLocaleString()}`, name === 'paid' ? 'Paid' : 'Outstanding']} contentStyle={{ borderRadius: '8px', fontSize: '11px', fontWeight: 'bold' }} />
+                <Bar dataKey="paid" fill="#10B981" radius={[4, 4, 0, 0]} maxBarSize={30} name="Paid" />
+                <Bar dataKey="outstanding" fill="#EF4444" radius={[4, 4, 0, 0]} maxBarSize={30} name="Outstanding" />
+              </BarChart>
+            </ResponsiveContainer>
+          </div>
+        </div>
+
+        {/* Global Coverage Health Donut Chart */}
+        <div className="bg-white p-6 rounded-[2rem] border border-gray-100 shadow-xl lg:col-span-4 animate-fade-in flex flex-col justify-between">
+          <div>
+            <h4 className="text-sm font-black text-gray-700 uppercase tracking-wider mb-2">Coverage Portfolio Health</h4>
+            <p className="text-xs text-gray-400 mb-4">
+              Historical breakdown of monthly invoice coverage status.
+            </p>
+          </div>
+          <div className="h-48 w-full relative flex items-center justify-center">
+            <ResponsiveContainer width="100%" height="100%">
+              <PieChart>
+                <Pie
+                  data={coverageDistribution}
+                  cx="50%"
+                  cy="50%"
+                  innerRadius={60}
+                  outerRadius={80}
+                  paddingAngle={4}
+                  dataKey="value"
+                >
+                  {coverageDistribution.map((entry, index) => (
+                    <Cell key={`cell-${index}`} fill={entry.color} />
+                  ))}
+                </Pie>
+                <Tooltip formatter={(value: number) => [`${value} months`, 'Count']} contentStyle={{ borderRadius: '8px', fontSize: '11px', fontWeight: 'bold' }} />
+              </PieChart>
+            </ResponsiveContainer>
+            <div className="absolute text-center">
+              <span className="text-2xs font-black text-gray-400 uppercase tracking-widest block">Realized</span>
+              <span className="text-lg font-black text-green-600 block">
+                {coverageDistribution.length > 0
+                  ? `${Math.round(
+                      ((coverageDistribution.find(d => d.name === 'Paid Coverage')?.value || 0) /
+                        coverageDistribution.reduce((acc, curr) => acc + curr.value, 0)) *
+                        100
+                    )}%`
+                  : '0%'}
+              </span>
+            </div>
+          </div>
+          <div className="space-y-1.5 mt-2">
+            {coverageDistribution.map(item => (
+              <div key={item.name} className="flex justify-between items-center text-xs">
+                <div className="flex items-center gap-2">
+                  <span className="w-2.5 h-2.5 rounded-full" style={{ backgroundColor: item.color }}></span>
+                  <span className="font-bold text-gray-600">{item.name}</span>
+                </div>
+                <span className="font-black text-gray-800">{item.value} Months</span>
+              </div>
+            ))}
+          </div>
+        </div>
       </div>
 
       <div className="bg-white rounded-[2.5rem] shadow-2xl border border-gray-100 overflow-hidden">
