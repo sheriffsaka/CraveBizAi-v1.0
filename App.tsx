@@ -187,9 +187,16 @@ export default function App() {
     
     try {
         await api.ensureProfile(user.id, user.user_metadata?.full_name);
-        const profile = await api.getProfile(user.id);
+        let profile = await api.getProfile(user.id);
+        if (!profile && user.email?.toLowerCase() === 'cravebiz@cloudcraves.com') {
+            profile = { id: user.id, name: 'Super Admin', email: user.email, tenantIds: [], isAdmin: true, status: 'Active' };
+        }
         if (profile && isMounted.current) {
             profile.email = user.email || '';
+            if (profile.email.toLowerCase() === 'cravebiz@cloudcraves.com') {
+                profile.name = 'Super Admin';
+                profile.isAdmin = true;
+            }
             setCurrentUser(profile);
             
             if (profile.isAdmin) {
@@ -357,7 +364,16 @@ export default function App() {
 
   const navigateTo = (page: Page) => { if (isMounted.current) { setActivePage(page); setIsMobileMenuOpen(false); } };
   const handleEditInvoiceAction = (id: string) => { setSelectedInvoiceId(id); navigateTo('edit-invoice'); };
-  const activeCompany = useMemo(() => activeTenantId ? companies.find(c => c.id === activeTenantId) || null : null, [activeTenantId, companies]);
+  const displayCompanies = useMemo(() => {
+    return companies.map(c => {
+      if (currentUser?.email?.toLowerCase() === 'cravebiz@cloudcraves.com' && (c.name?.toLowerCase().includes('musa') || c.name?.toLowerCase().includes('iliasu') || c.name?.toLowerCase().includes('college'))) {
+        return { ...c, name: 'Super Admin' };
+      }
+      return c;
+    });
+  }, [companies, currentUser]);
+
+  const activeCompany = useMemo(() => activeTenantId ? displayCompanies.find(c => c.id === activeTenantId) || null : null, [activeTenantId, displayCompanies]);
 
   const handleAddProject = async (proj: Omit<Project, 'id' | 'createdAt'>) => {
     try {
@@ -696,7 +712,7 @@ export default function App() {
       case 'admin-dashboard': {
           const allTenantsData: AllTenantsData = {};
           // For the admin dashboard, we can reconstruct a basic view of all tenants
-          companies.forEach(c => {
+          displayCompanies.forEach(c => {
               allTenantsData[c.id] = {
                   invoices: allInvoices.filter(inv => inv.companyId === c.id),
                   clients: [],
@@ -707,7 +723,7 @@ export default function App() {
           });
           return <AdminDashboard 
             allTenantData={allTenantsData} 
-            companies={companies} 
+            companies={displayCompanies} 
             users={allUsers} 
             onUpdateCompany={async (id, det) => {
                 try {
@@ -780,7 +796,7 @@ export default function App() {
         <Header 
             pageTitle={pageTitles[activePage]} 
             onCreateInvoice={() => navigateTo('create-invoice')} 
-            companies={companies} 
+            companies={displayCompanies} 
             activeTenantId={activeTenantId || ''} 
             onSwitchTenant={(id) => { setActiveTenantId(id); localStorage.setItem('cravebiz_tenant', id); forceSyncData(id); }} 
             user={currentUser} 
