@@ -62,7 +62,56 @@ export function checkApiKeyStatus() {
 
 function getGeminiClient(): GoogleGenAI {
     const apiKey = getApiKey();
-    return new GoogleGenAI({ apiKey });
+    return new GoogleGenAI({
+        apiKey,
+        httpOptions: {
+            headers: {
+                'User-Agent': 'aistudio-build',
+            }
+        }
+    });
+}
+
+async function callGeminiWithFallback(
+    prompt: string,
+    preferredModel: string,
+    systemInstruction?: string,
+    responseSchema?: any,
+    responseMimeType?: string,
+    temperature?: number
+) {
+    const ai = getGeminiClient();
+    const config: any = {};
+    if (systemInstruction) config.systemInstruction = systemInstruction;
+    if (responseMimeType) config.responseMimeType = responseMimeType;
+    if (responseSchema) config.responseSchema = responseSchema;
+    if (temperature !== undefined) config.temperature = temperature;
+
+    try {
+        const response = await ai.models.generateContent({
+            model: preferredModel,
+            contents: prompt,
+            config: config
+        });
+        return response;
+    } catch (err: any) {
+        console.warn(`Preferred model ${preferredModel} failed or quota exceeded:`, err.message || err);
+        if (preferredModel !== 'gemini-3.5-flash') {
+            console.info(`Attempting fallback to free tier model 'gemini-3.5-flash'...`);
+            try {
+                const response = await ai.models.generateContent({
+                    model: 'gemini-3.5-flash',
+                    contents: prompt,
+                    config: config
+                });
+                return response;
+            } catch (fallbackErr: any) {
+                console.error("Fallback to 'gemini-3.5-flash' failed as well:", fallbackErr.message || fallbackErr);
+                throw fallbackErr;
+            }
+        }
+        throw err;
+    }
 }
 
 function compileMockDocument(text: string, companyContext: any): GeneratedDocument {
@@ -264,14 +313,11 @@ export async function generateTextResponse(
     }
 
     try {
-        const ai = getGeminiClient();
-        const config = systemInstruction ? { systemInstruction } : {};
-
-        const response = await ai.models.generateContent({
-            model: model || 'gemini-3.5-flash',
-            contents: prompt,
-            config: config,
-        });
+        const response = await callGeminiWithFallback(
+            prompt,
+            model || 'gemini-3.5-flash',
+            systemInstruction
+        );
         return response.text || "";
     } catch (error) {
         console.error(`Error calling Gemini API with model ${model}:`, error);
@@ -347,15 +393,13 @@ export async function transformDocument(rawContent: string, companyContext: any)
     };
     
     try {
-        const response = await ai.models.generateContent({
-            model: model,
-            contents: prompt,
-            config: {
-                systemInstruction: systemInstruction,
-                responseMimeType: "application/json",
-                responseSchema: schema
-            },
-        });
+        const response = await callGeminiWithFallback(
+            prompt,
+            model,
+            systemInstruction,
+            schema,
+            "application/json"
+        );
 
         const jsonString = response.text ? response.text.trim() : "";
         if (!jsonString) {
@@ -447,15 +491,13 @@ export async function generateRenewalInvoiceSuggestion(clientId: string, expirin
     };
 
     try {
-        const response = await ai.models.generateContent({
-            model: model,
-            contents: prompt,
-            config: {
-                systemInstruction: systemInstruction,
-                responseMimeType: "application/json",
-                responseSchema: schema
-            },
-        });
+        const response = await callGeminiWithFallback(
+            prompt,
+            model,
+            systemInstruction,
+            schema,
+            "application/json"
+        );
 
         return JSON.parse(response.text.trim());
     } catch (error) {
@@ -503,13 +545,11 @@ ${latePayments > 0 ? `- **Action Required**: Historical invoices show delayed pa
     const prompt = `Client ID: ${clientId}\nPayment & Coverage History:\n${JSON.stringify(paymentHistory, null, 2)}\n\nPlease provide a health report and suggested actions.`;
 
     try {
-        const response = await ai.models.generateContent({
-            model: model,
-            contents: prompt,
-            config: {
-                systemInstruction: systemInstruction,
-            },
-        });
+        const response = await callGeminiWithFallback(
+            prompt,
+            model,
+            systemInstruction
+        );
 
         return response.text || "";
     } catch (error) {
@@ -593,15 +633,13 @@ export async function generateDocumentFromPurpose(purpose: string, companyContex
     };
 
     try {
-        const response = await ai.models.generateContent({
-            model: model,
-            contents: prompt,
-            config: {
-                systemInstruction: systemInstruction,
-                responseMimeType: "application/json",
-                responseSchema: schema
-            },
-        });
+        const response = await callGeminiWithFallback(
+            prompt,
+            model,
+            systemInstruction,
+            schema,
+            "application/json"
+        );
         const jsonString = response.text ? response.text.trim() : "";
         if (!jsonString) {
             throw new Error("Received empty text response from Gemini API");
@@ -673,15 +711,13 @@ export async function reviewDocumentContent(documentText: string): Promise<Docum
     };
 
     try {
-        const response = await ai.models.generateContent({
-            model: model,
-            contents: prompt,
-            config: {
-                systemInstruction: systemInstruction,
-                responseMimeType: "application/json",
-                responseSchema: schema
-            },
-        });
+        const response = await callGeminiWithFallback(
+            prompt,
+            model,
+            systemInstruction,
+            schema,
+            "application/json"
+        );
         const jsonString = response.text ? response.text.trim() : "";
         if (!jsonString) {
             throw new Error("Received empty text response from Gemini API");
@@ -708,18 +744,17 @@ This document exhibits well-structured invoicing elements with standard payment 
 3. **Connect Gemini API Key**: Go to Settings in the AI Studio sidebar and supply a valid \`GEMINI_API_KEY\` to enable high-fidelity automated analysis powered by **Gemini 3.5 Pro / Flash** LLMs.`;
     }
 
-    const ai = getGeminiClient();
     const modelName = complex ? 'gemini-3.1-pro-preview' : 'gemini-3.5-flash';
 
     try {
-        const response = await ai.models.generateContent({
-            model: modelName,
-            contents: prompt,
-            config: {
-                systemInstruction: "You are the CraveBiZ AI Financial Consultant. Your goal is to provide accurate, professional, and actionable insights into invoice data, cash flow, and client payment behaviors.",
-                temperature: 0.7,
-            }
-        });
+        const response = await callGeminiWithFallback(
+            prompt,
+            modelName,
+            "You are the CraveBiZ AI Financial Consultant. Your goal is to provide accurate, professional, and actionable insights into invoice data, cash flow, and client payment behaviors.",
+            undefined,
+            undefined,
+            0.7
+        );
 
         return response.text || "I'm sorry, I couldn't generate an insight for this invoice at the moment.";
     } catch (error) {

@@ -1486,6 +1486,7 @@ locked.
             setIsPaymentModalOpen(false);
             setPaymentActiveInvoice(null);
           }}
+          client={clients.find(c => c.id === paymentActiveInvoice.clientId)}
         />
       )}
     </div>

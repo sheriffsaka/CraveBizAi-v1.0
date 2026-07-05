@@ -42,7 +42,7 @@ const InvoiceDetail: React.FC<InvoiceDetailProps> = ({ invoice, client, services
             setIsLoadingSummary(true);
             try {
                 const prompt = `Invoice Summary for ${client.companyName}. Amount: ₦${invoice.total.toLocaleString()}. Provide a concise professional analysis in 2 sentences.`;
-                const summary = await generateTextResponse(prompt, 'gemini-3-flash-preview', "Financial Assistant.");
+                const summary = await generateTextResponse(prompt, 'gemini-3.5-flash', "Financial Assistant.");
                 setInvoiceSummary(summary);
             } catch { setInvoiceSummary("AI summary unavailable."); }
             finally { setIsLoadingSummary(false); }
@@ -291,6 +291,7 @@ ${company?.name || 'The Team'}`;
             onClose={() => setIsPaymentModalOpen(false)} 
             invoice={invoice} 
             onConfirmPayment={handleConfirmPayment} 
+            client={client}
           />
       )}
     </div>
