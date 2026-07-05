@@ -335,20 +335,30 @@ Admin Query: ${activePrompt}
     const pendingRevenue = tenantValues.reduce((sum, t) => 
       sum + (t.invoices?.filter(i => i.status !== InvoiceStatus.Paid).reduce((s, i) => s + i.total, 0) || 0), 0);
     
-    // Monthly revenue data for charts
+    // Monthly revenue and invoice count data for charts
     const monthlyData: { [key: string]: number } = {};
+    const monthlyInvoicesCount: { [key: string]: number } = {};
+
     tenantValues.forEach(t => {
       t.invoices?.forEach(inv => {
+        const month = inv.issueDate.substring(0, 7); // YYYY-MM
         if (inv.status === InvoiceStatus.Paid) {
-          const month = inv.issueDate.substring(0, 7); // YYYY-MM
           monthlyData[month] = (monthlyData[month] || 0) + inv.total;
         }
+        monthlyInvoicesCount[month] = (monthlyInvoicesCount[month] || 0) + 1;
       });
     });
 
-    const chartData = Object.keys(monthlyData).sort().map(month => ({
+    const allMonths = Array.from(new Set([
+      ...Object.keys(monthlyData),
+      ...Object.keys(monthlyInvoicesCount)
+    ])).sort();
+
+    const chartData = allMonths.map(month => ({
       name: month,
-      revenue: monthlyData[month]
+      revenue: monthlyData[month] || 0,
+      transactions: monthlyData[month] || 0,
+      invoicesCount: monthlyInvoicesCount[month] || 0
     }));
 
     return { totalInvoices, totalRevenue, pendingRevenue, chartData };
@@ -380,7 +390,7 @@ Admin Query: ${activePrompt}
 
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
           <div className="bg-white p-8 rounded-[2.5rem] shadow-xl border border-gray-100">
-            <h3 className="text-lg font-black mb-6 uppercase tracking-tighter">Revenue Growth</h3>
+            <h3 className="text-lg font-black mb-6 uppercase tracking-tighter">Transaction By Month</h3>
             <div className="h-64">
               {stats.chartData.length > 0 ? (
                 <ResponsiveContainer width="100%" height="100%">
@@ -390,37 +400,38 @@ Admin Query: ${activePrompt}
                     <YAxis axisLine={false} tickLine={false} tick={{ fontSize: 10, fontWeight: 'bold' }} tickFormatter={(v: number) => `₦${(v/1000).toFixed(0)}k`} />
                     <Tooltip 
                       contentStyle={{ borderRadius: '16px', border: 'none', boxShadow: '0 10px 15px -3px rgb(0 0 0 / 0.1)' }}
-                      formatter={(value: any) => [`₦${value.toLocaleString()}`, 'Revenue']}
+                      formatter={(value: any) => [`₦${value.toLocaleString()}`, 'Transaction Amount']}
                     />
-                    <Line type="monotone" dataKey="revenue" stroke="#2563eb" strokeWidth={4} dot={{ r: 6, fill: '#2563eb', strokeWidth: 2, stroke: '#fff' }} activeDot={{ r: 8 }} />
+                    <Line type="monotone" dataKey="transactions" stroke="#2563eb" strokeWidth={4} dot={{ r: 6, fill: '#2563eb', strokeWidth: 2, stroke: '#fff' }} activeDot={{ r: 8 }} />
                   </LineChart>
                 </ResponsiveContainer>
               ) : (
                 <div className="h-full flex items-center justify-center text-gray-400 italic text-sm">
-                  No revenue data yet
+                  No transaction data yet
                 </div>
               )}
             </div>
           </div>
 
           <div className="bg-white p-8 rounded-[2.5rem] shadow-xl border border-gray-100">
-            <h3 className="text-lg font-black mb-6 uppercase tracking-tighter">Company Distribution</h3>
+            <h3 className="text-lg font-black mb-6 uppercase tracking-tighter">Invoices By Months</h3>
             <div className="h-64">
               {stats.chartData.length > 0 ? (
                 <ResponsiveContainer width="100%" height="100%">
                   <BarChart data={stats.chartData}>
                     <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f0f0f0" />
                     <XAxis dataKey="name" axisLine={false} tickLine={false} tick={{ fontSize: 10, fontWeight: 'bold' }} />
-                    <YAxis axisLine={false} tickLine={false} tick={{ fontSize: 10, fontWeight: 'bold' }} />
+                    <YAxis axisLine={false} tickLine={false} tick={{ fontSize: 10, fontWeight: 'bold' }} tickFormatter={(v: number) => v.toFixed(0)} />
                     <Tooltip 
                       contentStyle={{ borderRadius: '16px', border: 'none', boxShadow: '0 10px 15px -3px rgb(0 0 0 / 0.1)' }}
+                      formatter={(value: any) => [value, 'Invoices Count']}
                     />
-                    <Bar dataKey="revenue" fill="#3b82f6" radius={[10, 10, 0, 0]} />
+                    <Bar dataKey="invoicesCount" fill="#10b981" radius={[10, 10, 0, 0]} />
                   </BarChart>
                 </ResponsiveContainer>
               ) : (
                 <div className="h-full flex items-center justify-center text-gray-400 italic text-sm">
-                  No data yet
+                  No invoice data yet
                 </div>
               )}
             </div>
