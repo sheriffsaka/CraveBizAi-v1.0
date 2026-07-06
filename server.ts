@@ -13,8 +13,8 @@ import {
     reviewDocumentContent,
     generateInvoiceInsight,
     checkApiKeyStatus
-} from "./services/serverAiService";
-import { SignifyService } from "./services/signifyService";
+} from "./services/serverAiService.js";
+import { SignifyService } from "./services/signifyService.js";
 
 const SUPABASE_URL = "https://dfqvgezjhudmnlyeycju.supabase.co";
 const SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImRmcXZnZXpqaHVkbW5seWV5Y2p1Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjYyNDAyOTMsImV4cCI6MjA4MTgxNjI5M30.8VsHsDpychdSMJmrfnmkxi5ed8CygwErX3-RkVPXkUI";
