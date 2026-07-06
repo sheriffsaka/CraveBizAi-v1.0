@@ -1,5 +1,5 @@
 import { GoogleGenAI, Type } from "@google/genai";
-import { GeneratedDocument, Invoice, InvoiceItem, DocumentReviewResult, DocumentBlock, DocumentBlockType } from "../types";
+import { GeneratedDocument, Invoice, InvoiceItem, DocumentReviewResult, DocumentBlock, DocumentBlockType } from "../types.ts";
 import fs from "fs";
 import path from "path";
 

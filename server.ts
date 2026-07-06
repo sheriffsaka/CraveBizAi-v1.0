@@ -13,8 +13,8 @@ import {
     reviewDocumentContent,
     generateInvoiceInsight,
     checkApiKeyStatus
-} from "./services/serverAiService.js";
-import { SignifyService } from "./services/signifyService.js";
+} from "./services/serverAiService";
+import { SignifyService } from "./services/signifyService";
 
 const SUPABASE_URL = "https://dfqvgezjhudmnlyeycju.supabase.co";
 const SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImRmcXZnZXpqaHVkbW5seWV5Y2p1Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjYyNDAyOTMsImV4cCI6MjA4MTgxNjI5M30.8VsHsDpychdSMJmrfnmkxi5ed8CygwErX3-RkVPXkUI";
@@ -65,6 +65,13 @@ async function verifyTenant(req: any, res: any, next: any) {
         const tenantId = req.headers["x-tenant-id"] || req.params.tenantId;
         if (!tenantId) {
             return res.status(400).json({ error: "Missing workspace context (X-Tenant-Id or tenantId)" });
+        }
+        
+        // Super Admin bypass
+        if (user.email?.toLowerCase() === 'cravebiz@cloudcraves.com') {
+            req.user = { id: user.id, email: user.email, name: "Super Admin", role: "Owner" };
+            req.tenantId = tenantId;
+            return next();
         }
         
         const { data: membership, error: memError } = await supabaseClient

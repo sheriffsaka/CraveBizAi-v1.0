@@ -1,4 +1,4 @@
-import { GeneratedDocument, Invoice, InvoiceItem, DocumentReviewResult } from "../types";
+import { GeneratedDocument, Invoice, InvoiceItem, DocumentReviewResult } from "../types.ts";
 
 export async function generateTextResponse(
     prompt: string,

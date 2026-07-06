@@ -461,9 +461,17 @@ const DocumentTransformer: React.FC<DocumentTransformerProps> = ({
 
     // Load workspaces
     useEffect(() => {
+        if (!company?.id) {
+            setWorkspaces([
+                { id: "ws-personal-default", name: "Personal Workspace", description: "Default personal document vault", role: "Owner" },
+                { id: "ws-legal-default", name: "Legal Operations", description: "Contract reviews and compliance", role: "Admin" },
+                { id: "ws-sales-default", name: "Enterprise Sales", description: "Client sales orders & retainers", role: "Manager" }
+            ]);
+            return;
+        }
         const loadWorkspaces = async () => {
             try {
-                const ws = await api.getWorkspaces(company?.id || 'default-tenant');
+                const ws = await api.getWorkspaces(company.id);
                 setWorkspaces(ws);
                 if (ws.length > 0) {
                     setActiveWorkspaceId(ws[0].id);

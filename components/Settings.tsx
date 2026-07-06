@@ -143,11 +143,11 @@ const Settings: React.FC<SettingsProps> = ({ company, onSaveChanges, onInviteUse
         if (!error && data && data.length > 0) {
           const membersList = [];
           for (const m of data) {
-            const { data: profile } = await supabase.from('profiles').select('name, email').eq('id', m.user_id).maybeSingle();
+            const { data: profile } = await supabase.from('profiles').select('*').eq('id', m.user_id).maybeSingle();
             membersList.push({
               id: m.user_id,
-              name: profile?.name || 'Workspace Member',
-              email: profile?.email || 'member@cravebiz.com',
+              name: (profile as any)?.full_name || (profile as any)?.name || 'Workspace Member',
+              email: (profile as any)?.email || 'member@cravebiz.com',
               role: m.role.charAt(0).toUpperCase() + m.role.slice(1).toLowerCase(),
               status: m.status || 'Active'
             });
@@ -232,8 +232,15 @@ const Settings: React.FC<SettingsProps> = ({ company, onSaveChanges, onInviteUse
     if (!inviteEmail.trim()) return;
     try {
       // Look up profile if they exist in system
-      const { data: existingUser } = await supabase.from('profiles').select('id').eq('email', inviteEmail.trim()).maybeSingle();
-      const tempUserId = existingUser?.id || `user-${Date.now()}`;
+      let tempUserId = `user-${Date.now()}`;
+      try {
+        const { data: existingUser, error: lookupErr } = await supabase.from('profiles').select('id').eq('email', inviteEmail.trim()).maybeSingle();
+        if (!lookupErr && existingUser) {
+          tempUserId = existingUser.id;
+        }
+      } catch (e) {
+        console.warn("Could not lookup user profile by email:", e);
+      }
       
       const { error } = await supabase.from('company_members').insert({
         company_id: activeTenantId,

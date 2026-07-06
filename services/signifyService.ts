@@ -2,7 +2,7 @@ import fs from "fs";
 import path from "path";
 import crypto from "crypto";
 import { PDFDocument, StandardFonts, rgb } from "pdf-lib";
-import { DbDocument, DbDocumentSignatory, DbDocumentSignature } from "../types";
+import { DbDocument, DbDocumentSignatory, DbDocumentSignature } from "../types.ts";
 
 const DATA_FILE = path.join(process.cwd(), "docsignify_data.json");
 const UPLOADS_DIR = path.join(process.cwd(), "uploads");
