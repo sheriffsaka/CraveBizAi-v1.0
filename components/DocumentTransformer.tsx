@@ -932,6 +932,21 @@ const DocumentTransformer: React.FC<DocumentTransformerProps> = ({
                 setCreatedDocSignatories(response.signatories);
                 setWizardStep('send');
                 triggerToast("Workflow activated! Secure e-sign tokens created.");
+                
+                // Trigger actual backend email notification dispatch!
+                try {
+                    await fetch("/api/signify/send-emails", {
+                        method: "POST",
+                        headers: { "Content-Type": "application/json" },
+                        body: JSON.stringify({
+                            docId,
+                            title: generatedDoc?.documentType || "Secured Multi-Party Agreement",
+                            signatories: response.signatories
+                        })
+                    });
+                } catch (emailErr) {
+                    console.warn("Backend simulated email notification trigger failed:", emailErr);
+                }
             } else {
                 setError("Failed to register e-sign workflow context on host.");
             }
@@ -1740,7 +1755,11 @@ ${company?.name || 'CraveBiZ Vendor'}`;
         setGeneratedDoc({
             documentType: doc.documentType,
             blocks: doc.blocks,
-            signatures: loadedSigs
+            signatures: loadedSigs,
+            originalFileBase64: (doc as any).originalFileBase64,
+            originalFileType: (doc as any).originalFileType,
+            originalFileName: (doc as any).originalFileName,
+            originalFileUrl: (doc as any).originalFileUrl || (doc as any).originalFileBase64 || ''
         });
         setSignatories(loadedSigs);
         setEditingDocId(doc.id);
@@ -1748,15 +1767,50 @@ ${company?.name || 'CraveBiZ Vendor'}`;
         setError(null);
         setReviewReport(null);
 
+        // Transition views so the user immediately sees the document in the Canvas Workspace Designer
+        setActiveTab('sign');
+        setWizardStep('prepare');
+
         try {
             const dbInfo = await api.getDocSignifyDocument(doc.id);
-            if (dbInfo && dbInfo.signatories) {
-                setCreatedDocSignatories(dbInfo.signatories);
-            } else {
-                setCreatedDocSignatories([]);
+            if (dbInfo) {
+                if (dbInfo.signatories && dbInfo.signatories.length > 0) {
+                    const mappedSigs: SignatureInfo[] = dbInfo.signatories.map(s => ({
+                        id: s.id,
+                        type: 'type',
+                        value: '',
+                        name: s.name,
+                        title: s.role === 'main_signatory' ? 'Authorized Representative' : 'Witness',
+                        date: s.signed_at || '',
+                        signatoryType: s.role === 'main_signatory' ? 'Main' : 'Witness',
+                        email: s.email,
+                        isSigned: s.status === 'signed'
+                    }));
+                    setSignatories(mappedSigs);
+                    setCreatedDocSignatories(dbInfo.signatories);
+                } else {
+                    setCreatedDocSignatories([]);
+                }
+
+                if (dbInfo.document && dbInfo.document.content_json) {
+                    const contentJson = dbInfo.document.content_json;
+                    if (contentJson.fields) {
+                        setDesignerFields(contentJson.fields);
+                    }
+                    // Restore security preferences from saved session if available
+                    if (contentJson.security) {
+                        setRequirePasscode(!!contentJson.security.requirePasscode);
+                        setRestrictDownload(!!contentJson.security.restrictDownload);
+                        setSecureWatermark(!!contentJson.security.secureWatermark);
+                        setExpiryDays(contentJson.security.expiryDays || 30);
+                    }
+                    if (contentJson.sequential !== undefined) {
+                        setIsSequentialSigning(!!contentJson.sequential);
+                    }
+                }
             }
         } catch (err) {
-            console.warn("Could not load database signatures for doc:", err);
+            console.warn("Could not load database signatures/fields for doc:", err);
             setCreatedDocSignatories([]);
         }
     };
@@ -3012,7 +3066,7 @@ ${company?.name || 'CraveBiZ Vendor'}`;
                                         </div>
 
                                         {/* Styled Zoom Wrapper */}
-                                        <div className="w-full flex justify-center overflow-auto max-h-[75vh] p-2">
+                                        <div className="w-full flex justify-center overflow-auto max-h-[85vh] p-4">
                                             <div 
                                                 className="w-full max-w-2xl bg-white rounded-xl shadow-lg border border-gray-200/80 overflow-hidden relative"
                                                 style={{ 

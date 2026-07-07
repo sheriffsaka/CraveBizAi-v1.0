@@ -12,6 +12,16 @@ let UPLOADS_DIR = path.join(process.cwd(), "uploads");
 if (isVercel) {
   DATA_FILE = path.join("/tmp", "docsignify_data.json");
   UPLOADS_DIR = path.join("/tmp", "uploads");
+  try {
+    if (!fs.existsSync(DATA_FILE)) {
+      const rootDataFile = path.join(process.cwd(), "docsignify_data.json");
+      if (fs.existsSync(rootDataFile)) {
+        fs.copyFileSync(rootDataFile, DATA_FILE);
+      }
+    }
+  } catch (err) {
+    console.warn("Could not seed docsignify_data.json from root:", err);
+  }
 }
 
 // Ensure uploads directory exists

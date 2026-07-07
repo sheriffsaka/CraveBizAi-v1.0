@@ -347,7 +347,7 @@ export const DocumentSignifyViewer: React.FC<DocumentSignifyViewerProps> = ({
   };
 
   return (
-    <div className="w-full flex flex-col items-center gap-6 overflow-y-auto max-h-[800px] p-6 bg-slate-100 rounded-2xl border border-slate-200" ref={containerRef} id="docsignify-scroll-container">
+    <div className="w-full flex flex-col items-center gap-6 overflow-visible max-h-none p-6 bg-slate-100 rounded-2xl border border-slate-200" ref={containerRef} id="docsignify-scroll-container">
       {/* Designer/Legend Header overlay */}
       {isDesignerMode && (
         <div className="w-full max-w-2xl bg-white p-3.5 rounded-xl border border-slate-200 shadow-sm flex flex-wrap items-center justify-between gap-3 sticky top-0 z-30 animate-in fade-in-50 duration-200">

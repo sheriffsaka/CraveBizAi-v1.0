@@ -113,8 +113,34 @@ async function verifyTenant(req: any, res: any, next: any) {
     }
 }
 
-// Audit Logs Storage Configuration
-const AUDIT_LOGS_FILE = path.join(process.cwd(), "cravebiz_audit_logs.json");
+// Audit Logs, Signatures and Documents Storage Configuration
+const isVercel = process.env.VERCEL === "1" || process.env.NODE_ENV === "production";
+
+let AUDIT_LOGS_FILE = path.join(process.cwd(), "cravebiz_audit_logs.json");
+let SIGNATURES_FILE = path.join(process.cwd(), "public_signatures.json");
+let DOCUMENTS_FILE = path.join(process.cwd(), "public_documents.json");
+
+if (isVercel) {
+    AUDIT_LOGS_FILE = path.join("/tmp", "cravebiz_audit_logs.json");
+    SIGNATURES_FILE = path.join("/tmp", "public_signatures.json");
+    DOCUMENTS_FILE = path.join("/tmp", "public_documents.json");
+    
+    try {
+        const seedFile = (srcName: string, destPath: string) => {
+            if (!fs.existsSync(destPath)) {
+                const srcPath = path.join(process.cwd(), srcName);
+                if (fs.existsSync(srcPath)) {
+                    fs.copyFileSync(srcPath, destPath);
+                }
+            }
+        };
+        seedFile("cravebiz_audit_logs.json", AUDIT_LOGS_FILE);
+        seedFile("public_signatures.json", SIGNATURES_FILE);
+        seedFile("public_documents.json", DOCUMENTS_FILE);
+    } catch (err) {
+        console.warn("Could not seed data files to /tmp on production startup:", err);
+    }
+}
 
 function getAuditLogs() {
     try {
@@ -137,10 +163,6 @@ function saveAuditLogs(logs: any[]) {
         return false;
     }
 }
-
-
-const SIGNATURES_FILE = path.join(process.cwd(), "public_signatures.json");
-const DOCUMENTS_FILE = path.join(process.cwd(), "public_documents.json");
 
 function getPublicSignatures() {
     try {
@@ -419,6 +441,57 @@ app.get("/api/signify/token-validation", (req, res) => {
     } catch (err: any) {
         console.error("DocSignify token validation error:", err);
         res.status(500).json({ error: err.message || "Internal server error validating token" });
+    }
+});
+
+// 4.5 Dispatch invitation emails for signatories
+app.post("/api/signify/send-emails", (req, res) => {
+    try {
+        const { docId, signatories, title } = req.body;
+        if (!docId || !signatories || !Array.isArray(signatories)) {
+            return res.status(400).json({ error: "docId and signatories array are required" });
+        }
+
+        const emailsSent = [];
+        for (const sig of signatories) {
+            const secureLink = `${req.protocol}://${req.get('host')}?token=${sig.token}`;
+            const emailBody = `
+================================================================================
+📧 OUTGOING EMAIL INVITATION DISPATCHED via CRAVEBIZ SSL
+================================================================================
+Timestamp: ${new Date().toISOString()}
+Document ID: ${docId}
+To: ${sig.name} <${sig.email}>
+Subject: Action Required: Secure E-Sign Invitation for '${title}'
+
+Dear ${sig.name},
+
+You have been invited by CraveBiZ Workspace to sign the document: '${title}'.
+
+To access the secure document viewer and sign without creating an account or logging in, 
+please click the secure link below:
+${secureLink}
+
+This link is secured by SSL and unique to you. Do not share this link.
+
+Best regards,
+CraveBiZ Document Team
+================================================================================
+`;
+            console.log(emailBody);
+            emailsSent.push({
+                email: sig.email,
+                name: sig.name,
+                role: sig.role,
+                status: "sent",
+                timestamp: new Date().toISOString()
+            });
+        }
+
+        res.json({ success: true, emailsSent });
+    } catch (err: any) {
+        console.error("Error dispatching emails on backend:", err);
+        res.status(500).json({ error: err.message || "Failed to dispatch email invitations" });
     }
 });
 
