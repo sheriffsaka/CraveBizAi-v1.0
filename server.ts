@@ -62,7 +62,32 @@ async function verifyTenant(req: any, res: any, next: any) {
             return res.status(401).json({ error: "Unauthorized: Invalid or missing token" });
         }
         
-        const tenantId = req.headers["x-tenant-id"] || req.params.tenantId;
+        let tenantId = req.headers["x-tenant-id"] || req.params.tenantId;
+        if (!tenantId) {
+            // High-resiliency fallback: look up first workspace associated with this user
+            try {
+                const { data: userComps } = await supabaseClient
+                    .from("company_members")
+                    .select("company_id")
+                    .eq("user_id", user.id)
+                    .limit(1);
+                if (userComps && userComps.length > 0) {
+                    tenantId = userComps[0].company_id;
+                } else {
+                    const { data: ownedComps } = await supabaseClient
+                        .from("companies")
+                        .select("id")
+                        .eq("owner_id", user.id)
+                        .limit(1);
+                    if (ownedComps && ownedComps.length > 0) {
+                        tenantId = ownedComps[0].id;
+                    }
+                }
+            } catch (fallbackErr) {
+                console.warn("Tenant fallback lookup failed:", fallbackErr);
+            }
+        }
+        
         if (!tenantId) {
             return res.status(400).json({ error: "Missing workspace context (X-Tenant-Id or tenantId)" });
         }

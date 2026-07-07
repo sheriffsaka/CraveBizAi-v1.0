@@ -1381,7 +1381,21 @@ class CraveBizApi {
         body: JSON.stringify({ id: docId, title, originalFileUrl, ownerId, fileType, fileName, signatories, contentJson })
       });
       if (!response.ok) {
-        throw new Error("Failed to register document on local server");
+        let serverErr = "Failed to register document on local server";
+        try {
+          const errData = await response.json();
+          if (errData && errData.error) {
+            serverErr += `: ${errData.error}`;
+          }
+        } catch (e) {
+          try {
+            const errTxt = await response.text();
+            if (errTxt) {
+              serverErr += `: ${errTxt.slice(0, 100)}`;
+            }
+          } catch (e2) {}
+        }
+        throw new Error(serverErr);
       }
       const data = await response.json();
       return { document: data.document, signatories: data.signatories };
