@@ -950,11 +950,15 @@ const DocumentTransformer: React.FC<DocumentTransformerProps> = ({
                     console.warn("Backend simulated email notification trigger failed:", emailErr);
                 }
             } else {
-                setError("Failed to register e-sign workflow context on host.");
+                const errorMsg = "Failed to register e-sign workflow context on host.";
+                setError(errorMsg);
+                triggerToast("⚠ Error: " + errorMsg);
             }
         } catch (err: any) {
             console.error("Save Draft & Send Error:", err);
-            setError("Failed to register multi-party workspace: " + (err.message || err));
+            const errorMsg = "Failed to register multi-party workspace: " + (err.message || err);
+            setError(errorMsg);
+            triggerToast("⚠ Error: " + errorMsg);
         } finally {
             setIsLoading(false);
         }

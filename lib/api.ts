@@ -7,7 +7,22 @@ const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBh
 
 export const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 
-const generateId = () => crypto.randomUUID();
+const safeRandomUUID = (): string => {
+  if (typeof window !== 'undefined' && window.crypto && window.crypto.randomUUID) {
+    try {
+      return window.crypto.randomUUID();
+    } catch (e) {
+      // browser security sandbox fallback
+    }
+  }
+  return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, function(c) {
+    const r = Math.random() * 16 | 0;
+    const v = c === 'x' ? r : (r & 0x3 | 0x8);
+    return v.toString(16);
+  });
+};
+
+const generateId = () => safeRandomUUID();
 
 class CraveBizApi {
   private static instance: CraveBizApi;
@@ -1212,7 +1227,7 @@ class CraveBizApi {
         // Native, high-performance base64 to Blob translation to prevent UI thread freezing on large files
         const res = await fetch(base64Data);
         const blob = await res.blob();
-        const filePath = `${crypto.randomUUID()}_${fileName}`;
+        const filePath = `${safeRandomUUID()}_${fileName}`;
         
         const { data, error } = await supabase.storage.from('documents').upload(filePath, blob, {
           contentType: fileType,
@@ -1301,12 +1316,12 @@ class CraveBizApi {
         }
         
         const signatoriesData = signatories.map(sig => ({
-          id: sig.id || crypto.randomUUID(),
+          id: sig.id || safeRandomUUID(),
           document_id: docId,
           name: sig.name,
           email: sig.email,
           role: sig.role,
-          token: crypto.randomUUID().replace(/-/g, ''),
+          token: safeRandomUUID().replace(/-/g, ''),
           status: 'pending',
           signed_at: null
         }));
@@ -1467,7 +1482,7 @@ class CraveBizApi {
       // 1. Try Supabase
       try {
         const signatureData = {
-          id: crypto.randomUUID(),
+          id: safeRandomUUID(),
           document_id: signature.document_id,
           signatory_id: signature.signatory_id,
           page_number: signature.page_number,
