@@ -682,7 +682,8 @@ const DocumentTransformer: React.FC<DocumentTransformerProps> = ({
                             notifyAccounting: draft.notifyAccounting,
                             webhookUrl: draft.webhookUrl
                         }
-                    }
+                    },
+                    company?.id
                 );
             }
             
@@ -704,7 +705,7 @@ const DocumentTransformer: React.FC<DocumentTransformerProps> = ({
         try {
             // Read standard document text block or construct from title
             const textToAnalyze = generatedDoc.content_json?.htmlContent || generatedDoc.title || "Standard Sales SLA Agreement";
-            const insights = await api.getDocSignifyInsights(generatedDoc.id, textToAnalyze);
+            const insights = await api.getDocSignifyInsights(generatedDoc.id, textToAnalyze, company?.id);
             setAiInsights(insights);
             triggerToast("🧠 AI Document Insights & suggested signature overlays loaded!");
             
@@ -924,7 +925,8 @@ const DocumentTransformer: React.FC<DocumentTransformerProps> = ({
                 fileType,
                 fileName,
                 mappedSigs,
-                contentJson
+                contentJson,
+                company?.id
             );
 
             if (response && response.document) {
@@ -1075,7 +1077,7 @@ const DocumentTransformer: React.FC<DocumentTransformerProps> = ({
                     
                     try {
                         // Attempt to locate modern secure token-based signing link
-                        const dbInfo = await api.getDocSignifyDocument(savedId);
+                        const dbInfo = await api.getDocSignifyDocument(savedId, company?.id);
                         if (dbInfo && dbInfo.signatories) {
                             const matchedSignatory = dbInfo.signatories.find(
                                 s => s.email.toLowerCase() === requestEmail.trim().toLowerCase()
@@ -1370,7 +1372,7 @@ const DocumentTransformer: React.FC<DocumentTransformerProps> = ({
                 
                 // 1. Upload original file to secure server storage
                 try {
-                    const uploadRes = await api.uploadDocSignifyFile(file.name, base64Data, file.type);
+                    const uploadRes = await api.uploadDocSignifyFile(file.name, base64Data, file.type, company?.id);
                     if (uploadRes) {
                         originalFileUrl = uploadRes;
                     }
@@ -1384,7 +1386,7 @@ const DocumentTransformer: React.FC<DocumentTransformerProps> = ({
 
                 // Call server-side parsing first
                 try {
-                    const parsedResult = await api.parseDocumentFile(file.name, base64Data, file.type);
+                    const parsedResult = await api.parseDocumentFile(file.name, base64Data, file.type, company?.id);
                     if (parsedResult && parsedResult.success) {
                         extractedText = parsedResult.extractedText;
                         blocks = parsedResult.blocks;
@@ -1772,7 +1774,7 @@ ${company?.name || 'CraveBiZ Vendor'}`;
         setWizardStep('prepare');
 
         try {
-            const dbInfo = await api.getDocSignifyDocument(doc.id);
+            const dbInfo = await api.getDocSignifyDocument(doc.id, company?.id);
             if (dbInfo) {
                 if (dbInfo.signatories && dbInfo.signatories.length > 0) {
                     const mappedSigs: SignatureInfo[] = dbInfo.signatories.map(s => ({

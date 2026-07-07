@@ -1205,7 +1205,7 @@ class CraveBizApi {
   // NEW DOCSIGNIFY CORE API MODULE
   // ==========================================================================
 
-  async uploadDocSignifyFile(fileName: string, base64Data: string, fileType: string): Promise<string> {
+  async uploadDocSignifyFile(fileName: string, base64Data: string, fileType: string, companyId?: string): Promise<string> {
     try {
       // 1. Try uploading to Supabase Storage first if configured
       try {
@@ -1232,7 +1232,7 @@ class CraveBizApi {
       // 2. Fall back to local Express server file upload
       const response = await fetch("/api/signify/upload-file", {
         method: "POST",
-        headers: await this.getAuthHeaders(),
+        headers: await this.getAuthHeaders(companyId),
         body: JSON.stringify({ fileName, fileType, base64Data })
       });
       if (!response.ok) {
@@ -1246,11 +1246,11 @@ class CraveBizApi {
     }
   }
 
-  async parseDocumentFile(fileName: string, base64Data: string, fileType: string): Promise<{ success: boolean; extractedText: string; blocks: any[] }> {
+  async parseDocumentFile(fileName: string, base64Data: string, fileType: string, companyId?: string): Promise<{ success: boolean; extractedText: string; blocks: any[] }> {
     try {
       const response = await fetch("/api/signify/parse-document", {
         method: "POST",
-        headers: await this.getAuthHeaders(),
+        headers: await this.getAuthHeaders(companyId),
         body: JSON.stringify({ fileName, fileType, base64Data })
       });
       if (!response.ok) {
@@ -1279,7 +1279,8 @@ class CraveBizApi {
     fileType: string,
     fileName: string,
     signatories: { id?: string; name: string; email: string; role: DbDocumentSignatory['role'] }[],
-    contentJson?: any
+    contentJson?: any,
+    companyId?: string
   ): Promise<{ document: DbDocument; signatories: DbDocumentSignatory[] }> {
     try {
       // 1. Try insert into Supabase tables if they exist
@@ -1338,7 +1339,7 @@ class CraveBizApi {
         try {
           await fetch("/api/signify/documents", {
             method: "POST",
-            headers: await this.getAuthHeaders(),
+            headers: await this.getAuthHeaders(companyId),
             body: JSON.stringify({ 
               id: docId, 
               title, 
@@ -1361,7 +1362,7 @@ class CraveBizApi {
       // 2. Local Express fallback
       const response = await fetch("/api/signify/documents", {
         method: "POST",
-        headers: await this.getAuthHeaders(),
+        headers: await this.getAuthHeaders(companyId),
         body: JSON.stringify({ id: docId, title, originalFileUrl, ownerId, fileType, fileName, signatories, contentJson })
       });
       if (!response.ok) {
@@ -1375,7 +1376,7 @@ class CraveBizApi {
     }
   }
 
-  async getDocSignifyDocument(docId: string): Promise<{ document: DbDocument; signatories: DbDocumentSignatory[]; signatures: DbDocumentSignature[] }> {
+  async getDocSignifyDocument(docId: string, companyId?: string): Promise<{ document: DbDocument; signatories: DbDocumentSignatory[]; signatures: DbDocumentSignature[] }> {
     try {
       // 1. Try Supabase
       try {
@@ -1404,7 +1405,7 @@ class CraveBizApi {
 
       // 2. Local Express fallback
       const response = await fetch(`/api/signify/documents/${docId}`, {
-        headers: await this.getAuthHeaders()
+        headers: await this.getAuthHeaders(companyId)
       });
       if (!response.ok) {
         throw new Error("Failed to retrieve document details");
@@ -1597,11 +1598,11 @@ class CraveBizApi {
   // DOCSIGNIFY PREMIUM CLIENT API METHODS
   // ============================================================================
 
-  async getDocSignifyInsights(documentId: string, textContent: string): Promise<any> {
+  async getDocSignifyInsights(documentId: string, textContent: string, companyId?: string): Promise<any> {
     try {
       const response = await fetch("/api/signify/document-insights", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: await this.getAuthHeaders(companyId),
         body: JSON.stringify({ documentId, textContent })
       });
       if (!response.ok) throw new Error("Failed to retrieve document insights");
