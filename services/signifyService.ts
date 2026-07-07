@@ -4,12 +4,31 @@ import crypto from "crypto";
 import { PDFDocument, StandardFonts, rgb } from "pdf-lib";
 import { DbDocument, DbDocumentSignatory, DbDocumentSignature } from "../types.ts";
 
-const DATA_FILE = path.join(process.cwd(), "docsignify_data.json");
-const UPLOADS_DIR = path.join(process.cwd(), "uploads");
+const isVercel = process.env.VERCEL === "1" || process.env.NODE_ENV === "production";
+
+let DATA_FILE = path.join(process.cwd(), "docsignify_data.json");
+let UPLOADS_DIR = path.join(process.cwd(), "uploads");
+
+if (isVercel) {
+  DATA_FILE = path.join("/tmp", "docsignify_data.json");
+  UPLOADS_DIR = path.join("/tmp", "uploads");
+}
 
 // Ensure uploads directory exists
-if (!fs.existsSync(UPLOADS_DIR)) {
-  fs.mkdirSync(UPLOADS_DIR, { recursive: true });
+try {
+  if (!fs.existsSync(UPLOADS_DIR)) {
+    fs.mkdirSync(UPLOADS_DIR, { recursive: true });
+  }
+} catch (e) {
+  console.warn("Could not create uploads directory in current directory, trying /tmp:", e);
+  UPLOADS_DIR = path.join("/tmp", "uploads");
+  try {
+    if (!fs.existsSync(UPLOADS_DIR)) {
+      fs.mkdirSync(UPLOADS_DIR, { recursive: true });
+    }
+  } catch (tmpErr) {
+    console.error("Failed to create fallback /tmp/uploads directory:", tmpErr);
+  }
 }
 
 interface SignifyStore {
@@ -268,15 +287,33 @@ export class SignifyService {
     }
     
     // Locate original document file
-    const urlParts = document.original_file_url.split('/');
-    const fileName = urlParts[urlParts.length - 1];
-    const originalFilePath = path.join(UPLOADS_DIR, fileName);
-    
-    if (!fs.existsSync(originalFilePath)) {
-      throw new Error(`Original file not found on disk: ${originalFilePath}`);
+    let fileBytes: Buffer;
+    if (document.original_file_url.startsWith('http://') || document.original_file_url.startsWith('https://')) {
+      try {
+        const response = await fetch(document.original_file_url);
+        if (!response.ok) throw new Error(`HTTP error ${response.status}`);
+        const arrayBuffer = await response.arrayBuffer();
+        fileBytes = Buffer.from(arrayBuffer);
+      } catch (fetchErr: any) {
+        console.warn(`Failed to fetch original file from remote URL ${document.original_file_url}:`, fetchErr.message || fetchErr);
+        // Fallback to local file check
+        const urlParts = document.original_file_url.split('/');
+        const fileName = urlParts[urlParts.length - 1];
+        const originalFilePath = path.join(UPLOADS_DIR, fileName);
+        if (!fs.existsSync(originalFilePath)) {
+          throw new Error(`Original file not found on disk or remote: ${document.original_file_url}`);
+        }
+        fileBytes = fs.readFileSync(originalFilePath);
+      }
+    } else {
+      const urlParts = document.original_file_url.split('/');
+      const fileName = urlParts[urlParts.length - 1];
+      const originalFilePath = path.join(UPLOADS_DIR, fileName);
+      if (!fs.existsSync(originalFilePath)) {
+        throw new Error(`Original file not found on disk: ${originalFilePath}`);
+      }
+      fileBytes = fs.readFileSync(originalFilePath);
     }
-    
-    const fileBytes = fs.readFileSync(originalFilePath);
     let pdfDoc: PDFDocument;
     
     // Check file type
