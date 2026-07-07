@@ -79,10 +79,11 @@ export const DocumentSignifyViewer: React.FC<DocumentSignifyViewerProps> = ({
   onFieldClick,
   onPlaceFieldAtCoordinates,
 }) => {
-  const [numPages, setNumPages] = useState<number>(1);
+  const [numPages, setNumPages] = useState<number>(0);
   const [loading, setLoading] = useState<boolean>(true);
   const [error, setError] = useState<string | null>(null);
   const [pageDimensions, setPageDimensions] = useState<Record<number, { width: number; height: number }>>({});
+  const [pdfLoaded, setPdfLoaded] = useState<boolean>(false);
   
   const containerRef = useRef<HTMLDivElement>(null);
   const pageRefs = useRef<Record<number, HTMLDivElement | null>>({});
@@ -94,6 +95,16 @@ export const DocumentSignifyViewer: React.FC<DocumentSignifyViewerProps> = ({
   const isDoc = cleanType.includes('docx') || cleanType.includes('doc') || cleanType.includes('word') || cleanType.includes('html') || !!htmlContent;
 
   const pdfDocRef = useRef<any>(null);
+
+  useEffect(() => {
+    // Reset state whenever fileUrl changes to prevent stale data
+    setPdfLoaded(false);
+    setNumPages(0);
+    setLoading(true);
+    setError(null);
+    pdfDocRef.current = null;
+    canvasRefs.current = {};
+  }, [fileUrl]);
 
   useEffect(() => {
     if (!fileUrl && !htmlContent) {
@@ -110,10 +121,42 @@ export const DocumentSignifyViewer: React.FC<DocumentSignifyViewerProps> = ({
           if (!pdfjsLib) {
             throw new Error("PDF.js engine is still loading. Please wait...");
           }
-          const loadingTask = pdfjsLib.getDocument(fileUrl);
+
+          let pdfSource: any = fileUrl;
+          if (typeof fileUrl === 'string') {
+            if (fileUrl.startsWith('data:') && fileUrl.includes(';base64,')) {
+              try {
+                const base64Content = fileUrl.split(';base64,')[1];
+                const binaryString = window.atob(base64Content);
+                const len = binaryString.length;
+                const bytes = new Uint8Array(len);
+                for (let i = 0; i < len; i++) {
+                  bytes[i] = binaryString.charCodeAt(i);
+                }
+                pdfSource = { data: bytes };
+              } catch (e) {
+                console.warn("Failed decoding data URI as base64:", e);
+              }
+            } else if (/^[a-zA-Z0-9+/=]+$/.test(fileUrl.trim()) && fileUrl.length > 100) {
+              try {
+                const binaryString = window.atob(fileUrl.trim());
+                const len = binaryString.length;
+                const bytes = new Uint8Array(len);
+                for (let i = 0; i < len; i++) {
+                  bytes[i] = binaryString.charCodeAt(i);
+                }
+                pdfSource = { data: bytes };
+              } catch (e) {
+                console.warn("Failed decoding raw base64 string:", e);
+              }
+            }
+          }
+
+          const loadingTask = pdfjsLib.getDocument(pdfSource);
           const pdf = await loadingTask.promise;
           pdfDocRef.current = pdf;
           setNumPages(pdf.numPages);
+          setPdfLoaded(true);
         } catch (err: any) {
           console.error("Error loading PDF:", err);
           setError("Fidelity Viewer could not parse this PDF format: " + err.message);
@@ -132,7 +175,7 @@ export const DocumentSignifyViewer: React.FC<DocumentSignifyViewerProps> = ({
   }, [fileUrl, fileType, htmlContent, isPdf, isImage, isDoc]);
 
   useEffect(() => {
-    if (!isPdf || !pdfDocRef.current || numPages === 0) return;
+    if (!isPdf || !pdfDocRef.current || numPages === 0 || !pdfLoaded) return;
 
     let isCancelled = false;
 
@@ -146,11 +189,13 @@ export const DocumentSignifyViewer: React.FC<DocumentSignifyViewerProps> = ({
           const page = await pdf.getPage(pageNum);
           const viewport = page.getViewport({ scale: 1.5 });
           
-          // Retry slightly if canvas is not in DOM yet
           let canvas = canvasRefs.current[pageNum];
-          if (!canvas) {
-            await new Promise(resolve => setTimeout(resolve, 50));
+          let retries = 0;
+          while (!canvas && retries < 15) {
+            if (isCancelled) return;
+            await new Promise(resolve => setTimeout(resolve, 100));
             canvas = canvasRefs.current[pageNum];
+            retries++;
           }
           
           if (canvas) {
@@ -190,7 +235,7 @@ export const DocumentSignifyViewer: React.FC<DocumentSignifyViewerProps> = ({
       isCancelled = true;
       clearTimeout(timer);
     };
-  }, [numPages, isPdf, fileUrl]);
+  }, [numPages, isPdf, fileUrl, pdfLoaded]);
 
   const setCanvasRef = (pageNum: number, canvas: HTMLCanvasElement | null) => {
     canvasRefs.current[pageNum] = canvas;
