@@ -68,39 +68,40 @@ interface PDFPageCanvasProps {
 }
 
 const PDFPageCanvas: React.FC<PDFPageCanvasProps> = ({ pdfDoc, pageNum, onDimensionsLoaded, canvasRefCallback }) => {
-  const canvasRef = useRef<HTMLCanvasElement | null>(null);
-  const isRenderingRef = useRef(false);
+  const [canvasElement, setCanvasElement] = useState<HTMLCanvasElement | null>(null);
 
   useEffect(() => {
     let isCancelled = false;
+    let renderTask: any = null;
+
     const renderPage = async () => {
-      if (!pdfDoc || !canvasRef.current || isRenderingRef.current) return;
-      isRenderingRef.current = true;
+      if (!pdfDoc || !canvasElement) return;
       try {
         const page = await pdfDoc.getPage(pageNum);
-        const viewport = page.getViewport({ scale: 1.5 });
-        
         if (isCancelled) return;
-        const canvas = canvasRef.current;
-        if (canvas) {
-          canvas.width = viewport.width;
-          canvas.height = viewport.height;
-          const context = canvas.getContext('2d');
-          if (context) {
-            const renderContext = {
-              canvasContext: context,
-              viewport: viewport,
-            };
-            await page.render(renderContext).promise;
-            if (!isCancelled) {
-              onDimensionsLoaded(pageNum, viewport.width, viewport.height);
-            }
+
+        const viewport = page.getViewport({ scale: 1.5 });
+        const canvas = canvasElement;
+        canvas.width = viewport.width;
+        canvas.height = viewport.height;
+        
+        const context = canvas.getContext('2d');
+        if (context) {
+          const renderContext = {
+            canvasContext: context,
+            viewport: viewport,
+          };
+          renderTask = page.render(renderContext);
+          await renderTask.promise;
+          if (!isCancelled) {
+            onDimensionsLoaded(pageNum, viewport.width, viewport.height);
           }
         }
-      } catch (err) {
+      } catch (err: any) {
+        if (err?.name === 'RenderingCancelledException' || err?.message?.includes('cancelled')) {
+          return;
+        }
         console.error(`Error rendering PDF page ${pageNum}:`, err);
-      } finally {
-        isRenderingRef.current = false;
       }
     };
 
@@ -108,13 +109,18 @@ const PDFPageCanvas: React.FC<PDFPageCanvasProps> = ({ pdfDoc, pageNum, onDimens
 
     return () => {
       isCancelled = true;
+      if (renderTask) {
+        try {
+          renderTask.cancel();
+        } catch (e) {}
+      }
     };
-  }, [pdfDoc, pageNum]);
+  }, [pdfDoc, pageNum, canvasElement]);
 
   return (
     <canvas
       ref={(el) => {
-        canvasRef.current = el;
+        setCanvasElement(el);
         canvasRefCallback(pageNum, el);
       }}
       className="w-full h-full rounded-xl page-content-target"

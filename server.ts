@@ -88,12 +88,38 @@ async function verifyTenant(req: any, res: any, next: any) {
             }
         }
         
-        if (!tenantId) {
-            return res.status(400).json({ error: "Missing workspace context (X-Tenant-Id or tenantId)" });
+        // Super Admin / Admin bypass
+        const isAdminEmail = [
+            'cravebiz@cloudcraves.com',
+            'super@admin.com',
+            'sheriffdeenalade@gmail.com'
+        ].includes(user.email?.toLowerCase() || '');
+
+        let isUserAdmin = isAdminEmail;
+        if (!isUserAdmin) {
+            try {
+                const { data: profile } = await supabaseClient
+                    .from("profiles")
+                    .select("is_admin")
+                    .eq("id", user.id)
+                    .maybeSingle();
+                if (profile?.is_admin) {
+                    isUserAdmin = true;
+                }
+            } catch (pErr) {
+                console.warn("Could not query profile for admin bypass:", pErr);
+            }
         }
-        
-        // Super Admin bypass
-        if (user.email?.toLowerCase() === 'cravebiz@cloudcraves.com') {
+
+        if (!tenantId) {
+            if (isUserAdmin) {
+                tenantId = "cravebiz-inc";
+            } else {
+                return res.status(400).json({ error: "Missing workspace context (X-Tenant-Id or tenantId)" });
+            }
+        }
+
+        if (isUserAdmin) {
             req.user = { id: user.id, email: user.email, name: "Super Admin", role: "Owner" };
             req.tenantId = tenantId;
             return next();
