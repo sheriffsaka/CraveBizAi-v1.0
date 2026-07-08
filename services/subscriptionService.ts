@@ -18,12 +18,21 @@ export const TIER_LIMITS = {
  * Helper to get subscription details for a specific company
  */
 export function getSubscriptionInfo(companyId: string): SubscriptionInfo {
+  const isSuperAdmin = localStorage.getItem('cravebiz_is_super_admin') === 'true';
+  const defaultTier: SubscriptionTier = isSuperAdmin ? 'Enterprise' : 'Basic';
+
   if (!companyId) {
-    return { tier: 'Basic', aiUnits: 5, maxInvoices: 5, aiModeEnabled: false };
+    const limits = TIER_LIMITS[defaultTier];
+    return { 
+      tier: defaultTier, 
+      aiUnits: limits.maxAiUnits, 
+      maxInvoices: limits.maxInvoices, 
+      aiModeEnabled: limits.aiAvailable 
+    };
   }
 
-  // Retrieve saved tier or default to 'Basic'
-  const tier = (localStorage.getItem(`cravebiz_tier_${companyId}`) || 'Basic') as SubscriptionTier;
+  // Retrieve saved tier or default
+  const tier = (localStorage.getItem(`cravebiz_tier_${companyId}`) || defaultTier) as SubscriptionTier;
   const limits = TIER_LIMITS[tier] || TIER_LIMITS.Basic;
 
   // Retrieve remaining units or default
@@ -31,7 +40,9 @@ export function getSubscriptionInfo(companyId: string): SubscriptionInfo {
   const aiUnits = savedUnits !== null ? parseInt(savedUnits, 10) : limits.maxAiUnits;
 
   // Retrieve AI mode toggle
-  const aiModeEnabled = limits.aiAvailable && localStorage.getItem(`cravebiz_aimode_${companyId}`) === 'true';
+  const savedAiMode = localStorage.getItem(`cravebiz_aimode_${companyId}`);
+  const defaultAiMode = isSuperAdmin ? 'true' : 'false';
+  const aiModeEnabled = limits.aiAvailable && (savedAiMode !== null ? savedAiMode === 'true' : defaultAiMode === 'true');
 
   return {
     tier,

@@ -230,6 +230,12 @@ export default function App() {
             }
             setCurrentUser(profile);
             
+            if (profile.isAdmin || profile.email?.toLowerCase() === 'cravebiz@cloudcraves.com' || profile.email?.toLowerCase() === 'super@admin.com') {
+                localStorage.setItem('cravebiz_is_super_admin', 'true');
+            } else {
+                localStorage.removeItem('cravebiz_is_super_admin');
+            }
+            
             if (profile.isAdmin) {
                 const [allComps, allUsrs, allInvs] = await Promise.all([
                     api.getAllCompanies(),
@@ -293,7 +299,9 @@ export default function App() {
         else if (event === 'SIGNED_OUT' && isMounted.current) { 
             currentUserIdRef.current = null;
             setCurrentUser(null); setIsLoading(false); setCompanies([]); setActiveTenantId(null); 
-            setTenantData({ invoices: [], clients: [], services: [], generatedDocs: [], projects: [] }); localStorage.removeItem('cravebiz_tenant'); 
+            setTenantData({ invoices: [], clients: [], services: [], generatedDocs: [], projects: [] }); 
+            localStorage.removeItem('cravebiz_tenant'); 
+            localStorage.removeItem('cravebiz_is_super_admin');
         }
     });
     return () => { isMounted.current = false; subscription.unsubscribe(); };
