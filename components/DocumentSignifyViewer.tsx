@@ -68,20 +68,20 @@ interface PDFPageCanvasProps {
 }
 
 const PDFPageCanvas: React.FC<PDFPageCanvasProps> = ({ pdfDoc, pageNum, onDimensionsLoaded, canvasRefCallback }) => {
-  const [canvasElement, setCanvasElement] = useState<HTMLCanvasElement | null>(null);
+  const canvasRef = useRef<HTMLCanvasElement | null>(null);
 
   useEffect(() => {
     let isCancelled = false;
     let renderTask: any = null;
 
     const renderPage = async () => {
-      if (!pdfDoc || !canvasElement) return;
+      const canvas = canvasRef.current;
+      if (!pdfDoc || !canvas) return;
       try {
         const page = await pdfDoc.getPage(pageNum);
         if (isCancelled) return;
 
         const viewport = page.getViewport({ scale: 1.5 });
-        const canvas = canvasElement;
         canvas.width = viewport.width;
         canvas.height = viewport.height;
         
@@ -115,12 +115,12 @@ const PDFPageCanvas: React.FC<PDFPageCanvasProps> = ({ pdfDoc, pageNum, onDimens
         } catch (e) {}
       }
     };
-  }, [pdfDoc, pageNum, canvasElement]);
+  }, [pdfDoc, pageNum]);
 
   return (
     <canvas
       ref={(el) => {
-        setCanvasElement(el);
+        canvasRef.current = el;
         canvasRefCallback(pageNum, el);
       }}
       className="w-full h-full rounded-xl page-content-target"
@@ -158,7 +158,14 @@ export const DocumentSignifyViewer: React.FC<DocumentSignifyViewerProps> = ({
   const canvasRefs = useRef<Record<number, HTMLCanvasElement | null>>({});
 
   const cleanType = fileType.toLowerCase().replace('-html', '').replace('docx-pdf', 'pdf');
-  const isPdf = cleanType.includes('pdf') || (fileUrl && fileUrl.toLowerCase().endsWith('.pdf')) || (fileUrl && fileUrl.startsWith('data:application/pdf'));
+  const isPdf = 
+    cleanType.includes('pdf') || 
+    (typeof fileUrl === 'string' && (
+      fileUrl.toLowerCase().endsWith('.pdf') || 
+      fileUrl.toLowerCase().includes('.pdf?') ||
+      fileUrl.startsWith('data:application/pdf') || 
+      fileUrl.includes('JVBERi0')
+    ));
   const isImage = ['png', 'jpg', 'jpeg', 'gif', 'webp'].some(ext => cleanType.includes(ext)) || (fileUrl && /\.(png|jpg|jpeg|gif|webp)$/i.test(fileUrl)) || (fileUrl && fileUrl.startsWith('data:image/'));
   const isDoc = cleanType.includes('docx') || cleanType.includes('doc') || cleanType.includes('word') || cleanType.includes('html') || !!htmlContent;
 
