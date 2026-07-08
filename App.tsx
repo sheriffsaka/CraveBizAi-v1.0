@@ -86,11 +86,23 @@ export default function App() {
 
   const [selectedProvisionTier, setSelectedProvisionTier] = useState<SubscriptionTier>('Standard');
   const [subTrigger, setSubTrigger] = useState(0);
+  const [subErrorMsg, setSubErrorMsg] = useState<string | null>(null);
 
   useEffect(() => {
     const handleSubChange = () => setSubTrigger(prev => prev + 1);
     window.addEventListener('cravebiz_subscription_change', handleSubChange);
     return () => window.removeEventListener('cravebiz_subscription_change', handleSubChange);
+  }, []);
+
+  useEffect(() => {
+    const handleSubError = (e: Event) => {
+      const customEvent = e as CustomEvent;
+      if (customEvent.detail && customEvent.detail.message) {
+        setSubErrorMsg(customEvent.detail.message);
+      }
+    };
+    window.addEventListener('cravebiz_subscription_error', handleSubError);
+    return () => window.removeEventListener('cravebiz_subscription_error', handleSubError);
   }, []);
 
   useEffect(() => {
@@ -659,6 +671,24 @@ export default function App() {
       }
       case 'create-invoice': {
           if (!activeCompany) return <div className="text-center py-20 italic">Awaiting synchronization...</div>;
+          
+          const sub = getSubscriptionInfo(activeTenantId || '');
+          const currentCount = invoices.length;
+          if (currentCount >= sub.maxInvoices) {
+              const msg = `You have reached the monthly invoice limit of your ${sub.tier} Plan (${currentCount}/${sub.maxInvoices} invoices generated). Please upgrade your subscription tier in Workspace Settings.`;
+              window.dispatchEvent(new CustomEvent('cravebiz_subscription_error', { detail: { message: msg } }));
+              return (
+                  <div className="flex flex-col items-center justify-center p-12 text-center bg-white rounded-[2.5rem] border border-gray-100 shadow-2xl max-w-lg mx-auto my-12 animate-in fade-in">
+                      <div className="bg-red-50 w-16 h-16 rounded-3xl flex items-center justify-center mb-4 text-red-600 border border-red-100">
+                          <Icon name="reports" className="w-8 h-8" />
+                      </div>
+                      <h3 className="text-lg font-black text-gray-800 uppercase tracking-tighter mb-2">Invoice Limit Reached</h3>
+                      <p className="text-sm text-gray-500 mb-6 leading-relaxed">{msg}</p>
+                      <button onClick={() => navigateTo('settings')} className="px-6 py-3 bg-primary-600 text-white rounded-xl font-black uppercase tracking-widest text-[10px] shadow-lg shadow-primary-200 hover:bg-primary-700 transition">Upgrade Subscription</button>
+                  </div>
+              );
+          }
+
           return <CreateInvoice clients={clients} services={services} company={activeCompany} initialDraft={draftRenewal} onAddInvoice={async (i) => { 
               try { 
                   setIsDataSyncing(true); 
@@ -915,6 +945,34 @@ export default function App() {
               }
             }} 
           />
+      )}
+      {subErrorMsg && (
+        <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-[999] flex items-center justify-center p-4">
+          <div className="bg-white rounded-3xl p-8 max-w-md w-full shadow-2xl animate-in fade-in zoom-in-95 duration-200 border border-gray-100 text-center">
+            <div className="bg-red-50 w-16 h-16 rounded-2xl flex items-center justify-center mx-auto mb-4 border border-red-100 animate-bounce">
+              <Icon name="reports" className="w-8 h-8 text-red-600" />
+            </div>
+            <h3 className="text-lg font-black text-gray-800 uppercase tracking-tighter mb-2">Subscription Limit</h3>
+            <p className="text-sm text-gray-500 mb-6 leading-relaxed">{subErrorMsg}</p>
+            <div className="flex gap-3 justify-center">
+              <button 
+                onClick={() => {
+                  setSubErrorMsg(null);
+                  navigateTo('settings');
+                }} 
+                className="px-6 py-2.5 bg-primary-600 text-white rounded-xl font-bold uppercase tracking-wider text-xs shadow-lg shadow-primary-200 hover:bg-primary-700 transition"
+              >
+                Upgrade Plan
+              </button>
+              <button 
+                onClick={() => setSubErrorMsg(null)} 
+                className="px-6 py-2.5 bg-gray-100 text-gray-600 rounded-xl font-bold uppercase tracking-wider text-xs hover:bg-gray-200 transition"
+              >
+                Dismiss
+              </button>
+            </div>
+          </div>
+        </div>
       )}
     </div>
   );

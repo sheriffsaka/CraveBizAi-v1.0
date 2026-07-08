@@ -1,4 +1,12 @@
 import { GeneratedDocument, Invoice, InvoiceItem, DocumentReviewResult } from "../types.ts";
+import { deductAiUnit } from "./subscriptionService.ts";
+
+function preCheckAndDeduct() {
+    const companyId = localStorage.getItem('cravebiz_tenant');
+    if (companyId) {
+        deductAiUnit(companyId);
+    }
+}
 
 export async function generateTextResponse(
     prompt: string,
@@ -6,6 +14,7 @@ export async function generateTextResponse(
     systemInstruction?: string,
 ): Promise<string> {
     try {
+        preCheckAndDeduct();
         const response = await fetch("/api/ai/text-response", {
             method: "POST",
             headers: { "Content-Type": "application/json" },
@@ -16,9 +25,9 @@ export async function generateTextResponse(
         }
         const data = await response.json();
         return data.text || "Sorry, I encountered an error while processing your request.";
-    } catch (error) {
+    } catch (error: any) {
         console.error("Client Error calling generateTextResponse API:", error);
-        return "Sorry, I encountered an error while processing your request.";
+        return error.message || "Sorry, I encountered an error while processing your request.";
     }
 }
 
@@ -27,6 +36,7 @@ export async function transformDocument(
     companyContext: any
 ): Promise<GeneratedDocument | null> {
     try {
+        preCheckAndDeduct();
         const response = await fetch("/api/ai/transform-document", {
             method: "POST",
             headers: { "Content-Type": "application/json" },
@@ -47,6 +57,7 @@ export async function generateRenewalInvoiceSuggestion(
     expiringItems: InvoiceItem[]
 ): Promise<Partial<Invoice> | null> {
     try {
+        preCheckAndDeduct();
         const response = await fetch("/api/ai/renewal-suggestion", {
             method: "POST",
             headers: { "Content-Type": "application/json" },
@@ -67,6 +78,7 @@ export async function generateClientPaymentHealthReport(
     paymentHistory: any[]
 ): Promise<string> {
     try {
+        preCheckAndDeduct();
         const response = await fetch("/api/ai/client-payment-health-report", {
             method: "POST",
             headers: { "Content-Type": "application/json" },
@@ -77,9 +89,9 @@ export async function generateClientPaymentHealthReport(
         }
         const data = await response.json();
         return data.text || "Failed to generate health report.";
-    } catch (error) {
+    } catch (error: any) {
         console.error("Client Error calling client payment health report API:", error);
-        return "Failed to generate health report.";
+        return error.message || "Failed to generate health report.";
     }
 }
 
@@ -88,6 +100,7 @@ export async function generateDocumentFromPurpose(
     companyContext: any
 ): Promise<GeneratedDocument | null> {
     try {
+        preCheckAndDeduct();
         const response = await fetch("/api/ai/generate-document-from-purpose", {
             method: "POST",
             headers: { "Content-Type": "application/json" },
@@ -107,6 +120,7 @@ export async function reviewDocumentContent(
     documentText: string
 ): Promise<DocumentReviewResult | null> {
     try {
+        preCheckAndDeduct();
         const response = await fetch("/api/ai/review-document-content", {
             method: "POST",
             headers: { "Content-Type": "application/json" },

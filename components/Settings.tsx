@@ -3,6 +3,7 @@ import { Company, BankAccount, User, WorkspaceRole, AuditLog } from '../types';
 import { supabase } from '../lib/api';
 import ImageCropperModal from './ImageCropperModal';
 import Icon from './common/Icon';
+import { getSubscriptionInfo, setSubscriptionInfo, SubscriptionTier, TIER_LIMITS } from '../services/subscriptionService';
 
 interface SettingsProps {
   company: Company | null;
@@ -117,12 +118,30 @@ const BankAccountsManager: React.FC<BankAccountsManagerProps> = ({ companyId, ba
 };
 
 const Settings: React.FC<SettingsProps> = ({ company, onSaveChanges, onInviteUser, users, activeTenantId, onUpdateUserStatus, onResendInvite, userRole = 'Owner', auditLogs = [], onTriggerAuditLog }) => {
+  const isReadOnly = userRole === 'Member' || userRole === 'Manager';
   const [formData, setFormData] = useState<Company>(company || { id: '', name: '', address: '', email: '', bankAccounts: [] });
   const [showSuccess, setShowSuccess] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
   const [isCropperModalOpen, setIsCropperModalOpen] = useState(false);
   const [imageToCrop, setImageToCrop] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
+
+  // Subscription state
+  const [subInfo, setSubInfo] = useState(() => getSubscriptionInfo(activeTenantId));
+
+  useEffect(() => {
+    setSubInfo(getSubscriptionInfo(activeTenantId));
+  }, [activeTenantId]);
+
+  const handleUpdateTier = (tier: SubscriptionTier) => {
+    if (isReadOnly) return;
+    setSubscriptionInfo(activeTenantId, tier);
+    setSubInfo(getSubscriptionInfo(activeTenantId));
+    if (onTriggerAuditLog) {
+      onTriggerAuditLog('Update Subscription', 'Company', `Plan updated to ${tier}`);
+    }
+    window.dispatchEvent(new Event('cravebiz_subscription_change'));
+  };
 
   // Invitation states
   const [isInviteOpen, setIsInviteOpen] = useState(false);
@@ -168,8 +187,6 @@ const Settings: React.FC<SettingsProps> = ({ company, onSaveChanges, onInviteUse
   }, [activeTenantId, company, userRole]);
 
   if (!company) return null;
-
-  const isReadOnly = userRole === 'Member' || userRole === 'Manager';
 
   const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => {
     if (isReadOnly) return;
@@ -351,6 +368,107 @@ const Settings: React.FC<SettingsProps> = ({ company, onSaveChanges, onInviteUse
         onUpdateBankAccounts={handleUpdateBankAccounts}
         isReadOnly={isReadOnly}
       />
+
+      <div className="bg-white p-8 rounded-[2.5rem] shadow-2xl border border-gray-100">
+        <h3 className="text-xl font-black text-gray-800 border-b pb-4 mb-6 uppercase tracking-tighter">Workspace Subscription</h3>
+        <p className="text-xs text-gray-500 mb-6 leading-relaxed">
+          Select the subscription tier that matches your SME operational needs. Subscription limits reset at the start of each billing cycle.
+        </p>
+
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-8">
+          <div className={`p-5 rounded-3xl border transition-all flex flex-col justify-between h-44 ${subInfo.tier === 'Basic' ? 'border-primary-600 bg-primary-50/20 ring-2 ring-primary-500/10' : 'border-gray-100 bg-gray-50/50'}`}>
+            <div>
+              <div className="flex justify-between items-start">
+                <span className="font-bold text-sm text-gray-900">Basic Plan</span>
+                {subInfo.tier === 'Basic' && <span className="text-[10px] bg-primary-600 text-white px-2 py-0.5 rounded-full font-bold">Active</span>}
+              </div>
+              <p className="text-xs text-gray-500 mt-2">Perfect for freelancers or small operations starting out.</p>
+            </div>
+            <div className="mt-4 flex flex-col gap-2">
+              <span className="text-[11px] font-bold text-gray-700">5 Invoices / month</span>
+              <span className="text-[10px] font-bold text-red-600 bg-red-50 px-2 py-0.5 rounded self-start">No AI Features</span>
+              {subInfo.tier !== 'Basic' && !isReadOnly && (
+                <button type="button" onClick={() => handleUpdateTier('Basic')} className="mt-2 text-xs font-bold text-primary-600 hover:text-primary-700 text-left">Downgrade to Basic</button>
+              )}
+            </div>
+          </div>
+
+          <div className={`p-5 rounded-3xl border transition-all flex flex-col justify-between h-44 ${subInfo.tier === 'Standard' ? 'border-primary-600 bg-primary-50/20 ring-2 ring-primary-500/10' : 'border-gray-100 bg-gray-50/50'}`}>
+            <div>
+              <div className="flex justify-between items-start">
+                <span className="font-bold text-sm text-gray-900">Standard Plan</span>
+                {subInfo.tier === 'Standard' && <span className="text-[10px] bg-primary-600 text-white px-2 py-0.5 rounded-full font-bold">Active</span>}
+              </div>
+              <p className="text-xs text-gray-500 mt-2">Great for growing businesses needing AI features.</p>
+            </div>
+            <div className="mt-4 flex flex-col gap-2">
+              <span className="text-[11px] font-bold text-gray-700">20 Invoices / month</span>
+              <span className="text-[10px] font-bold text-primary-700 bg-primary-50 px-2 py-0.5 rounded self-start">20 AI Units included</span>
+              {subInfo.tier !== 'Standard' && !isReadOnly && (
+                <button type="button" onClick={() => handleUpdateTier('Standard')} className="mt-2 text-xs font-bold text-primary-600 hover:text-primary-700 text-left">Switch to Standard</button>
+              )}
+            </div>
+          </div>
+
+          <div className={`p-5 rounded-3xl border transition-all flex flex-col justify-between h-44 ${subInfo.tier === 'Enterprise' ? 'border-primary-600 bg-primary-50/20 ring-2 ring-primary-500/10' : 'border-gray-100 bg-gray-50/50'}`}>
+            <div>
+              <div className="flex justify-between items-start">
+                <span className="font-bold text-sm text-gray-900">Enterprise Plan</span>
+                {subInfo.tier === 'Enterprise' && <span className="text-[10px] bg-primary-600 text-white px-2 py-0.5 rounded-full font-bold">Active</span>}
+              </div>
+              <p className="text-xs text-gray-500 mt-2">Unlimited operations for scaled companies.</p>
+            </div>
+            <div className="mt-4 flex flex-col gap-2">
+              <span className="text-[11px] font-bold text-gray-700">200 Invoices / month</span>
+              <span className="text-[10px] font-bold text-amber-700 bg-amber-50 px-2 py-0.5 rounded self-start">200 AI Units included</span>
+              {subInfo.tier !== 'Enterprise' && !isReadOnly && (
+                <button type="button" onClick={() => handleUpdateTier('Enterprise')} className="mt-2 text-xs font-bold text-primary-600 hover:text-primary-700 text-left">Upgrade to Enterprise</button>
+              )}
+            </div>
+          </div>
+        </div>
+
+        <div className="bg-gray-50 p-6 rounded-2xl border border-gray-100 space-y-4">
+          <h4 className="text-xs font-bold text-gray-700 uppercase tracking-widest">Active Limits & Usage</h4>
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+            <div className="space-y-2">
+              <div className="flex justify-between text-xs">
+                <span className="font-bold text-gray-500">Invoice limit:</span>
+                <span className="font-mono font-bold text-gray-800">{subInfo.maxInvoices} invoices max</span>
+              </div>
+            </div>
+            <div className="space-y-2">
+              <div className="flex justify-between text-xs">
+                <span className="font-bold text-gray-500">Remaining AI Credits:</span>
+                <span className="font-mono font-bold text-gray-800">{subInfo.tier === 'Basic' ? '0' : `${subInfo.aiUnits}/${TIER_LIMITS[subInfo.tier].maxAiUnits}`} credits</span>
+              </div>
+            </div>
+          </div>
+
+          {subInfo.tier !== 'Basic' && (
+            <div className="pt-4 border-t border-gray-200/60 flex items-center justify-between">
+              <div>
+                <p className="text-xs font-bold text-gray-700">Enable Workspace AI Copilot</p>
+                <p className="text-[10px] text-gray-400">Enables dynamic descriptions, content review, and smart advice. Deducts 1 credit per use.</p>
+              </div>
+              <button
+                type="button"
+                onClick={() => {
+                  if (isReadOnly) return;
+                  const targetState = !subInfo.aiModeEnabled;
+                  setSubscriptionInfo(activeTenantId, subInfo.tier, subInfo.aiUnits, targetState);
+                  setSubInfo(getSubscriptionInfo(activeTenantId));
+                  window.dispatchEvent(new Event('cravebiz_subscription_change'));
+                }}
+                disabled={isReadOnly}
+                className={`px-4 py-2 text-xs font-black rounded-xl transition-all ${subInfo.aiModeEnabled ? 'bg-primary-600 text-white shadow-md' : 'bg-gray-200 text-gray-600 hover:bg-gray-300'}`}
+              >
+                {subInfo.aiModeEnabled ? 'AI MODE: ON' : 'AI MODE: OFF'}
+              </button>
+            </div>
+          )}
+        </div>
+      </div>
 
       <div className="bg-white p-8 rounded-[2.5rem] shadow-2xl border border-gray-100">
         <h3 className="text-xl font-black text-gray-800 border-b pb-4 mb-6 uppercase tracking-tighter">Permissions Registry</h3>

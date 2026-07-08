@@ -1,6 +1,7 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import Icon from './common/Icon';
 import { Company, User } from '../types';
+import { getSubscriptionInfo, toggleAiMode, TIER_LIMITS } from '../services/subscriptionService';
 
 interface HeaderProps {
     pageTitle: string;
@@ -67,6 +68,16 @@ const Header: React.FC<HeaderProps> = ({
     const [isWorkspaceOpen, setIsWorkspaceOpen] = useState(false);
     const activeCompany = companies.find(c => c.id === activeTenantId);
 
+    const [subTrigger, setSubTrigger] = useState(0);
+
+    useEffect(() => {
+        const handleSubChange = () => setSubTrigger(prev => prev + 1);
+        window.addEventListener('cravebiz_subscription_change', handleSubChange);
+        return () => window.removeEventListener('cravebiz_subscription_change', handleSubChange);
+    }, []);
+
+    const subInfo = getSubscriptionInfo(activeTenantId || '');
+
     return (
         <header className="flex justify-between items-center p-4 h-20 bg-white border-b shadow-sm relative z-40">
             <div className="flex items-center space-x-2">
@@ -128,6 +139,39 @@ const Header: React.FC<HeaderProps> = ({
                 )}
             </div>
             <div className="flex items-center space-x-3">
+                {activeTenantId && (
+                    <div className="flex items-center space-x-1.5 sm:space-x-2 bg-gray-50 border border-gray-100 rounded-xl px-2 py-1 sm:px-3 sm:py-1.5 shadow-sm">
+                        <span className={`text-[9px] sm:text-[10px] font-black uppercase tracking-wider px-1.5 py-0.5 rounded-full ${
+                            subInfo.tier === 'Basic' ? 'bg-red-50 text-red-600 border border-red-100' :
+                            subInfo.tier === 'Standard' ? 'bg-primary-50 text-primary-700 border border-primary-100' :
+                            'bg-amber-50 text-amber-700 border border-amber-100'
+                        }`}>
+                            {subInfo.tier}
+                        </span>
+                        
+                        {subInfo.tier !== 'Basic' ? (
+                            <div className="flex items-center space-x-1 sm:space-x-1.5 border-l border-gray-200 pl-1.5 sm:pl-2">
+                                <span className="text-[9px] sm:text-[10px] font-bold text-gray-500 hidden xs:inline">AI:</span>
+                                <button
+                                    onClick={() => {
+                                        try {
+                                            toggleAiMode(activeTenantId, !subInfo.aiModeEnabled);
+                                        } catch (e: any) {
+                                            alert(e.message);
+                                        }
+                                    }}
+                                    title={subInfo.aiModeEnabled ? "Turn AI Mode OFF" : "Turn AI Mode ON"}
+                                    className={`relative inline-flex h-4 w-7 sm:h-5 sm:w-9 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none focus:ring-1 focus:ring-primary-500 ${subInfo.aiModeEnabled ? 'bg-primary-600' : 'bg-gray-200'}`}
+                                >
+                                    <span className={`pointer-events-none inline-block h-3 w-3 sm:h-4 sm:w-4 transform rounded-full bg-white shadow ring-0 transition duration-200 ease-in-out ${subInfo.aiModeEnabled ? 'translate-x-3 sm:translate-x-4' : 'translate-x-0'}`} />
+                                </button>
+                                <span className="text-[8px] sm:text-[9px] font-bold text-gray-400">({subInfo.aiUnits})</span>
+                            </div>
+                        ) : (
+                            <span className="text-[8px] sm:text-[9px] font-bold text-red-500 bg-red-50 px-1 py-0.5 rounded ml-1 border border-red-100">No AI</span>
+                        )}
+                    </div>
+                )}
                 <button onClick={onCreateInvoice} className="hidden sm:flex px-5 py-2.5 bg-primary-600 text-white rounded-xl hover:bg-primary-700 font-bold shadow-lg shadow-primary-200 transition-all transform hover:-translate-y-0.5 items-center">
                     <span className="mr-2 text-lg leading-none">+</span> New Invoice
                 </button>

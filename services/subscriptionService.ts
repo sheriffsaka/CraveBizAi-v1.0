@@ -105,17 +105,23 @@ export function deductAiUnit(companyId: string): void {
   
   // Basic plan has no AI
   if (sub.tier === 'Basic') {
-    throw new Error("AI features are not available on the Basic Subscription Plan. Please upgrade to Standard or Enterprise.");
+    const msg = "AI features are not available on the Basic Subscription Plan. Please upgrade to Standard or Enterprise.";
+    window.dispatchEvent(new CustomEvent('cravebiz_subscription_error', { detail: { message: msg } }));
+    throw new Error(msg);
   }
 
   // If AI Mode is not turned on, don't allow or don't deduct (in this case, block AI because it's turned off)
   if (!sub.aiModeEnabled) {
-    throw new Error("AI Mode is currently turned OFF. Please enable AI Mode in your Workspace Settings or Navigation Bar to use AI features.");
+    const msg = "AI Mode is currently turned OFF. Please turn ON AI Mode in the top header or Workspace Settings to use AI features.";
+    window.dispatchEvent(new CustomEvent('cravebiz_subscription_error', { detail: { message: msg } }));
+    throw new Error(msg);
   }
 
   // Check if they have units
   if (sub.aiUnits <= 0) {
-    throw new Error(`Your subscription units are depleted (0/${TIER_LIMITS[sub.tier].maxAiUnits} remaining). Please upgrade your subscription tier or contact support to recharge.`);
+    const msg = `Your subscription AI units are depleted (0/${TIER_LIMITS[sub.tier].maxAiUnits} remaining). Please upgrade your subscription tier or contact support to recharge.`;
+    window.dispatchEvent(new CustomEvent('cravebiz_subscription_error', { detail: { message: msg } }));
+    throw new Error(msg);
   }
 
   // Deduct 1 unit
