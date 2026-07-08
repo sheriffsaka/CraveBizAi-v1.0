@@ -26,6 +26,7 @@ import PublicSigningPortal from './components/PublicSigningPortal';
 import ProjectManagement from './components/ProjectManagement';
 import { api, supabase } from './lib/api';
 import { generateRenewalInvoiceSuggestion } from './services/aiGenerationService';
+import { getSubscriptionInfo, setSubscriptionInfo, SubscriptionTier, TIER_LIMITS } from './services/subscriptionService';
 import { Invoice, Client, Service, Company, User, TenantData, InvoiceStatus, AllTenantsData, GeneratedDocument, DbDocumentSignatory, Project, WorkspaceRole, AuditLog } from './types';
 import Icon from './components/common/Icon';
 
@@ -82,6 +83,24 @@ export default function App() {
   } | null>(null);
   const isMounted = useRef(true);
   const currentUserIdRef = useRef<string | null>(null);
+
+  const [selectedProvisionTier, setSelectedProvisionTier] = useState<SubscriptionTier>('Standard');
+  const [subTrigger, setSubTrigger] = useState(0);
+
+  useEffect(() => {
+    const handleSubChange = () => setSubTrigger(prev => prev + 1);
+    window.addEventListener('cravebiz_subscription_change', handleSubChange);
+    return () => window.removeEventListener('cravebiz_subscription_change', handleSubChange);
+  }, []);
+
+  useEffect(() => {
+    if (currentUser) {
+      const signupTier = localStorage.getItem('cravebiz_signup_tier') as SubscriptionTier;
+      if (signupTier && (signupTier === 'Basic' || signupTier === 'Standard' || signupTier === 'Enterprise')) {
+        setSelectedProvisionTier(signupTier);
+      }
+    }
+  }, [currentUser]);
 
   if (publicToken || publicDocId) {
     return (
@@ -423,7 +442,10 @@ export default function App() {
               if (error) return stringifyError(error);
               return true;
           }}
-          onSignup={async (name, email, pass, companyName, phone) => {
+          onSignup={async (name, email, pass, companyName, phone, subscriptionTier) => {
+              if (subscriptionTier) {
+                  localStorage.setItem('cravebiz_signup_tier', subscriptionTier);
+              }
               const { error } = await supabase.auth.signUp({ 
                   email, password: pass, options: { data: { full_name: name, company_name: companyName, phone } }
               });
@@ -496,14 +518,54 @@ export default function App() {
     if (companies.length === 0 && !isDataSyncing && !syncError) {
         return (
             <div className="flex flex-col items-center justify-center min-h-[60vh] text-center p-6">
-                <div className="bg-white p-10 rounded-[2.5rem] shadow-2xl border border-gray-100 max-w-lg w-full">
-                    <div className="bg-primary-50 w-20 h-20 rounded-3xl flex items-center justify-center mx-auto mb-8"><Icon name="dashboard" className="w-10 h-10 text-primary-600" /></div>
-                    <h2 className="text-3xl font-black text-gray-800 tracking-tighter mb-4">Vault Ready</h2>
-                    <p className="text-gray-500 mb-10 text-sm leading-relaxed">Securely provision your SME workspace.</p>
+                <div className="bg-white p-8 lg:p-10 rounded-[2.5rem] shadow-2xl border border-gray-100 max-w-lg w-full animate-in fade-in zoom-in-95 duration-300">
+                    <div className="bg-primary-50 w-20 h-20 rounded-3xl flex items-center justify-center mx-auto mb-6"><Icon name="dashboard" className="w-10 h-10 text-primary-600" /></div>
+                    <h2 className="text-3xl font-black text-gray-800 tracking-tighter mb-2 text-center">Vault Ready</h2>
+                    <p className="text-gray-500 mb-6 text-sm leading-relaxed text-center">Confirm your plan to securely provision your SME workspace.</p>
+                    
+                    <div className="grid grid-cols-3 gap-2 mb-8">
+                        <button
+                            type="button"
+                            onClick={() => setSelectedProvisionTier('Basic')}
+                            className={`p-3 rounded-2xl border text-left transition-all flex flex-col justify-between h-28 outline-none ${selectedProvisionTier === 'Basic' ? 'border-primary-600 bg-primary-50/40 ring-2 ring-primary-500/20 font-semibold' : 'border-gray-200 hover:bg-gray-50'}`}
+                        >
+                            <div>
+                                <p className="font-bold text-xs text-gray-900">Basic</p>
+                                <p className="text-[10px] text-gray-500 mt-1">5 Invoices/mo</p>
+                            </div>
+                            <span className="text-[9px] text-red-600 font-bold bg-red-50 px-1.5 py-0.5 rounded self-start">No AI</span>
+                        </button>
+
+                        <button
+                            type="button"
+                            onClick={() => setSelectedProvisionTier('Standard')}
+                            className={`p-3 rounded-2xl border text-left transition-all flex flex-col justify-between h-28 outline-none ${selectedProvisionTier === 'Standard' ? 'border-primary-600 bg-primary-50/40 ring-2 ring-primary-500/20 font-semibold' : 'border-gray-200 hover:bg-gray-50'}`}
+                        >
+                            <div>
+                                <p className="font-bold text-xs text-gray-900">Standard</p>
+                                <p className="text-[10px] text-gray-500 mt-1">20 Invoices/mo</p>
+                            </div>
+                            <span className="text-[9px] text-primary-700 font-bold bg-primary-50 px-1.5 py-0.5 rounded self-start">Invoice AI</span>
+                        </button>
+
+                        <button
+                            type="button"
+                            onClick={() => setSelectedProvisionTier('Enterprise')}
+                            className={`p-3 rounded-2xl border text-left transition-all flex flex-col justify-between h-28 outline-none ${selectedProvisionTier === 'Enterprise' ? 'border-primary-600 bg-primary-50/40 ring-2 ring-primary-500/20 font-semibold' : 'border-gray-200 hover:bg-gray-50'}`}
+                        >
+                            <div>
+                                <p className="font-bold text-xs text-gray-900">Enterprise</p>
+                                <p className="text-[10px] text-gray-500 mt-1">200 Invoices/mo</p>
+                            </div>
+                            <span className="text-[9px] text-amber-700 font-bold bg-amber-50 px-1.5 py-0.5 rounded self-start font-bold">Unlimited</span>
+                        </button>
+                    </div>
+
                     <button onClick={async () => { 
                         try { 
                             setIsDataSyncing(true); 
                             const nc = await api.createCompany({ name: 'My Workspace' }); 
+                            setSubscriptionInfo(nc.id, selectedProvisionTier);
                             setCompanies([nc]); setActiveTenantId(nc.id); 
                             localStorage.setItem('cravebiz_tenant', nc.id); 
                             await forceSyncData(nc.id); 
