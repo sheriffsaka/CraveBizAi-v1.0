@@ -60,6 +60,68 @@ interface DocumentSignifyViewerProps {
   onPlaceFieldAtCoordinates?: (pageNum: number, x: number, y: number) => void;
 }
 
+interface PDFPageCanvasProps {
+  pdfDoc: any;
+  pageNum: number;
+  onDimensionsLoaded: (pageNum: number, width: number, height: number) => void;
+  canvasRefCallback: (pageNum: number, canvas: HTMLCanvasElement | null) => void;
+}
+
+const PDFPageCanvas: React.FC<PDFPageCanvasProps> = ({ pdfDoc, pageNum, onDimensionsLoaded, canvasRefCallback }) => {
+  const canvasRef = useRef<HTMLCanvasElement | null>(null);
+  const isRenderingRef = useRef(false);
+
+  useEffect(() => {
+    let isCancelled = false;
+    const renderPage = async () => {
+      if (!pdfDoc || !canvasRef.current || isRenderingRef.current) return;
+      isRenderingRef.current = true;
+      try {
+        const page = await pdfDoc.getPage(pageNum);
+        const viewport = page.getViewport({ scale: 1.5 });
+        
+        if (isCancelled) return;
+        const canvas = canvasRef.current;
+        if (canvas) {
+          canvas.width = viewport.width;
+          canvas.height = viewport.height;
+          const context = canvas.getContext('2d');
+          if (context) {
+            const renderContext = {
+              canvasContext: context,
+              viewport: viewport,
+            };
+            await page.render(renderContext).promise;
+            if (!isCancelled) {
+              onDimensionsLoaded(pageNum, viewport.width, viewport.height);
+            }
+          }
+        }
+      } catch (err) {
+        console.error(`Error rendering PDF page ${pageNum}:`, err);
+      } finally {
+        isRenderingRef.current = false;
+      }
+    };
+
+    renderPage();
+
+    return () => {
+      isCancelled = true;
+    };
+  }, [pdfDoc, pageNum]);
+
+  return (
+    <canvas
+      ref={(el) => {
+        canvasRef.current = el;
+        canvasRefCallback(pageNum, el);
+      }}
+      className="w-full h-full rounded-xl page-content-target"
+    />
+  );
+};
+
 export const DocumentSignifyViewer: React.FC<DocumentSignifyViewerProps> = ({
   fileUrl,
   fileType,
@@ -174,68 +236,18 @@ export const DocumentSignifyViewer: React.FC<DocumentSignifyViewerProps> = ({
     }
   }, [fileUrl, fileType, htmlContent, isPdf, isImage, isDoc]);
 
-  useEffect(() => {
-    if (!isPdf || !pdfDocRef.current || numPages === 0 || !pdfLoaded) return;
-
-    let isCancelled = false;
-
-    const renderAllPages = async () => {
-      try {
-        const pdf = pdfDocRef.current;
-        const dims: Record<number, { width: number; height: number }> = {};
-        
-        for (let pageNum = 1; pageNum <= numPages; pageNum++) {
-          if (isCancelled) return;
-          const page = await pdf.getPage(pageNum);
-          const viewport = page.getViewport({ scale: 1.5 });
-          
-          let canvas = canvasRefs.current[pageNum];
-          let retries = 0;
-          while (!canvas && retries < 15) {
-            if (isCancelled) return;
-            await new Promise(resolve => setTimeout(resolve, 100));
-            canvas = canvasRefs.current[pageNum];
-            retries++;
-          }
-          
-          if (canvas) {
-            canvas.width = viewport.width;
-            canvas.height = viewport.height;
-            const context = canvas.getContext('2d');
-            if (context) {
-              const renderContext = {
-                canvasContext: context,
-                viewport: viewport,
-              };
-              await page.render(renderContext).promise;
-            }
-            dims[pageNum] = { width: viewport.width, height: viewport.height };
-          }
-        }
-        
-        if (!isCancelled) {
-          setPageDimensions(dims);
-          setLoading(false);
-        }
-      } catch (err: any) {
-        console.error("Error rendering PDF pages:", err);
-        if (!isCancelled) {
-          setError("Failed to render PDF: " + err.message);
-          setLoading(false);
-        }
+  const handleDimensionsLoaded = (pageNum: number, width: number, height: number) => {
+    setPageDimensions(prev => {
+      if (prev[pageNum]?.width === width && prev[pageNum]?.height === height) {
+        return prev;
       }
-    };
-
-    // We run after a brief pause to allow canvas elements to mount
-    const timer = setTimeout(() => {
-      renderAllPages();
-    }, 100);
-
-    return () => {
-      isCancelled = true;
-      clearTimeout(timer);
-    };
-  }, [numPages, isPdf, fileUrl, pdfLoaded]);
+      return {
+        ...prev,
+        [pageNum]: { width, height }
+      };
+    });
+    setLoading(false);
+  };
 
   const setCanvasRef = (pageNum: number, canvas: HTMLCanvasElement | null) => {
     canvasRefs.current[pageNum] = canvas;
@@ -398,7 +410,7 @@ export const DocumentSignifyViewer: React.FC<DocumentSignifyViewerProps> = ({
             style={{
               width: '100%',
               maxWidth: isPdf ? '720px' : '650px',
-              aspectRatio: isPdf ? '595/842' : undefined,
+              aspectRatio: isPdf ? (pageDimensions[pageNum] ? `${pageDimensions[pageNum].width}/${pageDimensions[pageNum].height}` : '595/842') : undefined,
             }}
           >
             {/* Page header marker */}
@@ -408,10 +420,18 @@ export const DocumentSignifyViewer: React.FC<DocumentSignifyViewerProps> = ({
 
             {/* Render Canvas for PDF or direct Image for PNG/JPEG or Rich HTML/text for Docx */}
             {isPdf ? (
-              <canvas
-                ref={el => setCanvasRef(pageNum, el)}
-                className="w-full h-full rounded-xl page-content-target"
-              />
+              pdfDocRef.current ? (
+                <PDFPageCanvas
+                  pdfDoc={pdfDocRef.current}
+                  pageNum={pageNum}
+                  onDimensionsLoaded={handleDimensionsLoaded}
+                  canvasRefCallback={setCanvasRef}
+                />
+              ) : (
+                <div className="w-full aspect-[595/842] flex items-center justify-center text-slate-400 bg-slate-50 rounded-xl">
+                  Loading page...
+                </div>
+              )
             ) : isImage ? (
               <img
                 src={fileUrl}
