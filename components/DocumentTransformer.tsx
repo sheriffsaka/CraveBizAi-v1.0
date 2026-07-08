@@ -864,9 +864,32 @@ const DocumentTransformer: React.FC<DocumentTransformerProps> = ({
             };
 
             const docId = 'doc_' + Math.floor(Math.random() * 899999 + 100000);
-            const originalFileUrl = generatedDoc?.originalFileUrl || generatedDoc?.originalFileBase64 || '';
             const fileName = generatedDoc?.originalFileName || 'secured_agreement.pdf';
             const fileType = generatedDoc?.originalFileType || 'pdf';
+
+            let originalFileUrl = generatedDoc?.originalFileUrl || '';
+            const fileBase64 = generatedDoc?.originalFileBase64 || '';
+
+            if (!originalFileUrl && fileBase64) {
+                setLoadingMessage("Uploading document template securely to local cloud vaults...");
+                try {
+                    const uploadUrl = await api.uploadDocSignifyFile(fileName, fileBase64, fileType, company?.id);
+                    if (uploadUrl) {
+                        originalFileUrl = uploadUrl;
+                        if (generatedDoc) {
+                            setGeneratedDoc({
+                                ...generatedDoc,
+                                originalFileUrl: uploadUrl
+                            });
+                        }
+                    }
+                } catch (uploadErr) {
+                    console.warn("Secure template upload failed, using direct base64 fallback:", uploadErr);
+                    originalFileUrl = fileBase64;
+                }
+            }
+
+            setLoadingMessage("Securing signing workflow details, compiling recipients, and generating secure invite links...");
 
             // 1. Map temporary client-side IDs to standard secure UUIDs
             const idMapping: { [key: string]: string } = {
@@ -3868,7 +3891,7 @@ CraveBiZ DocSignify Mail Delivery Agent`}
                                     <div className="flex-1 overflow-y-auto" style={{ maxHeight: '42rem' }}>
                                         <div ref={documentRef} className="p-10 bg-white max-w-[210mm] mx-auto min-h-[297mm]">
                                             <div className="space-y-4">
-                                                {generatedDoc.originalFileBase64 ? (
+                                                {(generatedDoc.originalFileBase64 || generatedDoc.originalFileUrl) ? (
                                                     <div className="w-full mb-6">
                                                         <DocumentSignifyViewer
                                                             fileUrl={generatedDoc.originalFileUrl || generatedDoc.originalFileBase64}
