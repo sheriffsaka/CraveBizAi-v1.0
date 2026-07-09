@@ -13,8 +13,8 @@ import {
     reviewDocumentContent,
     generateInvoiceInsight,
     checkApiKeyStatus
-} from "./services/serverAiService";
-import { SignifyService } from "./services/signifyService";
+} from "../services/serverAiService";
+import { SignifyService } from "../services/signifyService";
 
 const SUPABASE_URL = "https://dfqvgezjhudmnlyeycju.supabase.co";
 const SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImRmcXZnZXpqaHVkbW5seWV5Y2p1Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjYyNDAyOTMsImV4cCI6MjA4MTgxNjI5M30.8VsHsDpychdSMJmrfnmkxi5ed8CygwErX3-RkVPXkUI";
@@ -655,14 +655,14 @@ ${textContent.substring(0, 8000)}`;
 app.get("/api/signify/verify/:hashOrId", (req, res) => {
     try {
         const hashOrId = req.params.hashOrId.trim();
-        const store = SignifyService.loadStore();
+        const store = SignifyService.loadStore() as any;
         
         // Find document by ID
-        let document = store.documents[hashOrId];
+        let document: any = store.documents[hashOrId];
         
         // If not found, look up by file hash
         if (!document) {
-            document = Object.values(store.documents).find(d => {
+            document = Object.values(store.documents).find((d: any) => {
                 const docIdPart = d.id?.toUpperCase();
                 return hashOrId.toUpperCase() === `SHA256-${docIdPart}` || hashOrId === d.id;
             });
@@ -672,8 +672,8 @@ app.get("/api/signify/verify/:hashOrId", (req, res) => {
             return res.status(404).json({ error: "No matching authentic document registered on DocSignify." });
         }
         
-        const signatories = Object.values(store.signatories).filter(s => s.document_id === document.id);
-        const signatures = store.signatures.filter(s => s.document_id === document.id);
+        const signatories: any[] = Object.values(store.signatories).filter((s: any) => s.document_id === document.id);
+        const signatures: any[] = (store.signatures || []).filter((s: any) => s.document_id === document.id);
         
         res.json({
             success: true,

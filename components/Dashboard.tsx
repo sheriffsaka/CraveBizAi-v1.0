@@ -149,7 +149,7 @@ const Dashboard: React.FC<DashboardProps> = ({invoices, clients, setActivePage, 
                 <div className="absolute top-0 right-0 w-32 h-32 bg-primary-50 rounded-full -mr-16 -mt-16 opacity-50"></div>
                 <h3 className="text-xl font-black text-gray-800 mb-6 uppercase tracking-tighter">Revenue Trajectory</h3>
                 <div style={{ width: '100%', height: 300 }}>
-                    <ResponsiveContainer>
+                    <ResponsiveContainer width="100%" height="100%" minWidth={0}>
                         <BarChart data={calculatedTrendData} margin={{ top: 5, right: 20, left: -10, bottom: 5 }}>
                             <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f3f4f6" />
                             <XAxis dataKey="name" tick={{fill: '#9ca3af', fontSize: 10, fontWeight: 900}} axisLine={false} tickLine={false} />

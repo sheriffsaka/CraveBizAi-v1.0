@@ -8,6 +8,7 @@ import { generateTextResponse } from '../services/aiGenerationService';
 import CompanyDetailModal from './CompanyDetailModal';
 import EditUserModal from './EditUserModal';
 import { api } from '../lib/api';
+import { getSubscriptionInfo, setSubscriptionInfo, TIER_LIMITS, SubscriptionTier } from '../services/subscriptionService';
 
 interface AdminDashboardProps {
   allTenantData: AllTenantsData;
@@ -134,7 +135,29 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ allTenantData, companie
   const [query, setQuery] = useState('');
   const [response, setResponse] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
-  const [activeTab, setActiveTab] = useState<'overview' | 'companies' | 'users' | 'reports' | 'security'>('overview');
+  const [activeTab, setActiveTab] = useState<'overview' | 'companies' | 'users' | 'reports' | 'security' | 'ai_usage'>('overview');
+  const [aiUsageSearch, setAiUsageSearch] = useState('');
+  const [aiUsageList, setAiUsageList] = useState<any[]>([]);
+
+  const reloadAiUsageData = () => {
+    const data = companies.map(comp => {
+      const sub = getSubscriptionInfo(comp.id);
+      return {
+        companyId: comp.id,
+        name: comp.name,
+        email: comp.email,
+        tier: sub.tier,
+        aiUnits: sub.aiUnits,
+        aiModeEnabled: sub.aiModeEnabled,
+        maxAiUnits: TIER_LIMITS[sub.tier]?.maxAiUnits || 0
+      };
+    });
+    setAiUsageList(data);
+  };
+
+  useEffect(() => {
+    reloadAiUsageData();
+  }, [companies, activeTab]);
 
   const [selectedCompany, setSelectedCompany] = useState<Company | null>(null);
   const [isCompanyModalOpen, setIsCompanyModalOpen] = useState(false);
@@ -378,6 +401,261 @@ Admin Query: ${activePrompt}
     }
   };
 
+  const changePlan = (companyId: string, tier: SubscriptionTier) => {
+    const limits = TIER_LIMITS[tier];
+    setSubscriptionInfo(companyId, tier, limits.maxAiUnits, limits.aiAvailable);
+    reloadAiUsageData();
+    window.dispatchEvent(new Event('cravebiz_subscription_change'));
+  };
+
+  const addCredits = (companyId: string, extraAmount: number) => {
+    const sub = getSubscriptionInfo(companyId);
+    const newUnits = sub.aiUnits + extraAmount;
+    setSubscriptionInfo(companyId, sub.tier, newUnits, sub.aiModeEnabled);
+    reloadAiUsageData();
+    window.dispatchEvent(new Event('cravebiz_subscription_change'));
+  };
+
+  const resetCredits = (companyId: string) => {
+    const sub = getSubscriptionInfo(companyId);
+    const limits = TIER_LIMITS[sub.tier];
+    setSubscriptionInfo(companyId, sub.tier, limits?.maxAiUnits || 0, sub.aiModeEnabled);
+    reloadAiUsageData();
+    window.dispatchEvent(new Event('cravebiz_subscription_change'));
+  };
+
+  const toggleAiEngine = (companyId: string) => {
+    const sub = getSubscriptionInfo(companyId);
+    setSubscriptionInfo(companyId, sub.tier, sub.aiUnits, !sub.aiModeEnabled);
+    reloadAiUsageData();
+    window.dispatchEvent(new Event('cravebiz_subscription_change'));
+  };
+
+  const renderAiUsage = () => {
+    const filteredUsage = aiUsageList.filter(item => 
+      item.name.toLowerCase().includes(aiUsageSearch.toLowerCase()) ||
+      item.email.toLowerCase().includes(aiUsageSearch.toLowerCase()) ||
+      item.companyId.toLowerCase().includes(aiUsageSearch.toLowerCase())
+    );
+
+    const totalActiveAiWorkspaces = aiUsageList.filter(item => item.tier !== 'Basic').length;
+    const totalAiCreditsAllocated = aiUsageList.reduce((sum, item) => sum + item.aiUnits, 0);
+    const totalDepletedWorkspaces = aiUsageList.filter(item => item.aiUnits === 0 && item.tier !== 'Basic').length;
+
+    return (
+      <div className="space-y-8 font-sans">
+        {/* Banner with explanations */}
+        <div className="bg-slate-900 text-slate-100 p-8 rounded-[3rem] border border-slate-800 shadow-2xl relative overflow-hidden">
+          <div className="absolute top-0 right-0 w-48 h-48 bg-primary-500/10 rounded-full -mr-24 -mt-24"></div>
+          <div className="max-w-3xl">
+            <span className="text-[10px] font-black text-primary-400 uppercase tracking-widest bg-primary-950/40 border border-primary-900 px-3 py-1.5 rounded-full inline-block mb-4">
+              🛡️ Super Admin AI Operations
+            </span>
+            <h2 className="text-2xl md:text-3xl font-black text-white tracking-tight uppercase">
+              SME AI Plan & Credit Control Console
+            </h2>
+            <p className="text-xs text-slate-300 mt-3 leading-relaxed font-medium">
+              This dashboard provides real-time oversight of all tenant workspaces on the CraveBiZ platform. As the application owner, you can manage active subscription tiers, activate or migrate workspaces, and recharge credits when they exhaust their monthly tokens.
+            </p>
+            
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mt-6 border-t border-slate-800 pt-6">
+              <div className="bg-slate-950/40 border border-slate-800 p-4 rounded-2xl">
+                <span className="text-3xs font-black text-slate-400 uppercase tracking-widest">Active AI Workspaces</span>
+                <p className="text-xl font-black text-white mt-1">{totalActiveAiWorkspaces} Tenants</p>
+                <p className="text-4xs text-slate-500 mt-1">On Standard or Enterprise plans</p>
+              </div>
+              <div className="bg-slate-950/40 border border-slate-800 p-4 rounded-2xl">
+                <span className="text-3xs font-black text-slate-400 uppercase tracking-widest">Total Allocated Credits</span>
+                <p className="text-xl font-black text-emerald-400 mt-1">{totalAiCreditsAllocated} Units</p>
+                <p className="text-4xs text-slate-500 mt-1">Available across all active nodes</p>
+              </div>
+              <div className="bg-slate-950/40 border border-slate-800 p-4 rounded-2xl">
+                <span className="text-3xs font-black text-slate-400 uppercase tracking-widest">Depleted Workspaces</span>
+                <p className={`text-xl font-black mt-1 ${totalDepletedWorkspaces > 0 ? 'text-rose-400' : 'text-slate-300'}`}>
+                  {totalDepletedWorkspaces} Tenants
+                </p>
+                <p className="text-4xs text-slate-500 mt-1">Exhausted their monthly credits</p>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        {/* Search and interactive table */}
+        <div className="bg-white p-8 rounded-[3rem] shadow-2xl border border-gray-100">
+          <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 mb-6">
+            <div>
+              <h3 className="text-lg font-black text-gray-800 uppercase tracking-tight">Active Workspaces List</h3>
+              <p className="text-xs text-gray-400 font-medium">Monitor active balances, upgrade subscription tiers, or add extra tokens</p>
+            </div>
+            
+            <div className="w-full md:w-80">
+              <input
+                type="text"
+                placeholder="Search tenant or email..."
+                value={aiUsageSearch}
+                onChange={e => setAiUsageSearch(e.target.value)}
+                className="w-full px-4 py-2.5 bg-gray-50 border border-gray-200 rounded-xl text-xs font-bold text-gray-700 outline-none focus:ring-2 focus:ring-primary-500 transition-all"
+              />
+            </div>
+          </div>
+
+          {filteredUsage.length > 0 ? (
+            <div className="overflow-x-auto border border-gray-100 rounded-2xl">
+              <table className="w-full text-left border-collapse">
+                <thead>
+                  <tr className="border-b border-gray-100 text-[10px] font-black text-gray-400 uppercase tracking-widest bg-gray-50/50">
+                    <th className="py-3 px-4">SME Workspace Node</th>
+                    <th className="py-3 px-4">Current Plan</th>
+                    <th className="py-3 px-4">AI Engine Switch</th>
+                    <th className="py-3 px-4">AI Credits Balance</th>
+                    <th className="py-3 px-4">Activate/Migrate Plan</th>
+                    <th className="py-3 px-4 text-right">Recharge Tokens</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-gray-50 text-xs font-medium">
+                  {filteredUsage.map((item) => {
+                    const pct = item.maxAiUnits > 0 ? Math.min(100, Math.round((item.aiUnits / item.maxAiUnits) * 100)) : 0;
+                    const isDepleted = item.aiUnits === 0 && item.tier !== 'Basic';
+                    
+                    return (
+                      <tr key={item.companyId} className="hover:bg-gray-50/30 transition-colors">
+                        <td className="py-4 px-4">
+                          <p className="font-extrabold text-sm text-gray-800">{item.name}</p>
+                          <span className="text-[10px] font-mono text-gray-400 select-all">{item.companyId}</span>
+                          <p className="text-[10px] text-gray-500 mt-0.5">{item.email}</p>
+                        </td>
+                        <td className="py-4 px-4">
+                          <span className={`inline-flex px-2.5 py-1 rounded-full text-[10px] font-black uppercase tracking-wider ${
+                            item.tier === 'Enterprise' 
+                              ? 'bg-purple-100 text-purple-800 border border-purple-200' 
+                              : item.tier === 'Standard'
+                              ? 'bg-blue-100 text-blue-800 border border-blue-200'
+                              : 'bg-slate-100 text-slate-700 border border-slate-200'
+                          }`}>
+                            {item.tier}
+                          </span>
+                        </td>
+                        <td className="py-4 px-4">
+                          <button
+                            type="button"
+                            onClick={() => toggleAiEngine(item.companyId)}
+                            className={`px-3 py-1 rounded-lg text-[10px] font-black uppercase tracking-wider transition-colors ${
+                              item.aiModeEnabled
+                                ? 'bg-emerald-100 text-emerald-800 hover:bg-emerald-200 border border-emerald-200'
+                                : 'bg-rose-100 text-rose-800 hover:bg-rose-200 border border-rose-200'
+                            }`}
+                          >
+                            {item.aiModeEnabled ? '● Active' : '○ Off'}
+                          </button>
+                        </td>
+                        <td className="py-4 px-4">
+                          <div className="space-y-1.5 w-36">
+                            <div className="flex justify-between text-[10px] font-bold">
+                              <span className={isDepleted ? 'text-rose-600 font-extrabold' : 'text-gray-500'}>
+                                {item.aiUnits} / {item.maxAiUnits} credits
+                              </span>
+                              {isDepleted && <span className="text-rose-500 text-[8px] uppercase tracking-wider font-extrabold">DEPLETED</span>}
+                            </div>
+                            <div className="w-full bg-gray-100 h-2 rounded-full overflow-hidden">
+                              <div 
+                                className={`h-full transition-all duration-300 ${
+                                  item.tier === 'Basic'
+                                    ? 'bg-gray-300'
+                                    : isDepleted 
+                                    ? 'bg-rose-500' 
+                                    : pct < 25 
+                                    ? 'bg-amber-500' 
+                                    : 'bg-emerald-500'
+                                }`} 
+                                style={{ width: `${item.tier === 'Basic' ? 0 : pct}%` }}
+                              ></div>
+                            </div>
+                          </div>
+                        </td>
+                        <td className="py-4 px-4">
+                          <div className="flex items-center gap-1.5">
+                            <button
+                              type="button"
+                              onClick={() => changePlan(item.companyId, 'Basic')}
+                              disabled={item.tier === 'Basic'}
+                              className={`px-2 py-1 rounded text-[9px] font-black uppercase tracking-wider transition-colors ${
+                                item.tier === 'Basic' 
+                                  ? 'bg-gray-100 text-gray-400 border border-gray-150 cursor-not-allowed' 
+                                  : 'bg-white text-gray-600 hover:bg-gray-100 border border-gray-200'
+                              }`}
+                            >
+                              Basic
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => changePlan(item.companyId, 'Standard')}
+                              disabled={item.tier === 'Standard'}
+                              className={`px-2 py-1 rounded text-[9px] font-black uppercase tracking-wider transition-colors ${
+                                item.tier === 'Standard' 
+                                  ? 'bg-blue-100 text-blue-800 border border-blue-200 cursor-not-allowed' 
+                                  : 'bg-white text-blue-600 hover:bg-blue-50 border border-blue-200'
+                              }`}
+                            >
+                              Standard
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => changePlan(item.companyId, 'Enterprise')}
+                              disabled={item.tier === 'Enterprise'}
+                              className={`px-2 py-1 rounded text-[9px] font-black uppercase tracking-wider transition-colors ${
+                                item.tier === 'Enterprise' 
+                                  ? 'bg-purple-100 text-purple-800 border border-purple-200 cursor-not-allowed' 
+                                  : 'bg-white text-purple-600 hover:bg-purple-50 border border-purple-200'
+                              }`}
+                            >
+                              Enterprise
+                            </button>
+                          </div>
+                        </td>
+                        <td className="py-4 px-4 text-right">
+                          <div className="flex items-center justify-end gap-1.5">
+                            <button
+                              type="button"
+                              onClick={() => addCredits(item.companyId, 50)}
+                              className="bg-emerald-600 hover:bg-emerald-700 text-white text-[9px] font-bold px-2 py-1 rounded shadow-sm transition-colors animate-pulse"
+                              title="Refill 50 AI credits"
+                            >
+                              +50 Refill
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => addCredits(item.companyId, 100)}
+                              className="bg-purple-600 hover:bg-purple-700 text-white text-[9px] font-bold px-2 py-1 rounded shadow-sm transition-colors"
+                              title="Refill 100 AI credits"
+                            >
+                              +100 Refill
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => resetCredits(item.companyId)}
+                              className="bg-slate-100 hover:bg-slate-200 text-slate-700 text-[9px] font-bold px-2 py-1 rounded transition-colors"
+                              title="Reset balance to plan limits"
+                            >
+                              Reset
+                            </button>
+                          </div>
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+          ) : (
+            <div className="py-12 text-center border border-dashed border-gray-100 rounded-3xl bg-gray-50/20">
+              <p className="text-sm font-bold text-gray-400 italic">No workspace matches your search query.</p>
+            </div>
+          )}
+        </div>
+      </div>
+    );
+  };
+
   const renderOverview = () => {
     return (
       <div className="space-y-8">
@@ -393,7 +671,7 @@ Admin Query: ${activePrompt}
             <h3 className="text-lg font-black mb-6 uppercase tracking-tighter">Transaction By Month</h3>
             <div className="h-64">
               {stats.chartData.length > 0 ? (
-                <ResponsiveContainer width="100%" height="100%">
+                <ResponsiveContainer width="100%" height="100%" minWidth={0}>
                   <LineChart data={stats.chartData}>
                     <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f0f0f0" />
                     <XAxis dataKey="name" axisLine={false} tickLine={false} tick={{ fontSize: 10, fontWeight: 'bold' }} />
@@ -417,7 +695,7 @@ Admin Query: ${activePrompt}
             <h3 className="text-lg font-black mb-6 uppercase tracking-tighter">Invoices By Months</h3>
             <div className="h-64">
               {stats.chartData.length > 0 ? (
-                <ResponsiveContainer width="100%" height="100%">
+                <ResponsiveContainer width="100%" height="100%" minWidth={0}>
                   <BarChart data={stats.chartData}>
                     <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f0f0f0" />
                     <XAxis dataKey="name" axisLine={false} tickLine={false} tick={{ fontSize: 10, fontWeight: 'bold' }} />
@@ -825,16 +1103,19 @@ Admin Query: ${activePrompt}
            <h1 className="text-3xl font-black text-gray-800 uppercase tracking-tighter">System Console</h1>
            <p className="text-gray-500 text-sm">Managing {companies.length} SME nodes across the vault.</p>
         </div>
-        <div className="flex bg-white p-1.5 rounded-2xl shadow-sm border border-gray-100">
-          <button onClick={() => setActiveTab('overview')} className={`px-6 py-2.5 rounded-xl text-xs font-black uppercase tracking-widest transition-all ${activeTab === 'overview' ? 'bg-primary-600 text-white shadow-lg' : 'text-gray-400 hover:text-gray-600'}`}>Overview</button>
-          <button onClick={() => setActiveTab('companies')} className={`px-6 py-2.5 rounded-xl text-xs font-black uppercase tracking-widest transition-all ${activeTab === 'companies' ? 'bg-primary-600 text-white shadow-lg' : 'text-gray-400 hover:text-gray-600'}`}>Companies</button>
-          <button onClick={() => setActiveTab('users')} className={`px-6 py-2.5 rounded-xl text-xs font-black uppercase tracking-widest transition-all ${activeTab === 'users' ? 'bg-primary-600 text-white shadow-lg' : 'text-gray-400 hover:text-gray-600'}`}>Users</button>
-          <button onClick={() => setActiveTab('security')} className={`px-6 py-2.5 rounded-xl text-xs font-black uppercase tracking-widest transition-all ${activeTab === 'security' ? 'bg-primary-600 text-white shadow-lg' : 'text-gray-400 hover:text-gray-600'}`}>Compliance & Auditing</button>
-          <button onClick={() => setActiveTab('reports')} className={`px-6 py-2.5 rounded-xl text-xs font-black uppercase tracking-widest transition-all ${activeTab === 'reports' ? 'bg-primary-600 text-white shadow-lg' : 'text-gray-400 hover:text-gray-600'}`}>Reports</button>
+        <div className="flex flex-wrap gap-1 bg-white p-1.5 rounded-2xl shadow-sm border border-gray-100">
+          <button onClick={() => setActiveTab('overview')} className={`px-4 py-2.5 rounded-xl text-xs font-black uppercase tracking-widest transition-all ${activeTab === 'overview' ? 'bg-primary-600 text-white shadow-lg' : 'text-gray-400 hover:text-gray-600'}`}>Overview</button>
+          <button onClick={() => setActiveTab('companies')} className={`px-4 py-2.5 rounded-xl text-xs font-black uppercase tracking-widest transition-all ${activeTab === 'companies' ? 'bg-primary-600 text-white shadow-lg' : 'text-gray-400 hover:text-gray-600'}`}>Companies</button>
+          <button onClick={() => setActiveTab('users')} className={`px-4 py-2.5 rounded-xl text-xs font-black uppercase tracking-widest transition-all ${activeTab === 'users' ? 'bg-primary-600 text-white shadow-lg' : 'text-gray-400 hover:text-gray-600'}`}>Users</button>
+          <button onClick={() => setActiveTab('ai_usage')} className={`px-4 py-2.5 rounded-xl text-xs font-black uppercase tracking-widest transition-all ${activeTab === 'ai_usage' ? 'bg-primary-600 text-white shadow-lg' : 'text-gray-400 hover:text-gray-600'}`}>AI Usage & Billing</button>
+          <button onClick={() => setActiveTab('security')} className={`px-4 py-2.5 rounded-xl text-xs font-black uppercase tracking-widest transition-all ${activeTab === 'security' ? 'bg-primary-600 text-white shadow-lg' : 'text-gray-400 hover:text-gray-600'}`}>Compliance & Auditing</button>
+          <button onClick={() => setActiveTab('reports')} className={`px-4 py-2.5 rounded-xl text-xs font-black uppercase tracking-widest transition-all ${activeTab === 'reports' ? 'bg-primary-600 text-white shadow-lg' : 'text-gray-400 hover:text-gray-600'}`}>Reports</button>
         </div>
       </div>
 
       {activeTab === 'overview' && renderOverview()}
+
+      {activeTab === 'ai_usage' && renderAiUsage()}
 
       {activeTab === 'security' && renderSecurity()}
 
@@ -907,7 +1188,7 @@ Admin Query: ${activePrompt}
               <h3 className="text-xl font-black mb-8 uppercase tracking-tighter">Platform Financial Performance</h3>
               <div className="h-96">
                 {stats.chartData.length > 0 ? (
-                  <ResponsiveContainer width="100%" height="100%">
+                  <ResponsiveContainer width="100%" height="100%" minWidth={0}>
                     <BarChart data={stats.chartData}>
                       <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f0f0f0" />
                       <XAxis dataKey="name" axisLine={false} tickLine={false} tick={{ fontSize: 12, fontWeight: 'bold' }} />

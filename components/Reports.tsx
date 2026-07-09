@@ -323,7 +323,7 @@ const Reports: React.FC<ReportsProps> = ({invoices, clients, services}) => {
         <div className="bg-white p-8 rounded-[2.5rem] shadow-2xl border border-gray-100">
           <h3 className="text-xl font-black text-gray-800 mb-6 uppercase tracking-tighter">Temporal Revenue Trend</h3>
           <div style={{ width: '100%', height: 300 }}>
-            <ResponsiveContainer>
+            <ResponsiveContainer width="100%" height="100%" minWidth={0}>
               <BarChart data={trendData}>
                 <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f3f4f6" />
                 <XAxis dataKey="name" tick={{fill: '#9ca3af', fontSize: 10, fontWeight: 900}} axisLine={false} tickLine={false} />
@@ -338,7 +338,7 @@ const Reports: React.FC<ReportsProps> = ({invoices, clients, services}) => {
         <div className="bg-white p-8 rounded-[2.5rem] shadow-2xl border border-gray-100">
           <h3 className="text-xl font-black text-gray-800 mb-6 uppercase tracking-tighter">Status Distribution</h3>
            <div style={{ width: '100%', height: 300 }}>
-            <ResponsiveContainer>
+            <ResponsiveContainer width="100%" height="100%" minWidth={0}>
                 <PieChart>
                     <Pie data={invoiceStatusData} cx="50%" cy="50%" outerRadius={80} fill="#8884d8" dataKey="value" nameKey="name" label>
                         {invoiceStatusData.map((entry) => (
@@ -358,7 +358,7 @@ const Reports: React.FC<ReportsProps> = ({invoices, clients, services}) => {
           <h3 className="text-xl font-black text-gray-800 mb-6 uppercase tracking-tighter">Client Lifetime Value (LTV)</h3>
           {clientLifetimeValue.length > 0 ? (
             <div style={{ width: '100%', height: 300 }}>
-              <ResponsiveContainer>
+              <ResponsiveContainer width="100%" height="100%" minWidth={0}>
                 <BarChart data={clientLifetimeValue.slice(0, 5)} layout="vertical" margin={{ top: 5, right: 30, left: 40, bottom: 5 }}>
                   <CartesianGrid strokeDasharray="3 3" vertical={true} horizontal={false} stroke="#f3f4f6" />
                   <XAxis type="number" tickFormatter={(v) => `₦${(v/1000).toFixed(0)}k`} tick={{fill: '#9ca3af', fontSize: 10, fontWeight: 900}} axisLine={false} tickLine={false} />
@@ -377,7 +377,7 @@ const Reports: React.FC<ReportsProps> = ({invoices, clients, services}) => {
           <h3 className="text-xl font-black text-gray-800 mb-6 uppercase tracking-tighter">Service Revenue Contribution</h3>
           {revenueByService.length > 0 ? (
             <div style={{ width: '100%', height: 300 }}>
-              <ResponsiveContainer>
+              <ResponsiveContainer width="100%" height="100%" minWidth={0}>
                 <PieChart>
                   <Pie data={revenueByService} cx="50%" cy="50%" innerRadius={60} outerRadius={80} paddingAngle={5} fill="#8884d8" dataKey="revenue" nameKey="name" label={(entry) => `${entry.name}: ₦${(entry.value/1000).toFixed(0)}k`}>
                     {revenueByService.map((entry, index) => (
@@ -399,7 +399,7 @@ const Reports: React.FC<ReportsProps> = ({invoices, clients, services}) => {
         <div className="bg-white p-8 rounded-[2.5rem] shadow-2xl border border-gray-100">
           <h3 className="text-xl font-black text-gray-800 mb-6 uppercase tracking-tighter">Outstanding / Overdue Aging Bracket</h3>
           <div style={{ width: '100%', height: 300 }}>
-            <ResponsiveContainer>
+            <ResponsiveContainer width="100%" height="100%" minWidth={0}>
               <BarChart data={overdueAgingData}>
                 <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f3f4f6" />
                 <XAxis dataKey="label" tick={{fill: '#9ca3af', fontSize: 10, fontWeight: 900}} axisLine={false} tickLine={false} />
@@ -451,7 +451,7 @@ const Reports: React.FC<ReportsProps> = ({invoices, clients, services}) => {
             <h4 className="text-xs font-black uppercase text-gray-400 tracking-wider mb-3">Average Invoice Ticket size</h4>
             {averageInvoiceValueOverTime.length > 0 ? (
               <div style={{ width: '100%', height: 120 }}>
-                <ResponsiveContainer>
+                <ResponsiveContainer width="100%" height="100%" minWidth={0}>
                   <LineChart data={averageInvoiceValueOverTime}>
                     <XAxis dataKey="name" tick={{fill: '#9ca3af', fontSize: 8, fontWeight: 900}} axisLine={false} tickLine={false} />
                     <Tooltip formatter={(value: number) => [`₦${value.toLocaleString()}`, "Avg Value"]} />
