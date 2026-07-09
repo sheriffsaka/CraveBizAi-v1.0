@@ -132,8 +132,23 @@ export class SignifyService {
     const createdSignatories: DbDocumentSignatory[] = [];
     
     for (const input of signatoriesInput) {
-      const sigId = (input as any).id || crypto.randomUUID();
-      const token = (input as any).token || crypto.randomBytes(32).toString("hex");
+      let sigId = (input as any).id;
+      if (!sigId) {
+        try {
+          sigId = crypto.randomUUID();
+        } catch (e) {
+          sigId = 'sig_' + Math.random().toString(36).substring(2, 15) + '_' + Date.now();
+        }
+      }
+      
+      let token = (input as any).token;
+      if (!token) {
+        try {
+          token = crypto.randomBytes(32).toString("hex");
+        } catch (e) {
+          token = Math.random().toString(36).substring(2, 15) + Math.random().toString(36).substring(2, 15);
+        }
+      }
       
       const signatory: DbDocumentSignatory = {
         id: sigId,

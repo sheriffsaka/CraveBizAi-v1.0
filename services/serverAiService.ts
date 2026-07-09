@@ -174,6 +174,18 @@ function compileMockDocument(text: string, companyContext: any): GeneratedDocume
 
     const blocks: DocumentBlock[] = [
         {
+            id: 'cover_' + Math.floor(Math.random() * 100000),
+            type: 'cover_page',
+            content: {
+                title: docTitle,
+                subtitle: "Strategic Agreement Proposal",
+                companyName: ctx.name || "CRAVEBIZ AI CLIENT",
+                preparedBy: ctx.name || "CraveBiZ AI Transformer",
+                preparedFor: clientName,
+                date: today
+            }
+        },
+        {
             id: 'hdr_' + Math.floor(Math.random() * 100000),
             type: 'header',
             content: {
@@ -645,7 +657,34 @@ export async function generateDocumentFromPurpose(purpose: string, companyContex
             throw new Error("Received empty text response from Gemini API");
         }
         const cleaned = jsonString.replace(/^```json\s*|```\s*$/g, '');
-        return JSON.parse(cleaned) as GeneratedDocument;
+        const parsed = JSON.parse(cleaned) as GeneratedDocument;
+        
+        // Programmatically prepend cover page
+        if (parsed && parsed.blocks) {
+            const hasCover = parsed.blocks.some(b => b.type === 'cover_page');
+            if (!hasCover) {
+                const metaBlock = parsed.blocks.find(b => b.type === 'metadata');
+                const documentTitle = metaBlock?.content?.documentTitle || parsed.documentType || "Strategic Agreement";
+                const clientName = metaBlock?.content?.clientName || "Valued Counterparty";
+                const preparedBy = metaBlock?.content?.preparedBy || ctx.name || "CraveBiZ AI Transformer";
+                const today = metaBlock?.content?.date || new Date().toLocaleDateString();
+                
+                const coverBlock: DocumentBlock = {
+                    id: 'cover_' + Math.floor(Math.random() * 100000),
+                    type: 'cover_page',
+                    content: {
+                        title: documentTitle,
+                        subtitle: "Strategic Project Covenant",
+                        companyName: ctx.name || "CRAVEBIZ AI CLIENT",
+                        preparedBy: preparedBy,
+                        preparedFor: clientName,
+                        date: today
+                    }
+                };
+                parsed.blocks.unshift(coverBlock);
+            }
+        }
+        return parsed;
     } catch (error) {
         console.error("Gemini AI Error generating document from purpose. Falling back to structured heuristic draft:", error);
         return compileMockDocument(purpose, ctx);

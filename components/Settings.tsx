@@ -438,9 +438,26 @@ const Settings: React.FC<SettingsProps> = ({ company, onSaveChanges, onInviteUse
               </div>
             </div>
             <div className="space-y-2">
-              <div className="flex justify-between text-xs">
+              <div className="flex justify-between items-center text-xs">
                 <span className="font-bold text-gray-500">Remaining AI Credits:</span>
-                <span className="font-mono font-bold text-gray-800">{subInfo.tier === 'Basic' ? '0' : `${subInfo.aiUnits}/${TIER_LIMITS[subInfo.tier].maxAiUnits}`} credits</span>
+                <div className="flex items-center gap-2">
+                  <span className="font-mono font-bold text-gray-800">{subInfo.tier === 'Basic' ? '0' : `${subInfo.aiUnits}/${TIER_LIMITS[subInfo.tier].maxAiUnits}`} credits</span>
+                  {localStorage.getItem('cravebiz_is_super_admin') === 'true' && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        const newUnits = subInfo.aiUnits + 50;
+                        setSubscriptionInfo(activeTenantId, subInfo.tier, newUnits, subInfo.aiModeEnabled);
+                        setSubInfo(getSubscriptionInfo(activeTenantId));
+                        window.dispatchEvent(new Event('cravebiz_subscription_change'));
+                      }}
+                      className="bg-emerald-600 hover:bg-emerald-700 text-white text-[9px] font-bold px-2 py-0.5 rounded shadow-sm transition-colors"
+                      title="Super Admin Credit Recharge"
+                    >
+                      +50 Refill
+                    </button>
+                  )}
+                </div>
               </div>
             </div>
           </div>

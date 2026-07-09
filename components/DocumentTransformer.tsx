@@ -3,7 +3,7 @@ import React, { useState, useRef, useEffect } from 'react';
 // @ts-ignore
 import mammoth from 'mammoth';
 import { transformDocument, generateDocumentFromPurpose, reviewDocumentContent } from '../services/aiGenerationService';
-import { GeneratedDocument, DocumentBlock, HeaderBlock, MetadataBlock, TableBlock, SummaryBlock, Company, User, StoredGeneratedDoc, DocumentReviewResult, SignatureInfo, DbDocumentSignatory, DbDocumentSignature, Project, Client } from '../types';
+import { GeneratedDocument, DocumentBlock, CoverPageBlock, HeaderBlock, MetadataBlock, TableBlock, SummaryBlock, Company, User, StoredGeneratedDoc, DocumentReviewResult, SignatureInfo, DbDocumentSignatory, DbDocumentSignature, Project, Client } from '../types';
 import EditableBlock from './EditableBlock';
 import Icon from './common/Icon';
 import { DocumentSignifyViewer, PreparedField } from './DocumentSignifyViewer';
@@ -180,6 +180,18 @@ function compileDocumentOffline(purpose: string, companyContext: any): Generated
         : "PARTNERSHIP SERVICE AGREEMENT";
 
     const blocks: DocumentBlock[] = [
+        {
+            id: 'cover_' + Math.floor(Math.random() * 10000),
+            type: 'cover_page',
+            content: {
+                title: documentTitle,
+                subtitle: "Strategic Client Agreement",
+                companyName: companyContext.name,
+                preparedBy: companyContext.name,
+                preparedFor: clientName,
+                date: today
+            }
+        },
         {
             id: 'hdr_' + Math.floor(Math.random() * 10000),
             type: 'header',
@@ -870,6 +882,12 @@ const DocumentTransformer: React.FC<DocumentTransformerProps> = ({
             let originalFileUrl = generatedDoc?.originalFileUrl || '';
             const fileBase64 = generatedDoc?.originalFileBase64 || '';
 
+            const isBase64String = (str: string) => typeof str === 'string' && (str.startsWith('data:') || str.length > 1000 || str.includes('JVBERi0'));
+
+            if (isBase64String(originalFileUrl)) {
+                originalFileUrl = '';
+            }
+
             if (!originalFileUrl && fileBase64) {
                 setLoadingMessage("Uploading document template securely to local cloud vaults...");
                 try {
@@ -882,10 +900,12 @@ const DocumentTransformer: React.FC<DocumentTransformerProps> = ({
                                 originalFileUrl: uploadUrl
                             });
                         }
+                    } else {
+                        originalFileUrl = "/uploads/placeholder_document.pdf";
                     }
                 } catch (uploadErr) {
-                    console.warn("Secure template upload failed, using direct base64 fallback:", uploadErr);
-                    originalFileUrl = fileBase64;
+                    console.warn("Secure template upload failed, using secure fallback:", uploadErr);
+                    originalFileUrl = "/uploads/placeholder_document.pdf";
                 }
             }
 
@@ -1484,7 +1504,7 @@ const DocumentTransformer: React.FC<DocumentTransformerProps> = ({
                     originalFileBase64: base64Data,
                     originalFileType: mimeType,
                     originalFileName: file.name,
-                    originalFileUrl: originalFileUrl || base64Data
+                    originalFileUrl: originalFileUrl || ""
                 };
 
                 handleLoadNewDocument(parsedDoc);
@@ -1879,6 +1899,51 @@ ${company?.name || 'CraveBiZ Vendor'}`;
     const renderBlock = (block: DocumentBlock) => {
         const { id, type, content } = block;
         switch (type) {
+            case 'cover_page':
+                const cover = content as CoverPageBlock;
+                return (
+                    <div className="border-4 border-gray-900 p-8 my-8 flex flex-col justify-between min-h-[400px] bg-gray-50 rounded-xl shadow-inner relative overflow-hidden" key={id}>
+                        <div className="absolute top-0 right-0 w-36 h-36 bg-gray-900/5 rounded-full -mr-10 -mt-10 pointer-events-none" />
+                        <div className="absolute bottom-0 left-0 w-24 h-24 bg-gray-900/5 rounded-full -ml-12 -mb-12 pointer-events-none" />
+
+                        <div className="space-y-4">
+                            <div className="h-1 w-20 bg-gray-900 mb-6" />
+                            <h1 className="text-3xl font-black text-gray-900 uppercase tracking-tight leading-none">
+                                <EditableBlock as="span" value={cover.title} onUpdate={val => handleUpdateBlock(id, { ...cover, title: val })} />
+                            </h1>
+                            <p className="text-sm font-semibold tracking-wide text-gray-500 uppercase mt-1">
+                                <EditableBlock as="span" value={cover.subtitle || "OFFICIAL AGREEMENT"} onUpdate={val => handleUpdateBlock(id, { ...cover, subtitle: val })} />
+                            </p>
+                        </div>
+
+                        <div className="mt-16 pt-8 border-t border-gray-200 grid grid-cols-2 gap-4 text-xs font-medium text-gray-600">
+                            <div>
+                                <span className="block text-[10px] uppercase tracking-wider text-gray-400 font-bold mb-1">Prepared By</span>
+                                <span className="text-gray-900 font-semibold">
+                                    <EditableBlock as="span" value={cover.preparedBy || "CRAVEBIZ AI"} onUpdate={val => handleUpdateBlock(id, { ...cover, preparedBy: val })} />
+                                </span>
+                            </div>
+                            <div>
+                                <span className="block text-[10px] uppercase tracking-wider text-gray-400 font-bold mb-1">Prepared For</span>
+                                <span className="text-gray-900 font-semibold">
+                                    <EditableBlock as="span" value={cover.preparedFor || "Valued Partner"} onUpdate={val => handleUpdateBlock(id, { ...cover, preparedFor: val })} />
+                                </span>
+                            </div>
+                            <div className="mt-4">
+                                <span className="block text-[10px] uppercase tracking-wider text-gray-400 font-bold mb-1">Date Created</span>
+                                <span className="text-gray-900 font-semibold">
+                                    <EditableBlock as="span" value={cover.date || ""} onUpdate={val => handleUpdateBlock(id, { ...cover, date: val })} />
+                                </span>
+                            </div>
+                            <div className="mt-4">
+                                <span className="block text-[10px] uppercase tracking-wider text-gray-400 font-bold mb-1">Organization</span>
+                                <span className="text-gray-900 font-semibold">
+                                    <EditableBlock as="span" value={cover.companyName || ""} onUpdate={val => handleUpdateBlock(id, { ...cover, companyName: val })} />
+                                </span>
+                            </div>
+                        </div>
+                    </div>
+                );
             case 'header':
                 const header = content as HeaderBlock;
                 return (

@@ -120,12 +120,21 @@ export interface Message {
 }
 
 // Types for Document Transformer
-export type DocumentBlockType = 'header' | 'metadata' | 'title' | 'paragraph' | 'table' | 'summary' | 'footer';
+export type DocumentBlockType = 'cover_page' | 'header' | 'metadata' | 'title' | 'paragraph' | 'table' | 'summary' | 'footer';
 
 export interface DocumentBlock {
   id: string;
   type: DocumentBlockType;
   content: any;
+}
+
+export interface CoverPageBlock {
+  title: string;
+  subtitle?: string;
+  companyName?: string;
+  date?: string;
+  preparedFor?: string;
+  preparedBy?: string;
 }
 
 export interface HeaderBlock {

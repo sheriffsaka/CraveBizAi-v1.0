@@ -524,6 +524,46 @@ export default function PublicSigningPortal({ docId, token, prefilledRecipient, 
     const renderBlock = (block: DocumentBlock) => {
         const { id, type, content } = block;
         switch (type) {
+            case 'cover_page':
+                return (
+                    <div className="border-4 border-gray-900 p-8 my-8 flex flex-col justify-between min-h-[400px] bg-gray-50 rounded-xl shadow-inner relative overflow-hidden" key={id}>
+                        <div className="absolute top-0 right-0 w-36 h-36 bg-gray-900/5 rounded-full -mr-10 -mt-10 pointer-events-none" />
+                        <div className="absolute bottom-0 left-0 w-24 h-24 bg-gray-900/5 rounded-full -ml-12 -mb-12 pointer-events-none" />
+
+                        <div className="space-y-4">
+                            <div className="h-1 w-20 bg-gray-900 mb-6" />
+                            <h1 className="text-3xl font-black text-gray-900 uppercase tracking-tight leading-none">
+                                {content.title}
+                            </h1>
+                            {content.subtitle && (
+                                <p className="text-sm font-semibold tracking-wide text-gray-500 uppercase mt-1">
+                                    {content.subtitle}
+                                </p>
+                            )}
+                        </div>
+
+                        <div className="mt-16 pt-8 border-t border-gray-200 grid grid-cols-2 gap-4 text-xs font-medium text-gray-600">
+                            <div>
+                                <span className="block text-[10px] uppercase tracking-wider text-gray-400 font-bold mb-1">Prepared By</span>
+                                <span className="text-gray-900 font-semibold">{content.preparedBy || content.companyName || "CRAVEBIZ AI"}</span>
+                            </div>
+                            <div>
+                                <span className="block text-[10px] uppercase tracking-wider text-gray-400 font-bold mb-1">Prepared For</span>
+                                <span className="text-gray-900 font-semibold">{content.preparedFor || "Valued Partner"}</span>
+                            </div>
+                            <div className="mt-4">
+                                <span className="block text-[10px] uppercase tracking-wider text-gray-400 font-bold mb-1">Date Created</span>
+                                <span className="text-gray-900 font-semibold">{content.date || new Date().toLocaleDateString()}</span>
+                            </div>
+                            {content.companyName && (
+                                <div className="mt-4">
+                                    <span className="block text-[10px] uppercase tracking-wider text-gray-400 font-bold mb-1">Organization</span>
+                                    <span className="text-gray-900 font-semibold">{content.companyName}</span>
+                                </div>
+                            )}
+                        </div>
+                    </div>
+                );
             case 'header':
                 return (
                     <div className="flex justify-between items-start pb-6 border-b-2 border-gray-800" key={id}>
