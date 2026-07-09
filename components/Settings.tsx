@@ -3,7 +3,7 @@ import { Company, BankAccount, User, WorkspaceRole, AuditLog } from '../types';
 import { supabase } from '../lib/api';
 import ImageCropperModal from './ImageCropperModal';
 import Icon from './common/Icon';
-import { getSubscriptionInfo, setSubscriptionInfo, SubscriptionTier, TIER_LIMITS } from '../services/subscriptionService';
+import { getSubscriptionInfo, setSubscriptionInfo, SubscriptionTier, TIER_LIMITS, saveSubscriptionInfoToDb } from '../services/subscriptionService';
 
 interface SettingsProps {
   company: Company | null;
@@ -389,6 +389,9 @@ const Settings: React.FC<SettingsProps> = ({ company, onSaveChanges, onInviteUse
       
       // Save invited user's AI Token permission to local storage
       localStorage.setItem(`cravebiz_member_ai_allowed_${activeTenantId}_${inviteEmail.trim().toLowerCase()}`, inviteAiAllowed.toString());
+
+      // Sync to cloud DB
+      await saveSubscriptionInfoToDb(activeTenantId);
 
       if (onTriggerAuditLog) {
         onTriggerAuditLog('INVITE_MEMBER', inviteEmail, `Invited team member ${inviteName || inviteEmail} as role ${inviteRole} with AI Permission: ${inviteAiAllowed ? 'Allowed' : 'Disallowed'}`);

@@ -3,6 +3,7 @@ import React, { useState, useEffect } from 'react';
 import Modal from './Modal';
 import { Company, User } from '../types';
 import ImageCropperModal from './ImageCropperModal';
+import { getSubscriptionInfo, setSubscriptionInfo, SubscriptionTier, saveSubscriptionInfoToDb } from '../services/subscriptionService';
 
 interface CompanyDetailModalProps {
   isOpen: boolean;
@@ -26,9 +27,27 @@ const CompanyDetailModal: React.FC<CompanyDetailModalProps> = ({
   const [isCropperModalOpen, setIsCropperModalOpen] = useState(false);
   const [imageToCrop, setImageToCrop] = useState<string | null>(null);
 
+  const activeSub = getSubscriptionInfo(company.id);
+  const [subTier, setSubTier] = useState<SubscriptionTier>(activeSub.tier);
+  const [subAiUnits, setSubAiUnits] = useState<number>(activeSub.aiUnits);
+  const [subAiModeEnabled, setSubAiModeEnabled] = useState<boolean>(activeSub.aiModeEnabled);
+
+  const [userAiPermissions, setUserAiPermissions] = useState<Record<string, boolean>>({});
+
   useEffect(() => {
     setFormData(company);
-  }, [company]);
+    const sub = getSubscriptionInfo(company.id);
+    setSubTier(sub.tier);
+    setSubAiUnits(sub.aiUnits);
+    setSubAiModeEnabled(sub.aiModeEnabled);
+
+    const perms: Record<string, boolean> = {};
+    users.forEach(u => {
+      const saved = localStorage.getItem(`cravebiz_member_ai_allowed_${company.id}_${u.email.toLowerCase()}`);
+      perms[u.id] = saved !== 'false'; // default true
+    });
+    setUserAiPermissions(perms);
+  }, [company, users]);
 
   const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => {
     const { id, value } = e.target;
@@ -58,9 +77,21 @@ const CompanyDetailModal: React.FC<CompanyDetailModalProps> = ({
     setFormData((prev) => ({ ...prev, logoUrl: undefined }));
   };
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     onUpdateCompanyDetails(company.id, formData);
+
+    // Save user AI permissions
+    users.forEach(u => {
+      if (userAiPermissions[u.id] !== undefined) {
+        localStorage.setItem(`cravebiz_member_ai_allowed_${company.id}_${u.email.toLowerCase()}`, userAiPermissions[u.id] ? 'true' : 'false');
+      }
+    });
+
+    // Save subscription info & sync to DB
+    setSubscriptionInfo(company.id, subTier, subAiUnits, subAiModeEnabled);
+    await saveSubscriptionInfoToDb(company.id);
+
     setShowSuccess(true);
     setTimeout(() => setShowSuccess(false), 3000);
   };
@@ -143,13 +174,65 @@ const CompanyDetailModal: React.FC<CompanyDetailModalProps> = ({
           </div>
 
           <div className="border-t pt-4">
-            <h4 className="text-md font-semibold text-gray-700 mb-2">Associated Users ({users.length})</h4>
+            <h4 className="text-md font-semibold text-gray-700 mb-2">Workspace Subscription & AI Settings</h4>
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-4 bg-gray-50 p-4 rounded-lg">
+              <div>
+                <label htmlFor="subTier" className="block text-sm font-medium text-gray-700">Subscription Plan</label>
+                <select
+                  id="subTier"
+                  value={subTier}
+                  onChange={(e) => setSubTier(e.target.value as SubscriptionTier)}
+                  className="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-primary-500 focus:border-primary-500 bg-white text-gray-900"
+                >
+                  <option value="Free">Free Plan</option>
+                  <option value="Starter">Starter Plan</option>
+                  <option value="Growth">Growth Plan</option>
+                  <option value="Enterprise">Enterprise Plan</option>
+                </select>
+              </div>
+              <div>
+                <label htmlFor="subAiUnits" className="block text-sm font-medium text-gray-700">AI Tokens Remaining</label>
+                <input
+                  type="number"
+                  id="subAiUnits"
+                  value={subAiUnits}
+                  onChange={(e) => setSubAiUnits(parseInt(e.target.value) || 0)}
+                  className="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-primary-500 focus:border-primary-500 bg-white text-gray-900"
+                />
+              </div>
+              <div className="flex items-center mt-6">
+                <input
+                  type="checkbox"
+                  id="subAiMode"
+                  checked={subAiModeEnabled}
+                  onChange={(e) => setSubAiModeEnabled(e.target.checked)}
+                  className="h-4 w-4 text-primary-600 focus:ring-primary-500 border-gray-300 rounded"
+                />
+                <label htmlFor="subAiMode" className="ml-2 block text-sm text-gray-900 font-medium">AI Mode Enabled</label>
+              </div>
+            </div>
+          </div>
+
+          <div className="border-t pt-4">
+            <h4 className="text-md font-semibold text-gray-700 mb-2">Associated Users & AI Permissions ({users.length})</h4>
             {users.length > 0 ? (
               <ul className="space-y-2">
                 {users.map((user) => (
-                  <li key={user.id} className="text-sm text-gray-700 bg-gray-50 p-2 rounded-md flex justify-between items-center">
+                  <li key={user.id} className="text-sm text-gray-700 bg-gray-50 p-3 rounded-md flex justify-between items-center">
                     <div>
                       <span className="font-semibold">{user.name}</span> ({user.email})
+                      <div className="flex items-center mt-1">
+                        <input
+                          type="checkbox"
+                          id={`user-ai-${user.id}`}
+                          checked={userAiPermissions[user.id] !== false}
+                          onChange={(e) => setUserAiPermissions(prev => ({ ...prev, [user.id]: e.target.checked }))}
+                          className="h-3 w-3 text-primary-600 border-gray-300 rounded focus:ring-0"
+                        />
+                        <label htmlFor={`user-ai-${user.id}`} className="ml-1.5 text-xs text-gray-500 cursor-pointer select-none">
+                          Allowed to use AI Tokens
+                        </label>
+                      </div>
                     </div>
                     <span className={`px-2 py-1 text-xs font-semibold rounded-full ${user.status === 'Active' ? 'bg-green-100 text-green-800' : user.status === 'Pending' ? 'bg-yellow-100 text-yellow-800' : 'bg-red-100 text-red-800'}`}>
                       {user.status}

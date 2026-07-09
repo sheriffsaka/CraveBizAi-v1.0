@@ -1,3 +1,5 @@
+import { supabase } from '../lib/api';
+
 export type SubscriptionTier = 'Free' | 'Starter' | 'Growth' | 'Enterprise';
 
 export interface SubscriptionInfo {
@@ -16,6 +18,170 @@ export const TIER_LIMITS = {
   Growth: { maxInvoices: 50, maxReceipts: 50, maxAiUnits: 500, maxUsers: 10, aiAvailable: true, price: "₦35,000.00" },
   Enterprise: { maxInvoices: 200, maxReceipts: 2000, maxAiUnits: 1000, maxUsers: 999999, aiAvailable: true, price: "₦85,000.00" }
 };
+
+/**
+ * Helper to get deterministic valid UUID for settings documents
+ */
+export const getSettingsDocId = (companyId: string): string => {
+  if (companyId === 'cravebiz-inc' || !companyId) {
+    return '00000000-0000-0000-0000-000000000000';
+  }
+  if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(companyId)) {
+    return '11111111-1111-1111-1111-111111111111';
+  }
+  return companyId;
+};
+
+/**
+ * Saves subscription details to database for easy cloud retrieval
+ */
+export async function saveSubscriptionInfoToDb(companyId: string): Promise<void> {
+  if (!companyId) return;
+  const docId = getSettingsDocId(companyId);
+  const sub = getSubscriptionInfo(companyId);
+
+  // Collect all user-level AI permissions from local storage for this company
+  const memberPermissions: Record<string, boolean> = {};
+  try {
+    for (let i = 0; i < localStorage.length; i++) {
+      const key = localStorage.key(i);
+      if (key && key.startsWith(`cravebiz_member_ai_allowed_${companyId}_`)) {
+        const email = key.replace(`cravebiz_member_ai_allowed_${companyId}_`, '');
+        memberPermissions[email] = localStorage.getItem(key) === 'true';
+      }
+    }
+  } catch (e) {
+    console.warn("Could not read localstorage permissions:", e);
+  }
+
+  try {
+    const { error } = await supabase.from('generated_documents').upsert({
+      id: docId,
+      company_id: companyId === 'cravebiz-inc' ? '00000000-0000-0000-0000-000000000000' : companyId,
+      document_type: 'cravebiz_workspace_settings',
+      content: {
+        tier: sub.tier,
+        aiUnits: sub.aiUnits,
+        aiModeEnabled: sub.aiModeEnabled,
+        memberPermissions
+      }
+    });
+    if (error) {
+      console.warn("Supabase upsert subscription error:", error);
+    }
+  } catch (err) {
+    console.warn("Could not sync subscription to Supabase:", err);
+  }
+}
+
+/**
+ * Synchronizes subscription details from Supabase to local storage
+ */
+export async function syncSubscriptionInfoFromDb(companyId: string): Promise<void> {
+  if (!companyId) return;
+  const docId = getSettingsDocId(companyId);
+
+  try {
+    const { data, error } = await supabase
+      .from('generated_documents')
+      .select('content')
+      .eq('id', docId)
+      .maybeSingle();
+
+    if (error) {
+      console.warn("Supabase fetch subscription error:", error);
+      return;
+    }
+
+    if (data && data.content) {
+      const content = data.content as any;
+      if (content.tier) {
+        localStorage.setItem(`cravebiz_tier_${companyId}`, content.tier);
+      }
+      if (content.aiUnits !== undefined) {
+        localStorage.setItem(`cravebiz_units_${companyId}`, content.aiUnits.toString());
+      }
+      if (content.aiModeEnabled !== undefined) {
+        localStorage.setItem(`cravebiz_aimode_${companyId}`, content.aiModeEnabled.toString());
+      }
+      if (content.memberPermissions) {
+        Object.entries(content.memberPermissions).forEach(([email, allowed]) => {
+          localStorage.setItem(`cravebiz_member_ai_allowed_${companyId}_${email}`, String(allowed));
+        });
+      }
+      window.dispatchEvent(new Event('cravebiz_subscription_change'));
+    }
+  } catch (err) {
+    console.warn("Could not sync subscription from Supabase:", err);
+  }
+}
+
+/**
+ * Saves customizable TIER_LIMITS settings to Supabase
+ */
+export async function saveGlobalPlanSettings(limits: typeof TIER_LIMITS): Promise<void> {
+  try {
+    const { error } = await supabase.from('generated_documents').upsert({
+      id: '99999999-9999-9999-9999-999999999999',
+      company_id: '00000000-0000-0000-0000-000000000000',
+      document_type: 'cravebiz_global_pricing_settings',
+      content: limits
+    });
+    if (error) {
+      console.warn("Supabase save global plans error:", error);
+    }
+  } catch (err) {
+    console.warn("Could not save global plans to Supabase:", err);
+  }
+}
+
+/**
+ * Syncs customizable TIER_LIMITS from Supabase
+ */
+export async function syncGlobalPlanSettings(): Promise<void> {
+  try {
+    const { data, error } = await supabase
+      .from('generated_documents')
+      .select('content')
+      .eq('id', '99999999-9999-9999-9999-999999999999')
+      .maybeSingle();
+
+    if (error) {
+      console.warn("Supabase fetch global plans error:", error);
+      return;
+    }
+
+    if (data && data.content) {
+      const content = data.content as any;
+      Object.keys(content).forEach((tierKey) => {
+        const tier = tierKey as SubscriptionTier;
+        if (content[tier]) {
+          TIER_LIMITS[tier] = {
+            ...TIER_LIMITS[tier],
+            ...content[tier]
+          };
+        }
+      });
+      localStorage.setItem('cravebiz_custom_tier_limits', JSON.stringify(TIER_LIMITS));
+      window.dispatchEvent(new Event('cravebiz_subscription_change'));
+    } else {
+      // Check if local storage has cached limits
+      const cached = localStorage.getItem('cravebiz_custom_tier_limits');
+      if (cached) {
+        const parsed = JSON.parse(cached);
+        Object.keys(parsed).forEach((tierKey) => {
+          const tier = tierKey as SubscriptionTier;
+          TIER_LIMITS[tier] = {
+            ...TIER_LIMITS[tier],
+            ...parsed[tier]
+          };
+        });
+      }
+    }
+  } catch (err) {
+    console.warn("Could not sync global plans from Supabase:", err);
+  }
+}
 
 /**
  * Helper to get subscription details for a specific company
@@ -95,6 +261,9 @@ export function setSubscriptionInfo(
     const currentUnits = aiUnits !== undefined ? aiUnits : (localStorage.getItem(`cravebiz_units_${companyId}`) ? parseInt(localStorage.getItem(`cravebiz_units_${companyId}`)!, 10) : 0);
     localStorage.setItem(`cravebiz_aimode_${companyId}`, ((limits.aiAvailable || currentUnits > 0) && aiModeEnabled).toString());
   }
+
+  // Save to DB in background
+  saveSubscriptionInfoToDb(companyId).catch(err => console.warn("Failed to sync sub changes to Supabase:", err));
 }
 
 /**
@@ -110,6 +279,10 @@ export function toggleAiMode(companyId: string, enabled: boolean): boolean {
   }
 
   localStorage.setItem(`cravebiz_aimode_${companyId}`, enabled.toString());
+  
+  // Save to DB in background
+  saveSubscriptionInfoToDb(companyId).catch(err => console.warn("Failed to sync AI toggle to Supabase:", err));
+  
   // Dispatch an event so all components update on AI mode change
   window.dispatchEvent(new Event('cravebiz_subscription_change'));
   return enabled;
@@ -168,6 +341,10 @@ export function deductAiUnit(companyId: string): void {
   const newUnits = sub.aiUnits - 1;
   localStorage.setItem(`cravebiz_units_${companyId}`, newUnits.toString());
   
+  // Save to DB in background
+  saveSubscriptionInfoToDb(companyId).catch(err => console.warn("Failed to sync AI deduction to Supabase:", err));
+
   // Dispatch event for UI re-render
   window.dispatchEvent(new Event('cravebiz_subscription_change'));
 }
+

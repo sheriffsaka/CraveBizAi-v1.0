@@ -26,7 +26,7 @@ import PublicSigningPortal from './components/PublicSigningPortal';
 import ProjectManagement from './components/ProjectManagement';
 import { api, supabase } from './lib/api';
 import { generateRenewalInvoiceSuggestion } from './services/aiGenerationService';
-import { getSubscriptionInfo, setSubscriptionInfo, SubscriptionTier, TIER_LIMITS } from './services/subscriptionService';
+import { getSubscriptionInfo, setSubscriptionInfo, SubscriptionTier, TIER_LIMITS, syncGlobalPlanSettings, syncSubscriptionInfoFromDb } from './services/subscriptionService';
 import { Invoice, Client, Service, Company, User, TenantData, InvoiceStatus, AllTenantsData, GeneratedDocument, DbDocumentSignatory, Project, WorkspaceRole, AuditLog } from './types';
 import Icon from './components/common/Icon';
 
@@ -167,15 +167,23 @@ export default function App() {
 
   useEffect(() => {
     const syncRoleAndLogs = async () => {
+      try {
+        await syncGlobalPlanSettings();
+      } catch (ge) {
+        console.warn("Failed to sync global plan limits:", ge);
+      }
+
       if (activeTenantId && currentUser) {
         try {
+          await syncSubscriptionInfoFromDb(activeTenantId);
+          
           const role = await api.getUserRole(activeTenantId, currentUser.id);
           if (isMounted.current) {
             setUserRole(role);
           }
           await loadAuditLogs(activeTenantId);
         } catch (e) {
-          console.warn("Failed to sync role/logs:", e);
+          console.warn("Failed to sync role/logs/subscription:", e);
         }
       }
     };

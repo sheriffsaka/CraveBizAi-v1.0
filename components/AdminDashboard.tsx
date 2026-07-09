@@ -8,7 +8,7 @@ import { generateTextResponse } from '../services/aiGenerationService';
 import CompanyDetailModal from './CompanyDetailModal';
 import EditUserModal from './EditUserModal';
 import { api } from '../lib/api';
-import { getSubscriptionInfo, setSubscriptionInfo, TIER_LIMITS, SubscriptionTier } from '../services/subscriptionService';
+import { getSubscriptionInfo, setSubscriptionInfo, TIER_LIMITS, SubscriptionTier, saveGlobalPlanSettings } from '../services/subscriptionService';
 
 interface AdminDashboardProps {
   allTenantData: AllTenantsData;
@@ -138,6 +138,38 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ allTenantData, companie
   const [activeTab, setActiveTab] = useState<'overview' | 'companies' | 'users' | 'reports' | 'security' | 'ai_usage'>('overview');
   const [aiUsageSearch, setAiUsageSearch] = useState('');
   const [aiUsageList, setAiUsageList] = useState<any[]>([]);
+
+  const [editableLimits, setEditableLimits] = useState<typeof TIER_LIMITS>(() => ({ ...TIER_LIMITS }));
+  const [savePricingSuccess, setSavePricingSuccess] = useState(false);
+
+  useEffect(() => {
+    setEditableLimits({ ...TIER_LIMITS });
+  }, [activeTab]);
+
+  const handleSavePricingLimits = async (e: React.FormEvent) => {
+    e.preventDefault();
+    try {
+      Object.keys(editableLimits).forEach((tierKey) => {
+        const tier = tierKey as SubscriptionTier;
+        TIER_LIMITS[tier] = {
+          ...TIER_LIMITS[tier],
+          ...editableLimits[tier]
+        };
+      });
+
+      await saveGlobalPlanSettings(TIER_LIMITS);
+      localStorage.setItem('cravebiz_custom_tier_limits', JSON.stringify(TIER_LIMITS));
+
+      window.dispatchEvent(new Event('cravebiz_subscription_change'));
+      reloadAiUsageData();
+
+      setSavePricingSuccess(true);
+      setTimeout(() => setSavePricingSuccess(false), 3000);
+      alert("Subscription Plan limits and pricing saved and updated globally!");
+    } catch (err) {
+      alert("Failed to save plan pricing and limits configuration.");
+    }
+  };
 
   const reloadAiUsageData = () => {
     const data = companies.map(comp => {
@@ -665,6 +697,130 @@ Admin Query: ${activePrompt}
               <p className="text-sm font-bold text-gray-400 italic">No workspace matches your search query.</p>
             </div>
           )}
+        </div>
+
+        {/* Global Plan Configuration Panel */}
+        <div className="bg-white p-8 rounded-[3rem] shadow-2xl border border-gray-100 mt-8">
+          <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 mb-6">
+            <div>
+              <h3 className="text-lg font-black text-gray-800 uppercase tracking-tight">Standard Plan Limits & Pricing Settings</h3>
+              <p className="text-xs text-gray-400 font-medium">Configure global subscription plan prices, credit allowance limits, and other tier features</p>
+            </div>
+          </div>
+
+          <form onSubmit={handleSavePricingLimits} className="space-y-6">
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+              {(Object.keys(editableLimits) as SubscriptionTier[]).map((tier) => {
+                const limit = editableLimits[tier];
+                return (
+                  <div key={tier} className="bg-gray-50/50 border border-gray-100 p-5 rounded-2xl space-y-4">
+                    <div className="flex justify-between items-center border-b border-gray-100 pb-2">
+                      <span className="text-xs font-black uppercase tracking-wider text-gray-800">{tier} Plan</span>
+                      <div className="flex items-center">
+                        <input
+                          type="checkbox"
+                          id={`aiAvailable-${tier}`}
+                          checked={limit.aiAvailable}
+                          onChange={(e) => {
+                            setEditableLimits(prev => ({
+                              ...prev,
+                              [tier]: { ...prev[tier], aiAvailable: e.target.checked }
+                            }));
+                          }}
+                          className="h-4 w-4 text-primary-600 border-gray-300 rounded focus:ring-0"
+                        />
+                        <label htmlFor={`aiAvailable-${tier}`} className="ml-1.5 text-3xs font-extrabold uppercase tracking-wider text-gray-500 cursor-pointer select-none">
+                          AI Available
+                        </label>
+                      </div>
+                    </div>
+
+                    <div className="grid grid-cols-2 gap-3 text-xs font-bold">
+                      <div>
+                        <label className="text-4xs font-black uppercase tracking-widest text-gray-400 block mb-1">Pricing (e.g. ₦15,000.00)</label>
+                        <input
+                          type="text"
+                          value={limit.price}
+                          onChange={(e) => {
+                            setEditableLimits(prev => ({
+                              ...prev,
+                              [tier]: { ...prev[tier], price: e.target.value }
+                            }));
+                          }}
+                          className="w-full px-3 py-2 bg-white border border-gray-200 rounded-lg outline-none text-gray-800"
+                        />
+                      </div>
+                      <div>
+                        <label className="text-4xs font-black uppercase tracking-widest text-gray-400 block mb-1">Max AI Tokens (Credits)</label>
+                        <input
+                          type="number"
+                          value={limit.maxAiUnits}
+                          onChange={(e) => {
+                            setEditableLimits(prev => ({
+                              ...prev,
+                              [tier]: { ...prev[tier], maxAiUnits: parseInt(e.target.value) || 0 }
+                            }));
+                          }}
+                          className="w-full px-3 py-2 bg-white border border-gray-200 rounded-lg outline-none text-gray-800"
+                        />
+                      </div>
+                      <div>
+                        <label className="text-4xs font-black uppercase tracking-widest text-gray-400 block mb-1">Max Invoices Limit</label>
+                        <input
+                          type="number"
+                          value={limit.maxInvoices}
+                          onChange={(e) => {
+                            setEditableLimits(prev => ({
+                              ...prev,
+                              [tier]: { ...prev[tier], maxInvoices: parseInt(e.target.value) || 0 }
+                            }));
+                          }}
+                          className="w-full px-3 py-2 bg-white border border-gray-200 rounded-lg outline-none text-gray-800"
+                        />
+                      </div>
+                      <div>
+                        <label className="text-4xs font-black uppercase tracking-widest text-gray-400 block mb-1">Max Receipts Limit</label>
+                        <input
+                          type="number"
+                          value={limit.maxReceipts}
+                          onChange={(e) => {
+                            setEditableLimits(prev => ({
+                              ...prev,
+                              [tier]: { ...prev[tier], maxReceipts: parseInt(e.target.value) || 0 }
+                            }));
+                          }}
+                          className="w-full px-3 py-2 bg-white border border-gray-200 rounded-lg outline-none text-gray-800"
+                        />
+                      </div>
+                      <div className="col-span-2">
+                        <label className="text-4xs font-black uppercase tracking-widest text-gray-400 block mb-1">Max Authorized Users</label>
+                        <input
+                          type="number"
+                          value={limit.maxUsers}
+                          onChange={(e) => {
+                            setEditableLimits(prev => ({
+                              ...prev,
+                              [tier]: { ...prev[tier], maxUsers: parseInt(e.target.value) || 0 }
+                            }));
+                          }}
+                          className="w-full px-3 py-2 bg-white border border-gray-200 rounded-lg outline-none text-gray-800"
+                        />
+                      </div>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+
+            <div className="flex justify-end pt-4 border-t border-gray-100">
+              <button
+                type="submit"
+                className="bg-primary-600 hover:bg-primary-700 text-white text-xs font-black uppercase tracking-widest px-6 py-3 rounded-xl shadow-lg transition-all"
+              >
+                Save Pricing & Limits Config
+              </button>
+            </div>
+          </form>
         </div>
       </div>
     );
