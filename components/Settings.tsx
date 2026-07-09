@@ -135,12 +135,72 @@ const Settings: React.FC<SettingsProps> = ({ company, onSaveChanges, onInviteUse
 
   const handleUpdateTier = (tier: SubscriptionTier) => {
     if (isReadOnly) return;
-    setSubscriptionInfo(activeTenantId, tier);
-    setSubInfo(getSubscriptionInfo(activeTenantId));
-    if (onTriggerAuditLog) {
-      onTriggerAuditLog('Update Subscription', 'Company', `Plan updated to ${tier}`);
+    
+    if (tier === 'Free') {
+      // Free plan downgrade is free!
+      setSubscriptionInfo(activeTenantId, tier);
+      setSubInfo(getSubscriptionInfo(activeTenantId));
+      if (onTriggerAuditLog) {
+        onTriggerAuditLog('Update Subscription', 'Company', `Plan updated to ${tier}`);
+      }
+      window.dispatchEvent(new Event('cravebiz_subscription_change'));
+      alert("Successfully downgraded workspace to Free Plan.");
+      return;
     }
-    window.dispatchEvent(new Event('cravebiz_subscription_change'));
+
+    // Paid plans trigger Flutterwave
+    if (!(window as any).FlutterwaveCheckout) {
+      alert("Flutterwave secure system is currently loading. Please try again in a few seconds.");
+      return;
+    }
+
+    let checkoutAmount = 0;
+    if (tier === 'Starter') checkoutAmount = 15000;
+    else if (tier === 'Growth') checkoutAmount = 35000;
+    else if (tier === 'Enterprise') checkoutAmount = 85000;
+
+    const flutterwaveKey = (import.meta as any).env?.VITE_FLUTTERWAVE_PUBLIC_KEY || "FLWPUBK_TEST-e5e54eb86bc8c9bc88a8d11d7c3ee7c0-X";
+    let isSuccess = false;
+
+    (window as any).FlutterwaveCheckout({
+      public_key: flutterwaveKey,
+      tx_ref: `cravebiz-tier-${tier.toLowerCase()}-${Date.now()}-${activeTenantId}`,
+      amount: checkoutAmount,
+      currency: "NGN",
+      payment_options: "card, banktransfer, ussd",
+      customer: {
+        email: company?.email || "customer@cravebiz.ai",
+        name: company?.name || "CraveBiZ Client",
+      },
+      customizations: {
+        title: `CraveBiZ ${tier} Subscription`,
+        description: `Upgrade workspace to ${tier} Plan (₦${checkoutAmount.toLocaleString()}/month)`,
+        logo: "https://checkout.flutterwave.com/assets/img/flutterwave-logo.svg",
+      },
+      callback: function (data: any) {
+        console.log("Flutterwave Plan upgrade response:", data);
+        if (data.status === "successful" || data.status === "completed") {
+          isSuccess = true;
+          // Set subscription info and reset units to plan default
+          setSubscriptionInfo(activeTenantId, tier);
+          setSubInfo(getSubscriptionInfo(activeTenantId));
+          window.dispatchEvent(new Event('cravebiz_subscription_change'));
+          
+          if (onTriggerAuditLog) {
+            onTriggerAuditLog('Purchase Subscription', 'Subscription', `Upgraded to ${tier} Plan for ₦${checkoutAmount.toLocaleString()}`);
+          }
+          alert(`Congratulations! Your workspace has been successfully upgraded to the ${tier} Plan.`);
+        } else {
+          alert(`Failed Subscription Upgrade: Payment transaction status was '${data.status}'. Please try again.`);
+        }
+      },
+      onclose: function() {
+        console.log("Flutterwave payment modal dismissed");
+        if (!isSuccess) {
+          alert("Failed Subscription Upgrade: Payment checkout was closed or cancelled before completion.");
+        }
+      }
+    });
   };
 
   // Invitation states
@@ -148,6 +208,7 @@ const Settings: React.FC<SettingsProps> = ({ company, onSaveChanges, onInviteUse
   const [inviteEmail, setInviteEmail] = useState('');
   const [inviteName, setInviteName] = useState('');
   const [inviteRole, setInviteRole] = useState<'Owner' | 'Admin' | 'Manager' | 'Member'>('Member');
+  const [inviteAiAllowed, setInviteAiAllowed] = useState(true);
   const [teamMembers, setTeamMembers] = useState<{ id: string; name: string; email: string; role: string; status: string }[]>([]);
 
   useEffect(() => {
@@ -298,6 +359,15 @@ const Settings: React.FC<SettingsProps> = ({ company, onSaveChanges, onInviteUse
   const handleInviteSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!inviteEmail.trim()) return;
+
+    // Check workspace active tier user limit
+    const activeSub = getSubscriptionInfo(activeTenantId);
+    if (teamMembers.length >= activeSub.maxUsers) {
+      alert(`User invitation failed! Your current ${activeSub.tier} Plan has a limit of ${activeSub.maxUsers} user(s). Please upgrade your subscription tier in Workspace Settings to add more team members.`);
+      setIsInviteOpen(false);
+      return;
+    }
+
     try {
       // Look up profile if they exist in system
       let tempUserId = `user-${Date.now()}`;
@@ -317,14 +387,18 @@ const Settings: React.FC<SettingsProps> = ({ company, onSaveChanges, onInviteUse
         status: 'Active'
       });
       
+      // Save invited user's AI Token permission to local storage
+      localStorage.setItem(`cravebiz_member_ai_allowed_${activeTenantId}_${inviteEmail.trim().toLowerCase()}`, inviteAiAllowed.toString());
+
       if (onTriggerAuditLog) {
-        onTriggerAuditLog('INVITE_MEMBER', inviteEmail, `Invited team member ${inviteName || inviteEmail} as role ${inviteRole}`);
+        onTriggerAuditLog('INVITE_MEMBER', inviteEmail, `Invited team member ${inviteName || inviteEmail} as role ${inviteRole} with AI Permission: ${inviteAiAllowed ? 'Allowed' : 'Disallowed'}`);
       }
       
       alert(`Access granted for ${inviteEmail}!`);
       setIsInviteOpen(false);
       setInviteEmail('');
       setInviteName('');
+      setInviteAiAllowed(true);
       
       const updatedMembers = [
         ...teamMembers,
@@ -426,54 +500,83 @@ const Settings: React.FC<SettingsProps> = ({ company, onSaveChanges, onInviteUse
           Select the subscription tier that matches your SME operational needs. Subscription limits reset at the start of each billing cycle.
         </p>
 
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-8">
-          <div className={`p-5 rounded-3xl border transition-all flex flex-col justify-between h-44 ${subInfo.tier === 'Basic' ? 'border-primary-600 bg-primary-50/20 ring-2 ring-primary-500/10' : 'border-gray-100 bg-gray-50/50'}`}>
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 mb-8">
+          {/* Free Plan */}
+          <div className={`p-4 rounded-3xl border transition-all flex flex-col justify-between h-56 ${subInfo.tier === 'Free' ? 'border-primary-600 bg-primary-50/10 ring-2 ring-primary-500/10' : 'border-gray-100 bg-gray-50/50'}`}>
             <div>
               <div className="flex justify-between items-start">
-                <span className="font-bold text-sm text-gray-900">Basic Plan</span>
-                {subInfo.tier === 'Basic' && <span className="text-[10px] bg-primary-600 text-white px-2 py-0.5 rounded-full font-bold">Active</span>}
+                <span className="font-bold text-xs text-gray-950">Free Plan</span>
+                {subInfo.tier === 'Free' && <span className="text-[9px] bg-primary-600 text-white px-2 py-0.5 rounded-full font-bold">Active</span>}
               </div>
-              <p className="text-xs text-gray-500 mt-2">Perfect for freelancers or small operations starting out.</p>
+              <p className="text-[11px] text-gray-500 mt-2 leading-tight">Great for freelancers starting out.</p>
             </div>
-            <div className="mt-4 flex flex-col gap-2">
-              <span className="text-[11px] font-bold text-gray-700">5 Invoices / month</span>
-              <span className="text-[10px] font-bold text-red-600 bg-red-50 px-2 py-0.5 rounded self-start">No AI Features</span>
-              {subInfo.tier !== 'Basic' && !isReadOnly && (
-                <button type="button" onClick={() => handleUpdateTier('Basic')} className="mt-2 text-xs font-bold text-primary-600 hover:text-primary-700 text-left">Downgrade to Basic</button>
+            <div className="mt-2 flex flex-col gap-1.5">
+              <span className="text-[13px] font-black text-gray-900">₦0.00 <span className="text-[9px] text-gray-400 font-normal">/ month</span></span>
+              <span className="text-[10px] font-bold text-gray-700">1 User max</span>
+              <span className="text-[10px] font-bold text-gray-700">5 Invoices / Receipts</span>
+              <span className="text-[9px] font-bold text-red-600 bg-red-50 px-1.5 py-0.5 rounded self-start">No AI Features</span>
+              {subInfo.tier !== 'Free' && !isReadOnly && (
+                <button type="button" onClick={() => handleUpdateTier('Free')} className="mt-1 text-xs font-bold text-primary-600 hover:text-primary-700 text-left">Downgrade to Free</button>
               )}
             </div>
           </div>
 
-          <div className={`p-5 rounded-3xl border transition-all flex flex-col justify-between h-44 ${subInfo.tier === 'Standard' ? 'border-primary-600 bg-primary-50/20 ring-2 ring-primary-500/10' : 'border-gray-100 bg-gray-50/50'}`}>
+          {/* Starter Plan */}
+          <div className={`p-4 rounded-3xl border transition-all flex flex-col justify-between h-56 ${subInfo.tier === 'Starter' ? 'border-primary-600 bg-primary-50/10 ring-2 ring-primary-500/10' : 'border-gray-100 bg-gray-50/50'}`}>
             <div>
               <div className="flex justify-between items-start">
-                <span className="font-bold text-sm text-gray-900">Standard Plan</span>
-                {subInfo.tier === 'Standard' && <span className="text-[10px] bg-primary-600 text-white px-2 py-0.5 rounded-full font-bold">Active</span>}
+                <span className="font-bold text-xs text-gray-950">Starter Plan</span>
+                {subInfo.tier === 'Starter' && <span className="text-[9px] bg-primary-600 text-white px-2 py-0.5 rounded-full font-bold">Active</span>}
               </div>
-              <p className="text-xs text-gray-500 mt-2">Great for growing businesses needing AI features.</p>
+              <p className="text-[11px] text-gray-500 mt-2 leading-tight">Perfect for small growing business teams.</p>
             </div>
-            <div className="mt-4 flex flex-col gap-2">
-              <span className="text-[11px] font-bold text-gray-700">20 Invoices / month</span>
-              <span className="text-[10px] font-bold text-primary-700 bg-primary-50 px-2 py-0.5 rounded self-start">20 AI Units included</span>
-              {subInfo.tier !== 'Standard' && !isReadOnly && (
-                <button type="button" onClick={() => handleUpdateTier('Standard')} className="mt-2 text-xs font-bold text-primary-600 hover:text-primary-700 text-left">Switch to Standard</button>
+            <div className="mt-2 flex flex-col gap-1.5">
+              <span className="text-[13px] font-black text-gray-900">₦15,000 <span className="text-[9px] text-gray-400 font-normal">/ month</span></span>
+              <span className="text-[10px] font-bold text-gray-700">3 Users max</span>
+              <span className="text-[10px] font-bold text-gray-700">20 Invoices / Receipts</span>
+              <span className="text-[9px] font-bold text-primary-700 bg-primary-50 px-1.5 py-0.5 rounded self-start">200 AI Tokens included</span>
+              {subInfo.tier !== 'Starter' && !isReadOnly && (
+                <button type="button" onClick={() => handleUpdateTier('Starter')} className="mt-1 text-xs font-bold text-primary-600 hover:text-primary-700 text-left">Switch to Starter</button>
               )}
             </div>
           </div>
 
-          <div className={`p-5 rounded-3xl border transition-all flex flex-col justify-between h-44 ${subInfo.tier === 'Enterprise' ? 'border-primary-600 bg-primary-50/20 ring-2 ring-primary-500/10' : 'border-gray-100 bg-gray-50/50'}`}>
+          {/* Growth Plan */}
+          <div className={`p-4 rounded-3xl border transition-all flex flex-col justify-between h-56 ${subInfo.tier === 'Growth' ? 'border-primary-600 bg-primary-50/10 ring-2 ring-primary-500/10' : 'border-gray-100 bg-gray-50/50'}`}>
             <div>
               <div className="flex justify-between items-start">
-                <span className="font-bold text-sm text-gray-900">Enterprise Plan</span>
-                {subInfo.tier === 'Enterprise' && <span className="text-[10px] bg-primary-600 text-white px-2 py-0.5 rounded-full font-bold">Active</span>}
+                <span className="font-bold text-xs text-gray-950">Growth Plan</span>
+                {subInfo.tier === 'Growth' && <span className="text-[9px] bg-primary-600 text-white px-2 py-0.5 rounded-full font-bold">Active</span>}
               </div>
-              <p className="text-xs text-gray-500 mt-2">Unlimited operations for scaled companies.</p>
+              <p className="text-[11px] text-gray-500 mt-2 leading-tight">Advanced tracking for expanding enterprises.</p>
             </div>
-            <div className="mt-4 flex flex-col gap-2">
-              <span className="text-[11px] font-bold text-gray-700">200 Invoices / month</span>
-              <span className="text-[10px] font-bold text-amber-700 bg-amber-50 px-2 py-0.5 rounded self-start">200 AI Units included</span>
+            <div className="mt-2 flex flex-col gap-1.5">
+              <span className="text-[13px] font-black text-gray-900">₦35,000 <span className="text-[9px] text-gray-400 font-normal">/ month</span></span>
+              <span className="text-[10px] font-bold text-gray-700">10 Users max</span>
+              <span className="text-[10px] font-bold text-gray-700">50 Invoices / Receipts</span>
+              <span className="text-[9px] font-bold text-purple-700 bg-purple-50 px-1.5 py-0.5 rounded self-start">500 AI Tokens included</span>
+              {subInfo.tier !== 'Growth' && !isReadOnly && (
+                <button type="button" onClick={() => handleUpdateTier('Growth')} className="mt-1 text-xs font-bold text-primary-600 hover:text-primary-700 text-left">Switch to Growth</button>
+              )}
+            </div>
+          </div>
+
+          {/* Enterprise Plan */}
+          <div className={`p-4 rounded-3xl border transition-all flex flex-col justify-between h-56 ${subInfo.tier === 'Enterprise' ? 'border-primary-600 bg-primary-50/10 ring-2 ring-primary-500/10' : 'border-gray-100 bg-gray-50/50'}`}>
+            <div>
+              <div className="flex justify-between items-start">
+                <span className="font-bold text-xs text-gray-950">Enterprise Plan</span>
+                {subInfo.tier === 'Enterprise' && <span className="text-[9px] bg-primary-600 text-white px-2 py-0.5 rounded-full font-bold">Active</span>}
+              </div>
+              <p className="text-[11px] text-gray-500 mt-2 leading-tight">Unrestricted scale with maximum support.</p>
+            </div>
+            <div className="mt-2 flex flex-col gap-1.5">
+              <span className="text-[13px] font-black text-gray-900">₦85,000 <span className="text-[9px] text-gray-400 font-normal">/ month</span></span>
+              <span className="text-[10px] font-bold text-gray-700">Unlimited Users</span>
+              <span className="text-[10px] font-bold text-gray-700">200 Invs / 2000 Rcpts</span>
+              <span className="text-[9px] font-bold text-amber-700 bg-amber-50 px-1.5 py-0.5 rounded self-start">1000 AI Tokens included</span>
               {subInfo.tier !== 'Enterprise' && !isReadOnly && (
-                <button type="button" onClick={() => handleUpdateTier('Enterprise')} className="mt-2 text-xs font-bold text-primary-600 hover:text-primary-700 text-left">Upgrade to Enterprise</button>
+                <button type="button" onClick={() => handleUpdateTier('Enterprise')} className="mt-1 text-xs font-bold text-primary-600 hover:text-primary-700 text-left">Upgrade to Enterprise</button>
               )}
             </div>
           </div>
@@ -487,13 +590,21 @@ const Settings: React.FC<SettingsProps> = ({ company, onSaveChanges, onInviteUse
                 <span className="font-bold text-gray-500">Invoice limit:</span>
                 <span className="font-mono font-bold text-gray-800">{subInfo.maxInvoices} invoices max</span>
               </div>
+              <div className="flex justify-between text-xs">
+                <span className="font-bold text-gray-500">Receipt limit:</span>
+                <span className="font-mono font-bold text-gray-800">{subInfo.maxReceipts} receipts max</span>
+              </div>
+              <div className="flex justify-between text-xs">
+                <span className="font-bold text-gray-500">Team user limit:</span>
+                <span className="font-mono font-bold text-gray-800">{subInfo.maxUsers === 999999 ? 'Unlimited' : `${subInfo.maxUsers} users max`}</span>
+              </div>
             </div>
             <div className="space-y-2">
               <div className="flex justify-between items-center text-xs">
                 <span className="font-bold text-gray-500">Remaining AI Credits:</span>
                 <div className="flex items-center gap-2">
                   <span className="font-mono font-bold text-gray-800">
-                    {subInfo.tier === 'Basic' && subInfo.aiUnits === 0 ? '0' : `${subInfo.aiUnits}/${subInfo.tier === 'Basic' ? 50 : TIER_LIMITS[subInfo.tier].maxAiUnits}`} credits
+                    {subInfo.tier === 'Free' && subInfo.aiUnits === 0 ? '0' : `${subInfo.aiUnits}/${subInfo.tier === 'Free' ? 0 : TIER_LIMITS[subInfo.tier].maxAiUnits}`} credits
                   </span>
                   {localStorage.getItem('cravebiz_is_super_admin') === 'true' ? (
                     <button
@@ -524,7 +635,7 @@ const Settings: React.FC<SettingsProps> = ({ company, onSaveChanges, onInviteUse
             </div>
           </div>
 
-          {(subInfo.tier !== 'Basic' || subInfo.aiUnits > 0) && (
+          {(subInfo.tier !== 'Free' || subInfo.aiUnits > 0) && (
             <div className="pt-4 border-t border-gray-200/60 flex items-center justify-between">
               <div>
                 <p className="text-xs font-bold text-gray-700">Enable Workspace AI Copilot</p>
@@ -558,7 +669,10 @@ const Settings: React.FC<SettingsProps> = ({ company, onSaveChanges, onInviteUse
         )}
         
         <div className="space-y-4">
-            {teamMembers.map(user => (
+            {teamMembers.map(user => {
+              const emailLower = user.email.toLowerCase();
+              const isUserAiAllowed = localStorage.getItem(`cravebiz_member_ai_allowed_${activeTenantId}_${emailLower}`) !== 'false';
+              return (
                 <div key={user.id} className="flex justify-between items-center p-4 bg-gray-50 rounded-2xl border border-gray-100">
                     <div>
                         <p className="font-black text-gray-900 text-xs uppercase tracking-tight">{user.name}</p>
@@ -567,9 +681,24 @@ const Settings: React.FC<SettingsProps> = ({ company, onSaveChanges, onInviteUse
                     <div className="flex items-center gap-3">
                       <span className="text-[10px] font-black text-primary-600 uppercase tracking-widest bg-primary-50 px-3 py-1 rounded-full border border-primary-100">{user.role}</span>
                       <span className="text-[10px] font-black text-green-600 uppercase tracking-widest bg-green-50 px-3 py-1 rounded-full border border-green-100">{user.status}</span>
+                      
+                      {!isReadOnly && user.id !== '1' && (
+                        <button
+                          type="button"
+                          onClick={() => {
+                            const nextVal = !isUserAiAllowed;
+                            localStorage.setItem(`cravebiz_member_ai_allowed_${activeTenantId}_${emailLower}`, nextVal.toString());
+                            setTeamMembers([...teamMembers]); // force re-render
+                          }}
+                          className={`text-[9px] font-black px-2.5 py-1 rounded-xl border transition-all ${isUserAiAllowed ? 'bg-emerald-50 text-emerald-700 border-emerald-100' : 'bg-red-50 text-red-700 border-red-100'}`}
+                        >
+                          {isUserAiAllowed ? 'AI: ALLOWED' : 'AI: DISABLED'}
+                        </button>
+                      )}
                     </div>
                 </div>
-            ))}
+              );
+            })}
         </div>
       </div>
 
@@ -635,6 +764,18 @@ const Settings: React.FC<SettingsProps> = ({ company, onSaveChanges, onInviteUse
                   <option value="Manager">Manager (Edit Clients, Invoices)</option>
                   <option value="Member">Member (Read-Only Portal)</option>
                 </select>
+              </div>
+              <div className="flex items-center gap-2.5 pt-1">
+                <input
+                  type="checkbox"
+                  id="inviteAiAllowed"
+                  checked={inviteAiAllowed}
+                  onChange={e => setInviteAiAllowed(e.target.checked)}
+                  className="w-4 h-4 rounded text-primary-600 focus:ring-primary-500 border-gray-300"
+                />
+                <label htmlFor="inviteAiAllowed" className="text-xs font-bold text-gray-700 cursor-pointer select-none">
+                  Allow user to use workspace AI tokens
+                </label>
               </div>
               <div className="flex justify-end gap-3 mt-6">
                 <button type="button" onClick={() => setIsInviteOpen(false)} className="px-6 py-2.5 bg-gray-100 text-gray-600 rounded-xl font-bold uppercase tracking-wider text-[10px]">Cancel</button>

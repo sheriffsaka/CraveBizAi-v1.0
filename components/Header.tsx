@@ -142,14 +142,15 @@ const Header: React.FC<HeaderProps> = ({
                 {activeTenantId && (
                     <div className="flex items-center space-x-1.5 sm:space-x-2 bg-gray-50 border border-gray-100 rounded-xl px-2 py-1 sm:px-3 sm:py-1.5 shadow-sm">
                         <span className={`text-[9px] sm:text-[10px] font-black uppercase tracking-wider px-1.5 py-0.5 rounded-full ${
-                            subInfo.tier === 'Basic' ? 'bg-red-50 text-red-600 border border-red-100' :
-                            subInfo.tier === 'Standard' ? 'bg-primary-50 text-primary-700 border border-primary-100' :
+                            subInfo.tier === 'Free' ? 'bg-red-50 text-red-600 border border-red-100' :
+                            subInfo.tier === 'Starter' ? 'bg-blue-50 text-blue-700 border border-blue-100' :
+                            subInfo.tier === 'Growth' ? 'bg-purple-50 text-purple-700 border border-purple-100' :
                             'bg-amber-50 text-amber-700 border border-amber-100'
                         }`}>
                             {subInfo.tier}
                         </span>
                         
-                        {(subInfo.tier !== 'Basic' || subInfo.aiUnits > 0) ? (
+                        {(subInfo.tier !== 'Free' || subInfo.aiUnits > 0) ? (
                             <div className="flex items-center space-x-1 sm:space-x-1.5 border-l border-gray-200 pl-1.5 sm:pl-2">
                                 <span className="text-[9px] sm:text-[10px] font-bold text-gray-500 hidden xs:inline">AI:</span>
                                 <button

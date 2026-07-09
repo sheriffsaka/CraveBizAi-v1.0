@@ -438,9 +438,9 @@ Admin Query: ${activePrompt}
       item.companyId.toLowerCase().includes(aiUsageSearch.toLowerCase())
     );
 
-    const totalActiveAiWorkspaces = aiUsageList.filter(item => item.tier !== 'Basic').length;
+    const totalActiveAiWorkspaces = aiUsageList.filter(item => item.tier !== 'Free').length;
     const totalAiCreditsAllocated = aiUsageList.reduce((sum, item) => sum + item.aiUnits, 0);
-    const totalDepletedWorkspaces = aiUsageList.filter(item => item.aiUnits === 0 && item.tier !== 'Basic').length;
+    const totalDepletedWorkspaces = aiUsageList.filter(item => item.aiUnits === 0 && item.tier !== 'Free').length;
 
     return (
       <div className="space-y-8 font-sans">
@@ -515,7 +515,7 @@ Admin Query: ${activePrompt}
                 <tbody className="divide-y divide-gray-50 text-xs font-medium">
                   {filteredUsage.map((item) => {
                     const pct = item.maxAiUnits > 0 ? Math.min(100, Math.round((item.aiUnits / item.maxAiUnits) * 100)) : 0;
-                    const isDepleted = item.aiUnits === 0 && item.tier !== 'Basic';
+                    const isDepleted = item.aiUnits === 0 && item.tier !== 'Free';
                     
                     return (
                       <tr key={item.companyId} className="hover:bg-gray-50/30 transition-colors">
@@ -527,8 +527,10 @@ Admin Query: ${activePrompt}
                         <td className="py-4 px-4">
                           <span className={`inline-flex px-2.5 py-1 rounded-full text-[10px] font-black uppercase tracking-wider ${
                             item.tier === 'Enterprise' 
-                              ? 'bg-purple-100 text-purple-800 border border-purple-200' 
-                              : item.tier === 'Standard'
+                              ? 'bg-amber-100 text-amber-800 border border-amber-200' 
+                              : item.tier === 'Growth'
+                              ? 'bg-purple-100 text-purple-800 border border-purple-200'
+                              : item.tier === 'Starter'
                               ? 'bg-blue-100 text-blue-800 border border-blue-200'
                               : 'bg-slate-100 text-slate-700 border border-slate-200'
                           }`}>
@@ -559,7 +561,7 @@ Admin Query: ${activePrompt}
                             <div className="w-full bg-gray-100 h-2 rounded-full overflow-hidden">
                               <div 
                                 className={`h-full transition-all duration-300 ${
-                                  item.tier === 'Basic'
+                                  item.tier === 'Free'
                                     ? 'bg-gray-300'
                                     : isDepleted 
                                     ? 'bg-rose-500' 
@@ -567,36 +569,48 @@ Admin Query: ${activePrompt}
                                     ? 'bg-amber-500' 
                                     : 'bg-emerald-500'
                                 }`} 
-                                style={{ width: `${item.tier === 'Basic' ? 0 : pct}%` }}
+                                style={{ width: `${item.tier === 'Free' ? 0 : pct}%` }}
                               ></div>
                             </div>
                           </div>
                         </td>
                         <td className="py-4 px-4">
-                          <div className="flex items-center gap-1.5">
+                          <div className="flex items-center gap-1.5 flex-wrap max-w-xs">
                             <button
                               type="button"
-                              onClick={() => changePlan(item.companyId, 'Basic')}
-                              disabled={item.tier === 'Basic'}
+                              onClick={() => changePlan(item.companyId, 'Free')}
+                              disabled={item.tier === 'Free'}
                               className={`px-2 py-1 rounded text-[9px] font-black uppercase tracking-wider transition-colors ${
-                                item.tier === 'Basic' 
+                                item.tier === 'Free' 
                                   ? 'bg-gray-100 text-gray-400 border border-gray-150 cursor-not-allowed' 
                                   : 'bg-white text-gray-600 hover:bg-gray-100 border border-gray-200'
                               }`}
                             >
-                              Basic
+                              Free
                             </button>
                             <button
                               type="button"
-                              onClick={() => changePlan(item.companyId, 'Standard')}
-                              disabled={item.tier === 'Standard'}
+                              onClick={() => changePlan(item.companyId, 'Starter')}
+                              disabled={item.tier === 'Starter'}
                               className={`px-2 py-1 rounded text-[9px] font-black uppercase tracking-wider transition-colors ${
-                                item.tier === 'Standard' 
+                                item.tier === 'Starter' 
                                   ? 'bg-blue-100 text-blue-800 border border-blue-200 cursor-not-allowed' 
                                   : 'bg-white text-blue-600 hover:bg-blue-50 border border-blue-200'
                               }`}
                             >
-                              Standard
+                              Starter
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => changePlan(item.companyId, 'Growth')}
+                              disabled={item.tier === 'Growth'}
+                              className={`px-2 py-1 rounded text-[9px] font-black uppercase tracking-wider transition-colors ${
+                                item.tier === 'Growth' 
+                                  ? 'bg-purple-100 text-purple-800 border border-purple-200 cursor-not-allowed' 
+                                  : 'bg-white text-purple-600 hover:bg-purple-50 border border-purple-200'
+                              }`}
+                            >
+                              Growth
                             </button>
                             <button
                               type="button"
@@ -604,8 +618,8 @@ Admin Query: ${activePrompt}
                               disabled={item.tier === 'Enterprise'}
                               className={`px-2 py-1 rounded text-[9px] font-black uppercase tracking-wider transition-colors ${
                                 item.tier === 'Enterprise' 
-                                  ? 'bg-purple-100 text-purple-800 border border-purple-200 cursor-not-allowed' 
-                                  : 'bg-white text-purple-600 hover:bg-purple-50 border border-purple-200'
+                                  ? 'bg-amber-100 text-amber-800 border border-amber-200 cursor-not-allowed' 
+                                  : 'bg-white text-amber-600 hover:bg-amber-50 border border-amber-200'
                               }`}
                             >
                               Enterprise

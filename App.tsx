@@ -108,7 +108,7 @@ export default function App() {
   useEffect(() => {
     if (currentUser) {
       const signupTier = localStorage.getItem('cravebiz_signup_tier') as SubscriptionTier;
-      if (signupTier && (signupTier === 'Basic' || signupTier === 'Standard' || signupTier === 'Enterprise')) {
+      if (signupTier && (signupTier === 'Free' || signupTier === 'Starter' || signupTier === 'Growth' || signupTier === 'Enterprise')) {
         setSelectedProvisionTier(signupTier);
       }
     }
@@ -957,28 +957,117 @@ export default function App() {
       {subErrorMsg && (
         <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-[999] flex items-center justify-center p-4">
           <div className="bg-white rounded-3xl p-8 max-w-md w-full shadow-2xl animate-in fade-in zoom-in-95 duration-200 border border-gray-100 text-center">
-            <div className="bg-red-50 w-16 h-16 rounded-2xl flex items-center justify-center mx-auto mb-4 border border-red-100 animate-bounce">
-              <Icon name="reports" className="w-8 h-8 text-red-600" />
-            </div>
-            <h3 className="text-lg font-black text-gray-800 uppercase tracking-tighter mb-2">Subscription Limit</h3>
-            <p className="text-sm text-gray-500 mb-6 leading-relaxed">{subErrorMsg}</p>
-            <div className="flex gap-3 justify-center">
-              <button 
-                onClick={() => {
-                  setSubErrorMsg(null);
-                  navigateTo('settings');
-                }} 
-                className="px-6 py-2.5 bg-primary-600 text-white rounded-xl font-bold uppercase tracking-wider text-xs shadow-lg shadow-primary-200 hover:bg-primary-700 transition"
-              >
-                Upgrade Plan
-              </button>
-              <button 
-                onClick={() => setSubErrorMsg(null)} 
-                className="px-6 py-2.5 bg-gray-100 text-gray-600 rounded-xl font-bold uppercase tracking-wider text-xs hover:bg-gray-200 transition"
-              >
-                Dismiss
-              </button>
-            </div>
+            {subErrorMsg.toLowerCase().includes('ai') || subErrorMsg.toLowerCase().includes('token') || subErrorMsg.toLowerCase().includes('credit') || subErrorMsg.toLowerCase().includes('unit') ? (
+              <>
+                <div className="bg-amber-50 w-16 h-16 rounded-2xl flex items-center justify-center mx-auto mb-4 border border-amber-100">
+                  <Icon name="reports" className="w-8 h-8 text-amber-600" />
+                </div>
+                <h3 className="text-lg font-black text-gray-800 uppercase tracking-tighter mb-2">AI Quota Exhausted</h3>
+                <p className="text-sm text-gray-500 mb-6 leading-relaxed">
+                  No workspace AI units are currently available, or your user profile is not authorized to use the workspace AI quota. 
+                  You can proceed manually or purchase additional units immediately.
+                </p>
+                <div className="flex flex-col gap-2.5">
+                  <button 
+                    onClick={() => {
+                      // Trigger secure Flutterwave payment on the spot!
+                      if (!(window as any).FlutterwaveCheckout) {
+                        alert("Flutterwave system is currently loading. Please retry in a few seconds.");
+                        return;
+                      }
+                      
+                      const companyId = activeTenantId || 'default-tenant';
+                      const flutterwaveKey = (import.meta as any).env?.VITE_FLUTTERWAVE_PUBLIC_KEY || "FLWPUBK_TEST-e5e54eb86bc8c9bc88a8d11d7c3ee7c0-X";
+                      let isSuccess = false;
+
+                      (window as any).FlutterwaveCheckout({
+                        public_key: flutterwaveKey,
+                        tx_ref: `cravebiz-credits-${Date.now()}-${companyId}`,
+                        amount: 2500,
+                        currency: "NGN",
+                        payment_options: "card, banktransfer, ussd",
+                        customer: {
+                          email: currentUser?.email || "customer@cravebiz.ai",
+                          name: currentUser?.name || "CraveBiZ Client",
+                        },
+                        customizations: {
+                          title: "CraveBiZ AI Token Refill",
+                          description: "Secure purchase of 50 AI credits for ₦2,500",
+                          logo: "https://checkout.flutterwave.com/assets/img/flutterwave-logo.svg",
+                        },
+                        callback: function (data: any) {
+                          console.log("Flutterwave refill response:", data);
+                          if (data.status === "successful" || data.status === "completed") {
+                            isSuccess = true;
+                            // Refill 50 credits and update
+                            const sub = getSubscriptionInfo(companyId);
+                            const newUnits = sub.aiUnits + 50;
+                            setSubscriptionInfo(companyId, sub.tier, newUnits, sub.aiModeEnabled);
+                            window.dispatchEvent(new Event('cravebiz_subscription_change'));
+                            setSubErrorMsg(null);
+                            alert("Congratulations! 50 AI credits have been successfully added to your workspace.");
+                          } else {
+                            alert(`Failed Token Refill: Payment status was '${data.status}'. Please try again.`);
+                          }
+                        },
+                        onclose: function() {
+                          console.log("Flutterwave payment modal dismissed");
+                          if (!isSuccess) {
+                            alert("Failed Token Refill: Checkout was cancelled before completion.");
+                          }
+                        }
+                      });
+                    }} 
+                    className="w-full px-6 py-3 bg-emerald-600 text-white rounded-xl font-black uppercase tracking-wider text-xs shadow-lg shadow-emerald-200 hover:bg-emerald-700 transition"
+                  >
+                    Buy 50 AI Units (₦2,500)
+                  </button>
+                  <button 
+                    onClick={() => {
+                      setSubErrorMsg(null);
+                      navigateTo('settings');
+                    }} 
+                    className="w-full px-6 py-2.5 bg-primary-600 text-white rounded-xl font-bold uppercase tracking-wider text-xs hover:bg-primary-700 transition"
+                  >
+                    Upgrade Plan
+                  </button>
+                  <button 
+                    onClick={() => {
+                      // Allow proceeding manually by dismissing the error gracefully, preventing app failure!
+                      setSubErrorMsg(null);
+                    }} 
+                    className="w-full px-6 py-2.5 bg-gray-100 text-gray-600 rounded-xl font-bold uppercase tracking-wider text-xs hover:bg-gray-200 transition"
+                  >
+                    Use Manual Method (Standard Entry)
+                  </button>
+                </div>
+              </>
+            ) : (
+              <>
+                <div className="bg-red-50 w-16 h-16 rounded-2xl flex items-center justify-center mx-auto mb-4 border border-red-100 animate-bounce">
+                  <Icon name="reports" className="w-8 h-8 text-red-600" />
+                </div>
+                <h3 className="text-lg font-black text-gray-800 uppercase tracking-tighter mb-2">Subscription Limit</h3>
+                <p className="text-sm text-gray-500 mb-6 leading-relaxed">{subErrorMsg}</p>
+                <div className="flex gap-3 justify-center">
+                  <button 
+                    onClick={() => {
+                      setSubErrorMsg(null);
+                      navigateTo('settings');
+                    }} 
+                    className="px-6 py-2.5 bg-primary-600 text-white rounded-xl font-bold uppercase tracking-wider text-xs shadow-lg shadow-primary-200 hover:bg-primary-700 transition"
+                  >
+                    Upgrade Plan
+                  </button>
+                  <button 
+                    onClick={() => setSubErrorMsg(null)} 
+                    className="px-6 py-2.5 bg-gray-100 text-gray-600 rounded-xl font-bold uppercase tracking-wider text-xs hover:bg-gray-200 transition"
+                  >
+                    Dismiss
+                  </button>
+                </div>
+              </>
+            )}
           </div>
         </div>
       )}
