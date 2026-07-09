@@ -186,6 +186,57 @@ const Settings: React.FC<SettingsProps> = ({ company, onSaveChanges, onInviteUse
     fetchMembers();
   }, [activeTenantId, company, userRole]);
 
+  const handleNonAdminRefill = () => {
+    if (!(window as any).FlutterwaveCheckout) {
+      alert("Flutterwave secure system is currently loading. Please try again in a few seconds.");
+      return;
+    }
+
+    const checkoutAmount = 2500; // Refill cost is ₦2,500 NGN
+    const flutterwaveKey = (import.meta as any).env?.VITE_FLUTTERWAVE_PUBLIC_KEY || "FLWPUBK_TEST-e5e54eb86bc8c9bc88a8d11d7c3ee7c0-X";
+    let isSuccess = false;
+
+    (window as any).FlutterwaveCheckout({
+      public_key: flutterwaveKey,
+      tx_ref: `cravebiz-refill-${Date.now()}-${activeTenantId}`,
+      amount: checkoutAmount,
+      currency: "NGN",
+      payment_options: "card, banktransfer, ussd",
+      customer: {
+        email: company?.email || "customer@cravebiz.ai",
+        name: company?.name || "CraveBiZ Client",
+      },
+      customizations: {
+        title: "CraveBiZ AI Credits Refill",
+        description: `Refill 50 AI credits for workspace`,
+        logo: "https://checkout.flutterwave.com/assets/img/flutterwave-logo.svg",
+      },
+      callback: function (data: any) {
+        console.log("Flutterwave Success response:", data);
+        if (data.status === "successful" || data.status === "completed") {
+          isSuccess = true;
+          const newUnits = subInfo.aiUnits + 50;
+          setSubscriptionInfo(activeTenantId, subInfo.tier, newUnits, true);
+          setSubInfo(getSubscriptionInfo(activeTenantId));
+          window.dispatchEvent(new Event('cravebiz_subscription_change'));
+          
+          if (onTriggerAuditLog) {
+            onTriggerAuditLog('Purchase Credits', 'Subscription', `Purchased 50 AI Credits for ₦${checkoutAmount.toLocaleString()}`);
+          }
+          alert(`Refill Successful! 50 AI credits have been added and AI Mode enabled for your workspace.`);
+        } else {
+          alert(`Failed Refill: Payment transaction status was '${data.status}'. Please try again.`);
+        }
+      },
+      onclose: function() {
+        console.log("Flutterwave payment modal dismissed");
+        if (!isSuccess) {
+          alert("Failed Refill: Payment checkout was closed or cancelled before completion.");
+        }
+      }
+    });
+  };
+
   if (!company) return null;
 
   const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => {
@@ -441,8 +492,10 @@ const Settings: React.FC<SettingsProps> = ({ company, onSaveChanges, onInviteUse
               <div className="flex justify-between items-center text-xs">
                 <span className="font-bold text-gray-500">Remaining AI Credits:</span>
                 <div className="flex items-center gap-2">
-                  <span className="font-mono font-bold text-gray-800">{subInfo.tier === 'Basic' ? '0' : `${subInfo.aiUnits}/${TIER_LIMITS[subInfo.tier].maxAiUnits}`} credits</span>
-                  {localStorage.getItem('cravebiz_is_super_admin') === 'true' && (
+                  <span className="font-mono font-bold text-gray-800">
+                    {subInfo.tier === 'Basic' && subInfo.aiUnits === 0 ? '0' : `${subInfo.aiUnits}/${subInfo.tier === 'Basic' ? 50 : TIER_LIMITS[subInfo.tier].maxAiUnits}`} credits
+                  </span>
+                  {localStorage.getItem('cravebiz_is_super_admin') === 'true' ? (
                     <button
                       type="button"
                       onClick={() => {
@@ -456,13 +509,22 @@ const Settings: React.FC<SettingsProps> = ({ company, onSaveChanges, onInviteUse
                     >
                       +50 Refill
                     </button>
+                  ) : (
+                    <button
+                      type="button"
+                      onClick={handleNonAdminRefill}
+                      className="bg-primary-600 hover:bg-primary-700 text-white text-[9px] font-bold px-2 py-0.5 rounded shadow-sm transition-colors"
+                      title="Refill 50 AI credits for ₦2,500"
+                    >
+                      +50 Refill
+                    </button>
                   )}
                 </div>
               </div>
             </div>
           </div>
 
-          {subInfo.tier !== 'Basic' && (
+          {(subInfo.tier !== 'Basic' || subInfo.aiUnits > 0) && (
             <div className="pt-4 border-t border-gray-200/60 flex items-center justify-between">
               <div>
                 <p className="text-xs font-bold text-gray-700">Enable Workspace AI Copilot</p>

@@ -149,7 +149,7 @@ const Header: React.FC<HeaderProps> = ({
                             {subInfo.tier}
                         </span>
                         
-                        {subInfo.tier !== 'Basic' ? (
+                        {(subInfo.tier !== 'Basic' || subInfo.aiUnits > 0) ? (
                             <div className="flex items-center space-x-1 sm:space-x-1.5 border-l border-gray-200 pl-1.5 sm:pl-2">
                                 <span className="text-[9px] sm:text-[10px] font-bold text-gray-500 hidden xs:inline">AI:</span>
                                 <button
