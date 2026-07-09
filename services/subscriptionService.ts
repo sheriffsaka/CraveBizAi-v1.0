@@ -19,12 +19,14 @@ export const TIER_LIMITS = {
  */
 export function getSubscriptionInfo(companyId: string): SubscriptionInfo {
   const isSuperAdmin = localStorage.getItem('cravebiz_is_super_admin') === 'true';
+  const activeTenantId = localStorage.getItem('cravebiz_tenant');
   
   // Rule: Default to 'Basic' unless:
   // 1. It is the Admin's workspace ('cravebiz-inc')
-  // 2. Or there is no companyId and isSuperAdmin is true (Super Admin's fallback active session)
+  // 2. Or the user is a Super Admin and they are accessing their current active tenant/workspace, or no companyId is specified
   const isCravebizInc = companyId === 'cravebiz-inc';
-  const defaultTier: SubscriptionTier = (isCravebizInc || (!companyId && isSuperAdmin)) ? 'Enterprise' : 'Basic';
+  const isActiveSuperAdminTenant = isSuperAdmin && (companyId === activeTenantId || !companyId);
+  const defaultTier: SubscriptionTier = (isCravebizInc || isActiveSuperAdminTenant) ? 'Enterprise' : 'Basic';
 
   if (!companyId) {
     const limits = TIER_LIMITS[defaultTier];
