@@ -128,6 +128,9 @@ const Settings: React.FC<SettingsProps> = ({ company, onSaveChanges, onInviteUse
 
   // Subscription state
   const [subInfo, setSubInfo] = useState(() => getSubscriptionInfo(activeTenantId));
+  const [billingCycle, setBillingCycle] = useState<'monthly' | 'annual'>('monthly');
+  const [isRefillModalOpen, setIsRefillModalOpen] = useState(false);
+  const [selectedRefillPack, setSelectedRefillPack] = useState<'pack_100' | 'pack_300' | 'pack_1000' | 'pack_5000'>('pack_300');
 
   useEffect(() => {
     setSubInfo(getSubscriptionInfo(activeTenantId));
@@ -149,16 +152,22 @@ const Settings: React.FC<SettingsProps> = ({ company, onSaveChanges, onInviteUse
     }
 
     let checkoutAmount = 0;
-    if (tier === 'Starter') checkoutAmount = 15000;
-    else if (tier === 'Growth') checkoutAmount = 35000;
-    else if (tier === 'Enterprise') checkoutAmount = 85000;
+    if (billingCycle === 'annual') {
+      if (tier === 'Starter') checkoutAmount = 45000;
+      else if (tier === 'Growth') checkoutAmount = 95000;
+      else if (tier === 'Enterprise') checkoutAmount = 495000;
+    } else {
+      if (tier === 'Starter') checkoutAmount = 4500;
+      else if (tier === 'Growth') checkoutAmount = 9500;
+      else if (tier === 'Enterprise') checkoutAmount = 49500;
+    }
 
     const flutterwaveKey = (import.meta as any).env?.VITE_FLUTTERWAVE_PUBLIC_KEY || "FLWPUBK_TEST-e5e54eb86bc8c9bc88a8d11d7c3ee7c0-X";
     let isSuccess = false;
 
     safeFlutterwaveCheckout({
       public_key: flutterwaveKey,
-      tx_ref: `cravebiz-tier-${tier.toLowerCase()}-${Date.now()}-${activeTenantId}`,
+      tx_ref: `cravebiz-tier-${tier.toLowerCase()}-${billingCycle}-${Date.now()}-${activeTenantId}`,
       amount: checkoutAmount,
       currency: "NGN",
       payment_options: "card, banktransfer, ussd",
@@ -167,8 +176,8 @@ const Settings: React.FC<SettingsProps> = ({ company, onSaveChanges, onInviteUse
         name: company?.name || "CraveBiZ Client",
       },
       customizations: {
-        title: `CraveBiZ ${tier} Subscription`,
-        description: `Upgrade workspace to ${tier} Plan (₦${checkoutAmount.toLocaleString()}/month)`,
+        title: `CraveBiZ ${tier} (${billingCycle.toUpperCase()})`,
+        description: `Upgrade workspace to ${tier} Plan (₦${checkoutAmount.toLocaleString()}/${billingCycle === 'annual' ? 'year' : 'month'})`,
         logo: "https://checkout.flutterwave.com/assets/img/flutterwave-logo.svg",
       },
       callback: function (data: any) {
@@ -178,13 +187,13 @@ const Settings: React.FC<SettingsProps> = ({ company, onSaveChanges, onInviteUse
           const transactionId = data.transaction_id || data.tx_ref || "";
           
           // Securely upgrade on backend DB
-          secureUpgradeSubscriptionOnDb(activeTenantId, tier, transactionId)
+          secureUpgradeSubscriptionOnDb(activeTenantId, tier, transactionId, billingCycle)
             .then(() => {
               setSubInfo(getSubscriptionInfo(activeTenantId));
               if (onTriggerAuditLog) {
-                onTriggerAuditLog('Purchase Subscription', 'Subscription', `Upgraded to ${tier} Plan for ₦${checkoutAmount.toLocaleString()}`);
+                onTriggerAuditLog('Purchase Subscription', 'Subscription', `Upgraded to ${tier} Plan (${billingCycle}) for ₦${checkoutAmount.toLocaleString()}`);
               }
-              alert(`Congratulations! Your workspace has been successfully upgraded to the ${tier} Plan.`);
+              alert(`Congratulations! Your workspace has been successfully upgraded to the ${tier} Plan (${billingCycle}).`);
             })
             .catch((err: any) => {
               console.error("Backend upgrade error:", err);
@@ -247,14 +256,24 @@ const Settings: React.FC<SettingsProps> = ({ company, onSaveChanges, onInviteUse
     fetchMembers();
   }, [activeTenantId, company, userRole]);
 
-  const handleNonAdminRefill = () => {
-    const checkoutAmount = 2500; // Refill cost is ₦2,500 NGN
+  const handleNonAdminRefill = (packId: 'pack_100' | 'pack_300' | 'pack_1000' | 'pack_5000') => {
+    const packMap: Record<string, { amount: number; credits: number; title: string }> = {
+      pack_100: { amount: 1000, credits: 100, title: "Starter Pack" },
+      pack_300: { amount: 2500, credits: 300, title: "Growth Pack" },
+      pack_1000: { amount: 7500, credits: 1000, title: "Pro Pack" },
+      pack_5000: { amount: 30000, credits: 5000, title: "Enterprise Pack" }
+    };
+
+    const pack = packMap[packId] || packMap['pack_300'];
+    const checkoutAmount = pack.amount;
+    const addedCredits = pack.credits;
+
     const flutterwaveKey = (import.meta as any).env?.VITE_FLUTTERWAVE_PUBLIC_KEY || "FLWPUBK_TEST-e5e54eb86bc8c9bc88a8d11d7c3ee7c0-X";
     let isSuccess = false;
 
     safeFlutterwaveCheckout({
       public_key: flutterwaveKey,
-      tx_ref: `cravebiz-refill-${Date.now()}-${activeTenantId}`,
+      tx_ref: `cravebiz-refill-${packId}-${Date.now()}-${activeTenantId}`,
       amount: checkoutAmount,
       currency: "NGN",
       payment_options: "card, banktransfer, ussd",
@@ -263,8 +282,8 @@ const Settings: React.FC<SettingsProps> = ({ company, onSaveChanges, onInviteUse
         name: company?.name || "CraveBiZ Client",
       },
       customizations: {
-        title: "CraveBiZ AI Credits Refill",
-        description: `Refill 50 AI credits for workspace`,
+        title: `CraveBiZ AI Refill: ${pack.title}`,
+        description: `Refill ${addedCredits} AI credits for workspace`,
         logo: "https://checkout.flutterwave.com/assets/img/flutterwave-logo.svg",
       },
       callback: function (data: any) {
@@ -274,13 +293,14 @@ const Settings: React.FC<SettingsProps> = ({ company, onSaveChanges, onInviteUse
           const transactionId = data.transaction_id || data.tx_ref || "";
           
           // Securely refill credits on backend DB
-          secureRefillCreditsOnDb(activeTenantId, transactionId)
+          secureRefillCreditsOnDb(activeTenantId, transactionId, packId)
             .then(() => {
               setSubInfo(getSubscriptionInfo(activeTenantId));
               if (onTriggerAuditLog) {
-                onTriggerAuditLog('Purchase Credits', 'Subscription', `Purchased 50 AI Credits for ₦${checkoutAmount.toLocaleString()}`);
+                onTriggerAuditLog('Purchase Credits', 'Subscription', `Purchased ${addedCredits} AI Credits for ₦${checkoutAmount.toLocaleString()}`);
               }
-              alert(`Refill Successful! 50 AI credits have been added and AI Mode enabled for your workspace.`);
+              alert(`Refill Successful! ${addedCredits} AI credits have been added and AI Mode enabled for your workspace.`);
+              setIsRefillModalOpen(false);
             })
             .catch((err: any) => {
               console.error("Backend refill error:", err);
@@ -499,26 +519,47 @@ const Settings: React.FC<SettingsProps> = ({ company, onSaveChanges, onInviteUse
       />
 
       <div className="bg-white p-8 rounded-[2.5rem] shadow-2xl border border-gray-100">
-        <h3 className="text-xl font-black text-gray-800 border-b pb-4 mb-6 uppercase tracking-tighter">Workspace Subscription</h3>
+        <h3 className="text-xl font-black text-gray-800 border-b pb-4 mb-4 uppercase tracking-tighter">Workspace Subscription</h3>
         <p className="text-xs text-gray-500 mb-6 leading-relaxed">
           Select the subscription tier that matches your SME operational needs. Subscription limits reset at the start of each billing cycle.
         </p>
 
+        {/* Billing Cycle Selector */}
+        <div className="flex justify-center items-center gap-3 mb-8 bg-gray-50 p-2 rounded-2xl w-fit mx-auto border border-gray-100 shadow-sm">
+          <button
+            type="button"
+            onClick={() => setBillingCycle('monthly')}
+            className={`px-5 py-2 text-xs font-black rounded-xl transition-all uppercase tracking-wider ${billingCycle === 'monthly' ? 'bg-white text-primary-600 shadow-sm border border-gray-100' : 'text-gray-500 hover:text-gray-700'}`}
+          >
+            Monthly
+          </button>
+          <button
+            type="button"
+            onClick={() => setBillingCycle('annual')}
+            className={`px-5 py-2 text-xs font-black rounded-xl transition-all relative uppercase tracking-wider ${billingCycle === 'annual' ? 'bg-white text-primary-600 shadow-sm border border-gray-100' : 'text-gray-500 hover:text-gray-700'}`}
+          >
+            Annual Billing
+            <span className="absolute -top-2.5 -right-4 bg-emerald-500 text-white text-[8px] font-bold px-2 py-0.5 rounded-full uppercase tracking-widest scale-75 shadow-sm animate-pulse">
+              Save 20%
+            </span>
+          </button>
+        </div>
+
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 mb-8">
           {/* Free Plan */}
-          <div className={`p-4 rounded-3xl border transition-all flex flex-col justify-between h-56 ${subInfo.tier === 'Free' ? 'border-primary-600 bg-primary-50/10 ring-2 ring-primary-500/10' : 'border-gray-100 bg-gray-50/50'}`}>
+          <div className={`p-4 rounded-3xl border transition-all flex flex-col justify-between h-[16rem] ${subInfo.tier === 'Free' ? 'border-primary-600 bg-primary-50/10 ring-2 ring-primary-500/10' : 'border-gray-100 bg-gray-50/50'}`}>
             <div>
               <div className="flex justify-between items-start">
-                <span className="font-bold text-xs text-gray-950">Free Plan</span>
+                <span className="font-bold text-xs text-gray-950 uppercase tracking-wider">Free Plan</span>
                 {subInfo.tier === 'Free' && <span className="text-[9px] bg-primary-600 text-white px-2 py-0.5 rounded-full font-bold">Active</span>}
               </div>
-              <p className="text-[11px] text-gray-500 mt-2 leading-tight">Great for freelancers starting out.</p>
+              <p className="text-[10px] text-gray-500 mt-2 leading-tight">Instead of disabling AI completely, get 10 free AI Credits every month to experience all automation features.</p>
             </div>
             <div className="mt-2 flex flex-col gap-1.5">
-              <span className="text-[13px] font-black text-gray-900">₦0.00 <span className="text-[9px] text-gray-400 font-normal">/ month</span></span>
+              <span className="text-[13px] font-black text-gray-900">₦0 <span className="text-[9px] text-gray-400 font-normal">/ month</span></span>
               <span className="text-[10px] font-bold text-gray-700">1 User max</span>
-              <span className="text-[10px] font-bold text-gray-700">5 Invoices / Receipts</span>
-              <span className="text-[9px] font-bold text-red-600 bg-red-50 px-1.5 py-0.5 rounded self-start">No AI Features</span>
+              <span className="text-[10px] font-bold text-gray-700">10 Invoices / 10 Receipts</span>
+              <span className="text-[9px] font-bold text-primary-700 bg-primary-50 px-1.5 py-0.5 rounded self-start">10 AI Credits included</span>
               {subInfo.tier !== 'Free' && !isReadOnly && (
                 <button type="button" onClick={() => handleUpdateTier('Free')} className="mt-1 text-xs font-bold text-primary-600 hover:text-primary-700 text-left">Downgrade to Free</button>
               )}
@@ -526,19 +567,22 @@ const Settings: React.FC<SettingsProps> = ({ company, onSaveChanges, onInviteUse
           </div>
 
           {/* Starter Plan */}
-          <div className={`p-4 rounded-3xl border transition-all flex flex-col justify-between h-56 ${subInfo.tier === 'Starter' ? 'border-primary-600 bg-primary-50/10 ring-2 ring-primary-500/10' : 'border-gray-100 bg-gray-50/50'}`}>
+          <div className={`p-4 rounded-3xl border transition-all flex flex-col justify-between h-[16rem] ${subInfo.tier === 'Starter' ? 'border-primary-600 bg-primary-50/10 ring-2 ring-primary-500/10' : 'border-gray-100 bg-gray-50/50'}`}>
             <div>
               <div className="flex justify-between items-start">
-                <span className="font-bold text-xs text-gray-950">Starter Plan</span>
+                <span className="font-bold text-xs text-gray-950 uppercase tracking-wider">Starter Plan</span>
                 {subInfo.tier === 'Starter' && <span className="text-[9px] bg-primary-600 text-white px-2 py-0.5 rounded-full font-bold">Active</span>}
               </div>
-              <p className="text-[11px] text-gray-500 mt-2 leading-tight">Perfect for small growing business teams.</p>
+              <p className="text-[10px] text-gray-500 mt-2 leading-tight">Highly accessible, perfect for small shops, freelancers, POS operators, tailors, salons, and local restaurants.</p>
             </div>
             <div className="mt-2 flex flex-col gap-1.5">
-              <span className="text-[13px] font-black text-gray-900">₦15,000 <span className="text-[9px] text-gray-400 font-normal">/ month</span></span>
-              <span className="text-[10px] font-bold text-gray-700">3 Users max</span>
-              <span className="text-[10px] font-bold text-gray-700">20 Invoices / Receipts</span>
-              <span className="text-[9px] font-bold text-primary-700 bg-primary-50 px-1.5 py-0.5 rounded self-start">200 AI Tokens included</span>
+              <span className="text-[13px] font-black text-gray-900">
+                {billingCycle === 'annual' ? '₦45,000' : '₦4,500'}{' '}
+                <span className="text-[9px] text-gray-400 font-normal">/ {billingCycle === 'annual' ? 'year' : 'month'}</span>
+              </span>
+              <span className="text-[10px] font-bold text-gray-700">2 Users max</span>
+              <span className="text-[10px] font-bold text-gray-700">100 Invoices / 100 Receipts</span>
+              <span className="text-[9px] font-bold text-primary-700 bg-primary-50 px-1.5 py-0.5 rounded self-start">100 AI Credits included</span>
               {subInfo.tier !== 'Starter' && !isReadOnly && (
                 <button type="button" onClick={() => handleUpdateTier('Starter')} className="mt-1 text-xs font-bold text-primary-600 hover:text-primary-700 text-left">Switch to Starter</button>
               )}
@@ -546,19 +590,22 @@ const Settings: React.FC<SettingsProps> = ({ company, onSaveChanges, onInviteUse
           </div>
 
           {/* Growth Plan */}
-          <div className={`p-4 rounded-3xl border transition-all flex flex-col justify-between h-56 ${subInfo.tier === 'Growth' ? 'border-primary-600 bg-primary-50/10 ring-2 ring-primary-500/10' : 'border-gray-100 bg-gray-50/50'}`}>
+          <div className={`p-4 rounded-3xl border transition-all flex flex-col justify-between h-[16rem] ${subInfo.tier === 'Growth' ? 'border-primary-600 bg-primary-50/10 ring-2 ring-primary-500/10' : 'border-gray-100 bg-gray-50/50'}`}>
             <div>
               <div className="flex justify-between items-start">
-                <span className="font-bold text-xs text-gray-950">Growth Plan</span>
+                <span className="font-bold text-xs text-gray-950 uppercase tracking-wider">Growth Plan</span>
                 {subInfo.tier === 'Growth' && <span className="text-[9px] bg-primary-600 text-white px-2 py-0.5 rounded-full font-bold">Active</span>}
               </div>
-              <p className="text-[11px] text-gray-500 mt-2 leading-tight">Advanced tracking for expanding enterprises.</p>
+              <p className="text-[10px] text-gray-500 mt-2 leading-tight">Our flagship plan. Best for SMEs looking to optimize operations, automate workflow, and leverage CRM features.</p>
             </div>
             <div className="mt-2 flex flex-col gap-1.5">
-              <span className="text-[13px] font-black text-gray-900">₦35,000 <span className="text-[9px] text-gray-400 font-normal">/ month</span></span>
-              <span className="text-[10px] font-bold text-gray-700">10 Users max</span>
-              <span className="text-[10px] font-bold text-gray-700">50 Invoices / Receipts</span>
-              <span className="text-[9px] font-bold text-purple-700 bg-purple-50 px-1.5 py-0.5 rounded self-start">500 AI Tokens included</span>
+              <span className="text-[13px] font-black text-gray-900">
+                {billingCycle === 'annual' ? '₦95,000' : '₦9,500'}{' '}
+                <span className="text-[9px] text-gray-400 font-normal">/ {billingCycle === 'annual' ? 'year' : 'month'}</span>
+              </span>
+              <span className="text-[10px] font-bold text-gray-700">5 Users max</span>
+              <span className="text-[10px] font-bold text-gray-700">Unlimited Invoices & Receipts</span>
+              <span className="text-[9px] font-bold text-purple-700 bg-purple-50 px-1.5 py-0.5 rounded self-start">300 AI Credits included</span>
               {subInfo.tier !== 'Growth' && !isReadOnly && (
                 <button type="button" onClick={() => handleUpdateTier('Growth')} className="mt-1 text-xs font-bold text-primary-600 hover:text-primary-700 text-left">Switch to Growth</button>
               )}
@@ -566,19 +613,22 @@ const Settings: React.FC<SettingsProps> = ({ company, onSaveChanges, onInviteUse
           </div>
 
           {/* Enterprise Plan */}
-          <div className={`p-4 rounded-3xl border transition-all flex flex-col justify-between h-56 ${subInfo.tier === 'Enterprise' ? 'border-primary-600 bg-primary-50/10 ring-2 ring-primary-500/10' : 'border-gray-100 bg-gray-50/50'}`}>
+          <div className={`p-4 rounded-3xl border transition-all flex flex-col justify-between h-[16rem] ${subInfo.tier === 'Enterprise' ? 'border-primary-600 bg-primary-50/10 ring-2 ring-primary-500/10' : 'border-gray-100 bg-gray-50/50'}`}>
             <div>
               <div className="flex justify-between items-start">
-                <span className="font-bold text-xs text-gray-950">Enterprise Plan</span>
+                <span className="font-bold text-xs text-gray-950 uppercase tracking-wider">Enterprise Plan</span>
                 {subInfo.tier === 'Enterprise' && <span className="text-[9px] bg-primary-600 text-white px-2 py-0.5 rounded-full font-bold">Active</span>}
               </div>
-              <p className="text-[11px] text-gray-500 mt-2 leading-tight">Unrestricted scale with maximum support.</p>
+              <p className="text-[10px] text-gray-500 mt-2 leading-tight">Ideal for schools, hospitals, wholesalers, manufacturing firms, and larger organizations needing custom scale.</p>
             </div>
             <div className="mt-2 flex flex-col gap-1.5">
-              <span className="text-[13px] font-black text-gray-900">₦85,000 <span className="text-[9px] text-gray-400 font-normal">/ month</span></span>
+              <span className="text-[13px] font-black text-gray-900">
+                {billingCycle === 'annual' ? '₦495,000' : '₦49,500'}{' '}
+                <span className="text-[9px] text-gray-400 font-normal">/ {billingCycle === 'annual' ? 'year' : 'month'}</span>
+              </span>
               <span className="text-[10px] font-bold text-gray-700">Unlimited Users</span>
-              <span className="text-[10px] font-bold text-gray-700">200 Invs / 2000 Rcpts</span>
-              <span className="text-[9px] font-bold text-amber-700 bg-amber-50 px-1.5 py-0.5 rounded self-start">1000 AI Tokens included</span>
+              <span className="text-[10px] font-bold text-gray-700">Unlimited Invoices & Receipts</span>
+              <span className="text-[9px] font-bold text-amber-700 bg-amber-50 px-1.5 py-0.5 rounded self-start">2,500 AI Credits included</span>
               {subInfo.tier !== 'Enterprise' && !isReadOnly && (
                 <button type="button" onClick={() => handleUpdateTier('Enterprise')} className="mt-1 text-xs font-bold text-primary-600 hover:text-primary-700 text-left">Upgrade to Enterprise</button>
               )}
@@ -592,11 +642,11 @@ const Settings: React.FC<SettingsProps> = ({ company, onSaveChanges, onInviteUse
             <div className="space-y-2">
               <div className="flex justify-between text-xs">
                 <span className="font-bold text-gray-500">Invoice limit:</span>
-                <span className="font-mono font-bold text-gray-800">{subInfo.maxInvoices} invoices max</span>
+                <span className="font-mono font-bold text-gray-800">{subInfo.maxInvoices === 999999 ? 'Unlimited' : `${subInfo.maxInvoices} invoices max`}</span>
               </div>
               <div className="flex justify-between text-xs">
                 <span className="font-bold text-gray-500">Receipt limit:</span>
-                <span className="font-mono font-bold text-gray-800">{subInfo.maxReceipts} receipts max</span>
+                <span className="font-mono font-bold text-gray-800">{subInfo.maxReceipts === 999999 ? 'Unlimited' : `${subInfo.maxReceipts} receipts max`}</span>
               </div>
               <div className="flex justify-between text-xs">
                 <span className="font-bold text-gray-500">Team user limit:</span>
@@ -608,7 +658,7 @@ const Settings: React.FC<SettingsProps> = ({ company, onSaveChanges, onInviteUse
                 <span className="font-bold text-gray-500">Remaining AI Credits:</span>
                 <div className="flex items-center gap-2">
                   <span className="font-mono font-bold text-gray-800">
-                    {subInfo.tier === 'Free' && subInfo.aiUnits === 0 ? '0' : `${subInfo.aiUnits}/${subInfo.tier === 'Free' ? 0 : TIER_LIMITS[subInfo.tier].maxAiUnits}`} credits
+                    {subInfo.tier === 'Free' && subInfo.aiUnits === 0 ? '0' : `${subInfo.aiUnits}/${subInfo.tier === 'Free' ? 10 : TIER_LIMITS[subInfo.tier].maxAiUnits}`} credits
                   </span>
                   {localStorage.getItem('cravebiz_is_super_admin') === 'true' ? (
                     <button
@@ -627,11 +677,11 @@ const Settings: React.FC<SettingsProps> = ({ company, onSaveChanges, onInviteUse
                   ) : (
                     <button
                       type="button"
-                      onClick={handleNonAdminRefill}
-                      className="bg-primary-600 hover:bg-primary-700 text-white text-[9px] font-bold px-2 py-0.5 rounded shadow-sm transition-colors"
-                      title="Refill 50 AI credits for ₦2,500"
+                      onClick={() => setIsRefillModalOpen(true)}
+                      className="bg-primary-600 hover:bg-primary-700 text-white text-[9px] font-bold px-2.5 py-1 rounded shadow-md transition-colors uppercase tracking-widest font-black"
+                      title="Purchase AI Credits Refill"
                     >
-                      +50 Refill
+                      Refill Credits
                     </button>
                   )}
                 </div>
@@ -643,7 +693,7 @@ const Settings: React.FC<SettingsProps> = ({ company, onSaveChanges, onInviteUse
             <div className="pt-4 border-t border-gray-200/60 flex items-center justify-between">
               <div>
                 <p className="text-xs font-bold text-gray-700">Enable Workspace AI Copilot</p>
-                <p className="text-[10px] text-gray-400">Enables dynamic descriptions, content review, and smart advice. Deducts 1 credit per use.</p>
+                <p className="text-[10px] text-gray-400 font-medium">Enables dynamic descriptions, content review, and smart advice. Deducts 1 credit per use.</p>
               </div>
               <button
                 type="button"
@@ -663,6 +713,65 @@ const Settings: React.FC<SettingsProps> = ({ company, onSaveChanges, onInviteUse
           )}
         </div>
       </div>
+
+      {/* Credits Refill Selection Overlay Modal */}
+      {isRefillModalOpen && (
+        <div className="fixed inset-0 bg-black/60 backdrop-blur-xs flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-[2.5rem] w-full max-w-md p-8 border border-gray-100 shadow-2xl relative animate-in fade-in zoom-in duration-150">
+            <h3 className="text-xl font-black text-gray-900 uppercase tracking-tighter mb-2">Purchase AI Credits</h3>
+            <p className="text-xs text-gray-500 mb-6 leading-relaxed font-medium">
+              Select an AI Credit Refill package to recharge your workspace. Refill packages never expire and are consumed after regular plan credits.
+            </p>
+
+            <div className="space-y-3 mb-6">
+              {[
+                { id: 'pack_100', credits: 100, price: 1000, title: "Starter Pack" },
+                { id: 'pack_300', credits: 300, price: 2500, title: "Growth Pack" },
+                { id: 'pack_1000', credits: 1000, price: 7500, title: "Pro Pack" },
+                { id: 'pack_5000', credits: 5000, price: 30000, title: "Enterprise Pack" }
+              ].map((p) => (
+                <label
+                  key={p.id}
+                  onClick={() => setSelectedRefillPack(p.id as any)}
+                  className={`flex justify-between items-center p-4 rounded-2xl border-2 cursor-pointer transition-all ${selectedRefillPack === p.id ? 'border-primary-600 bg-primary-50/10' : 'border-gray-100 hover:bg-gray-50 bg-gray-50/30'}`}
+                >
+                  <div className="flex items-center gap-3">
+                    <input
+                      type="radio"
+                      name="refill_pack"
+                      checked={selectedRefillPack === p.id}
+                      onChange={() => setSelectedRefillPack(p.id as any)}
+                      className="accent-primary-600 cursor-pointer"
+                    />
+                    <div>
+                      <p className="font-bold text-xs text-gray-950 uppercase tracking-wider">{p.title}</p>
+                      <p className="text-[10px] text-gray-400 font-bold">+{p.credits} AI Credits</p>
+                    </div>
+                  </div>
+                  <span className="font-black text-xs text-gray-950">₦{p.price.toLocaleString()}</span>
+                </label>
+              ))}
+            </div>
+
+            <div className="flex gap-3">
+              <button
+                type="button"
+                onClick={() => setIsRefillModalOpen(false)}
+                className="w-1/2 px-4 py-3 bg-gray-100 hover:bg-gray-200 text-gray-600 font-black uppercase tracking-widest text-[10px] rounded-xl transition-all"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={() => handleNonAdminRefill(selectedRefillPack)}
+                className="w-1/2 px-4 py-3 bg-primary-600 hover:bg-primary-700 text-white font-black uppercase tracking-widest text-[10px] rounded-xl shadow-lg hover:shadow-xl transition-all"
+              >
+                Pay ₦{selectedRefillPack === 'pack_100' ? '1,000' : selectedRefillPack === 'pack_300' ? '2,500' : selectedRefillPack === 'pack_1000' ? '7,500' : '30,000'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       <div className="bg-white p-8 rounded-[2.5rem] shadow-2xl border border-gray-100">
         <h3 className="text-xl font-black text-gray-800 border-b pb-4 mb-6 uppercase tracking-tighter">Permissions Registry</h3>

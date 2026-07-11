@@ -286,8 +286,8 @@ async function deductAiUnitServerSide(tenantId: string, token?: string, userEmai
     }
 
     let tier = isCravebizInc ? "Enterprise" : "Free";
-    let aiUnits = isCravebizInc ? 1000 : 0;
-    let aiModeEnabled = isCravebizInc ? true : false;
+    let aiUnits = isCravebizInc ? 1000 : 10;
+    let aiModeEnabled = true;
     let memberPermissions: Record<string, boolean> = {};
 
     if (data && data.content) {
@@ -319,8 +319,8 @@ async function deductAiUnitServerSide(tenantId: string, token?: string, userEmai
     }
 
     // Allow client header to override or verify if AI Mode is enabled
-    if (clientAiModeEnabled !== undefined && clientAiModeEnabled) {
-        aiModeEnabled = true;
+    if (clientAiModeEnabled !== undefined) {
+        aiModeEnabled = clientAiModeEnabled;
     }
 
     // Perform checks
@@ -1080,18 +1080,26 @@ app.post("/api/ai/invoice-insight", verifyTenant, async (req: any, res) => {
 // 1. Upgrade subscription tier
 app.post("/api/subscription/upgrade", verifyTenant, async (req: any, res) => {
     try {
-        const { tier, transactionId } = req.body;
+        const { tier, transactionId, billingCycle } = req.body;
         const tenantId = req.tenantId;
 
-        if (!['Free', 'Starter', 'Growth', 'Enterprise'].includes(tier)) {
+        if (!['Free', 'Starter', 'Growth', 'Business', 'Enterprise'].includes(tier)) {
             return res.status(400).json({ error: "Invalid subscription tier." });
         }
 
-        const expectedAmounts: Record<string, number> = {
+        const isAnnual = billingCycle === 'annual';
+        const expectedAmounts: Record<string, number> = isAnnual ? {
             Free: 0,
-            Starter: 15000,
-            Growth: 35000,
-            Enterprise: 85000
+            Starter: 45000,
+            Growth: 95000,
+            Business: 195000,
+            Enterprise: 495000
+        } : {
+            Free: 0,
+            Starter: 4500,
+            Growth: 9500,
+            Business: 19500,
+            Enterprise: 49500
         };
 
         const expectedAmount = expectedAmounts[tier];
@@ -1171,10 +1179,11 @@ app.post("/api/subscription/upgrade", verifyTenant, async (req: any, res) => {
         }
 
         const tierLimits: Record<string, number> = {
-            Free: 0,
-            Starter: 200,
-            Growth: 500,
-            Enterprise: 1000
+            Free: 10,
+            Starter: 100,
+            Growth: 300,
+            Business: 800,
+            Enterprise: 2500
         };
 
         const newUnits = tierLimits[tier];
@@ -1189,7 +1198,7 @@ app.post("/api/subscription/upgrade", verifyTenant, async (req: any, res) => {
                 content: {
                     tier,
                     aiUnits: newUnits,
-                    aiModeEnabled: tier !== 'Free',
+                    aiModeEnabled: true,
                     memberPermissions
                 }
             });
@@ -1209,15 +1218,25 @@ app.post("/api/subscription/upgrade", verifyTenant, async (req: any, res) => {
 // 2. Refill AI credits
 app.post("/api/subscription/refill", verifyTenant, async (req: any, res) => {
     try {
-        const { transactionId } = req.body;
+        const { transactionId, packId } = req.body;
         const tenantId = req.tenantId;
 
-        const expectedAmount = 2500; // Refill cost is ₦2,500 NGN for 50 credits
+        const packMap: Record<string, { amount: number; credits: number }> = {
+            pack_100: { amount: 1000, credits: 100 },
+            pack_300: { amount: 2500, credits: 300 },
+            pack_1000: { amount: 7500, credits: 1000 },
+            pack_5000: { amount: 30000, credits: 5000 }
+        };
+
+        const chosenPackId = packId || 'pack_300';
+        const pack = packMap[chosenPackId] || packMap['pack_300'];
+        const expectedAmount = pack.amount;
+        const addedCredits = pack.credits;
 
         // If FLUTTERWAVE_SECRET_KEY is provided, verify transaction
         const flwSecretKey = process.env.FLUTTERWAVE_SECRET_KEY;
         if (flwSecretKey && transactionId) {
-            console.log(`Verifying Flutterwave transaction ${transactionId} for refill...`);
+            console.log(`Verifying Flutterwave transaction ${transactionId} for refill pack ${chosenPackId}...`);
             const verifyUrl = `https://api.flutterwave.com/v3/transactions/${transactionId}/verify`;
             
             try {
@@ -1295,7 +1314,7 @@ app.post("/api/subscription/refill", verifyTenant, async (req: any, res) => {
             memberPermissions = content.memberPermissions || {};
         }
 
-        const newUnits = aiUnits + 50;
+        const newUnits = aiUnits + addedCredits;
 
         // Securely upsert the new credit balance
         const { error: upsertError } = await client
@@ -1307,7 +1326,7 @@ app.post("/api/subscription/refill", verifyTenant, async (req: any, res) => {
                 content: {
                     tier,
                     aiUnits: newUnits,
-                    aiModeEnabled: aiModeEnabled || tier !== 'Free',
+                    aiModeEnabled: true, // Always enable AI Mode on successful refill
                     memberPermissions
                 }
             });

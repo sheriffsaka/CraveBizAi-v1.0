@@ -1,6 +1,6 @@
 import { supabase, api } from '../lib/api';
 
-export type SubscriptionTier = 'Free' | 'Starter' | 'Growth' | 'Enterprise';
+export type SubscriptionTier = 'Free' | 'Starter' | 'Growth' | 'Business' | 'Enterprise';
 
 export interface SubscriptionInfo {
   tier: SubscriptionTier;
@@ -12,11 +12,63 @@ export interface SubscriptionInfo {
 }
 
 // Map tiers to limits
-export const TIER_LIMITS = {
-  Free: { maxInvoices: 5, maxReceipts: 5, maxAiUnits: 0, maxUsers: 1, aiAvailable: false, price: "₦0.00" },
-  Starter: { maxInvoices: 20, maxReceipts: 20, maxAiUnits: 200, maxUsers: 3, aiAvailable: true, price: "₦15,000.00" },
-  Growth: { maxInvoices: 50, maxReceipts: 50, maxAiUnits: 500, maxUsers: 10, aiAvailable: true, price: "₦35,000.00" },
-  Enterprise: { maxInvoices: 200, maxReceipts: 2000, maxAiUnits: 1000, maxUsers: 999999, aiAvailable: true, price: "₦85,000.00" }
+export const TIER_LIMITS: Record<SubscriptionTier, { maxInvoices: number; maxReceipts: number; maxAiUnits: number; maxUsers: number; aiAvailable: boolean; price: string; monthlyPriceVal: number; annualPriceVal: number; inactive?: boolean; description?: string }> = {
+  Free: { 
+    maxInvoices: 10, 
+    maxReceipts: 10, 
+    maxAiUnits: 10, 
+    maxUsers: 1, 
+    aiAvailable: true, 
+    price: "₦0.00",
+    monthlyPriceVal: 0,
+    annualPriceVal: 0,
+    description: "Instead of disabling AI completely, get 10 free AI Credits every month to experience all automation features."
+  },
+  Starter: { 
+    maxInvoices: 100, 
+    maxReceipts: 100, 
+    maxAiUnits: 100, 
+    maxUsers: 2, 
+    aiAvailable: true, 
+    price: "₦4,500.00",
+    monthlyPriceVal: 4500,
+    annualPriceVal: 45000,
+    description: "Highly accessible, perfect for small shops, freelancers, POS operators, tailors, salons, and local restaurants."
+  },
+  Growth: { 
+    maxInvoices: 999999, 
+    maxReceipts: 999999, 
+    maxAiUnits: 300, 
+    maxUsers: 5, 
+    aiAvailable: true, 
+    price: "₦9,500.00",
+    monthlyPriceVal: 9500,
+    annualPriceVal: 95000,
+    description: "Our flagship plan. Best for SMEs looking to optimize operations, automate workflow, and leverage robust CRM features."
+  },
+  Business: { 
+    maxInvoices: 999999, 
+    maxReceipts: 999999, 
+    maxAiUnits: 800, 
+    maxUsers: 15, 
+    aiAvailable: true, 
+    price: "₦19,500.00",
+    monthlyPriceVal: 19500,
+    annualPriceVal: 195000,
+    inactive: true,
+    description: "Designed for established businesses with multiple staff, inventory, accounting, CRM, and regular AI usage. (Temporarily Inactive)"
+  },
+  Enterprise: { 
+    maxInvoices: 999999, 
+    maxReceipts: 999999, 
+    maxAiUnits: 2500, 
+    maxUsers: 999999, 
+    aiAvailable: true, 
+    price: "₦49,500.00",
+    monthlyPriceVal: 49500,
+    annualPriceVal: 495000,
+    description: "Ideal for schools, hospitals, wholesalers, manufacturing firms, and larger organizations needing dedicated, custom scale."
+  }
 };
 
 /**
@@ -222,7 +274,7 @@ export function getSubscriptionInfo(companyId: string): SubscriptionInfo {
 
   // Retrieve AI mode toggle
   const savedAiMode = localStorage.getItem(`cravebiz_aimode_${companyId}`);
-  const defaultAiMode = isSuperAdmin ? 'true' : 'false';
+  const defaultAiMode = 'true';
   const aiModeEnabled = (limits.aiAvailable || aiUnits > 0) && (savedAiMode !== null ? savedAiMode === 'true' : defaultAiMode === 'true');
 
   return {
@@ -354,7 +406,8 @@ export function deductAiUnit(companyId: string): void {
 export async function secureUpgradeSubscriptionOnDb(
   companyId: string,
   tier: SubscriptionTier,
-  transactionId?: string
+  transactionId?: string,
+  billingCycle?: 'monthly' | 'annual'
 ): Promise<void> {
   if (!companyId) return;
   const headers = await api.getAuthHeaders(companyId);
@@ -362,7 +415,7 @@ export async function secureUpgradeSubscriptionOnDb(
   const response = await fetch("/api/subscription/upgrade", {
     method: "POST",
     headers,
-    body: JSON.stringify({ tier, transactionId })
+    body: JSON.stringify({ tier, transactionId, billingCycle })
   });
 
   if (!response.ok) {
@@ -375,7 +428,7 @@ export async function secureUpgradeSubscriptionOnDb(
   // Update client-side local cache synchronously
   localStorage.setItem(`cravebiz_tier_${companyId}`, tier);
   localStorage.setItem(`cravebiz_units_${companyId}`, data.aiUnits.toString());
-  localStorage.setItem(`cravebiz_aimode_${companyId}`, (tier !== 'Free').toString());
+  localStorage.setItem(`cravebiz_aimode_${companyId}`, 'true');
   
   window.dispatchEvent(new Event('cravebiz_subscription_change'));
 }
@@ -385,7 +438,8 @@ export async function secureUpgradeSubscriptionOnDb(
  */
 export async function secureRefillCreditsOnDb(
   companyId: string,
-  transactionId?: string
+  transactionId?: string,
+  packId?: string
 ): Promise<void> {
   if (!companyId) return;
   const headers = await api.getAuthHeaders(companyId);
@@ -393,7 +447,7 @@ export async function secureRefillCreditsOnDb(
   const response = await fetch("/api/subscription/refill", {
     method: "POST",
     headers,
-    body: JSON.stringify({ transactionId })
+    body: JSON.stringify({ transactionId, packId })
   });
 
   if (!response.ok) {
