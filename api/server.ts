@@ -229,7 +229,7 @@ function getAuthenticatedClient(token?: string) {
 }
 
 // Server-side secure subscription validation and AI unit deduction
-async function deductAiUnitServerSide(tenantId: string, token?: string, userEmail?: string): Promise<void> {
+async function deductAiUnitServerSide(tenantId: string, token?: string, userEmail?: string, clientAiModeEnabled?: boolean): Promise<void> {
     if (!tenantId) {
         throw new Error("Tenant ID/Workspace context is required to use AI features.");
     }
@@ -318,6 +318,11 @@ async function deductAiUnitServerSide(tenantId: string, token?: string, userEmai
         }
     }
 
+    // Allow client header to override or verify if AI Mode is enabled
+    if (clientAiModeEnabled !== undefined && clientAiModeEnabled) {
+        aiModeEnabled = true;
+    }
+
     // Perform checks
     if (userEmail) {
         const emailLower = userEmail.toLowerCase();
@@ -330,12 +335,12 @@ async function deductAiUnitServerSide(tenantId: string, token?: string, userEmai
         throw new Error("AI features are not available on the Free Subscription Plan. Please upgrade your subscription tier or purchase an AI Credit Refill.");
     }
 
-    if (!aiModeEnabled) {
-        throw new Error("AI Mode is currently turned OFF. Please turn ON AI Mode in the workspace header or settings to use AI features.");
-    }
-
     if (aiUnits <= 0) {
         throw new Error("Your subscription AI units are depleted. Please upgrade your subscription tier or contact support to recharge.");
+    }
+
+    if (!aiModeEnabled) {
+        throw new Error("AI Mode is currently turned OFF. Please turn ON AI Mode in the workspace header or settings to use AI features.");
     }
 
     // Deduct 1 unit
@@ -988,7 +993,7 @@ app.post("/api/signify/workspaces/:tenantId", verifyTenant, (req, res) => {
 
 app.post("/api/ai/text-response", verifyTenant, async (req: any, res) => {
     try {
-        await deductAiUnitServerSide(req.tenantId, req.token, req.user?.email);
+        await deductAiUnitServerSide(req.tenantId, req.token, req.user?.email, req.headers["x-ai-mode-enabled"] === "true");
         const { prompt, model, systemInstruction } = req.body;
         const text = await generateTextResponse(prompt, model, systemInstruction);
         res.json({ text });
@@ -1000,7 +1005,7 @@ app.post("/api/ai/text-response", verifyTenant, async (req: any, res) => {
 
 app.post("/api/ai/transform-document", verifyTenant, async (req: any, res) => {
     try {
-        await deductAiUnitServerSide(req.tenantId, req.token, req.user?.email);
+        await deductAiUnitServerSide(req.tenantId, req.token, req.user?.email, req.headers["x-ai-mode-enabled"] === "true");
         const { rawContent, companyContext } = req.body;
         const doc = await transformDocument(rawContent, companyContext);
         res.json(doc);
@@ -1012,7 +1017,7 @@ app.post("/api/ai/transform-document", verifyTenant, async (req: any, res) => {
 
 app.post("/api/ai/renewal-suggestion", verifyTenant, async (req: any, res) => {
     try {
-        await deductAiUnitServerSide(req.tenantId, req.token, req.user?.email);
+        await deductAiUnitServerSide(req.tenantId, req.token, req.user?.email, req.headers["x-ai-mode-enabled"] === "true");
         const { clientId, expiringItems } = req.body;
         const suggestion = await generateRenewalInvoiceSuggestion(clientId, expiringItems);
         res.json(suggestion);
@@ -1024,7 +1029,7 @@ app.post("/api/ai/renewal-suggestion", verifyTenant, async (req: any, res) => {
 
 app.post("/api/ai/client-payment-health-report", verifyTenant, async (req: any, res) => {
     try {
-        await deductAiUnitServerSide(req.tenantId, req.token, req.user?.email);
+        await deductAiUnitServerSide(req.tenantId, req.token, req.user?.email, req.headers["x-ai-mode-enabled"] === "true");
         const { clientId, paymentHistory } = req.body;
         const text = await generateClientPaymentHealthReport(clientId, paymentHistory);
         res.json({ text });
@@ -1036,7 +1041,7 @@ app.post("/api/ai/client-payment-health-report", verifyTenant, async (req: any, 
 
 app.post("/api/ai/generate-document-from-purpose", verifyTenant, async (req: any, res) => {
     try {
-        await deductAiUnitServerSide(req.tenantId, req.token, req.user?.email);
+        await deductAiUnitServerSide(req.tenantId, req.token, req.user?.email, req.headers["x-ai-mode-enabled"] === "true");
         const { purpose, companyContext } = req.body;
         const doc = await generateDocumentFromPurpose(purpose, companyContext);
         res.json(doc);
@@ -1048,7 +1053,7 @@ app.post("/api/ai/generate-document-from-purpose", verifyTenant, async (req: any
 
 app.post("/api/ai/review-document-content", verifyTenant, async (req: any, res) => {
     try {
-        await deductAiUnitServerSide(req.tenantId, req.token, req.user?.email);
+        await deductAiUnitServerSide(req.tenantId, req.token, req.user?.email, req.headers["x-ai-mode-enabled"] === "true");
         const { documentText } = req.body;
         const report = await reviewDocumentContent(documentText);
         res.json(report);
@@ -1060,7 +1065,7 @@ app.post("/api/ai/review-document-content", verifyTenant, async (req: any, res) 
 
 app.post("/api/ai/invoice-insight", verifyTenant, async (req: any, res) => {
     try {
-        await deductAiUnitServerSide(req.tenantId, req.token, req.user?.email);
+        await deductAiUnitServerSide(req.tenantId, req.token, req.user?.email, req.headers["x-ai-mode-enabled"] === "true");
         const { prompt, complex } = req.body;
         const text = await generateInvoiceInsight(prompt, complex);
         res.json({ text });

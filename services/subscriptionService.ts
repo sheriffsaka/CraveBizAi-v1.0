@@ -323,16 +323,16 @@ export function deductAiUnit(companyId: string): void {
     throw new Error(msg);
   }
 
-  // If AI Mode is not turned on, don't allow or don't deduct (in this case, block AI because it's turned off)
-  if (!sub.aiModeEnabled) {
-    const msg = "AI Mode is currently turned OFF. Please turn ON AI Mode in the top header or Workspace Settings to use AI features.";
+  // Check if they have units
+  if (sub.aiUnits <= 0) {
+    const msg = `Your subscription AI units are depleted (0/${TIER_LIMITS[sub.tier].maxAiUnits} remaining). Please upgrade your subscription tier or contact support to recharge.`;
     window.dispatchEvent(new CustomEvent('cravebiz_subscription_error', { detail: { message: msg } }));
     throw new Error(msg);
   }
 
-  // Check if they have units
-  if (sub.aiUnits <= 0) {
-    const msg = `Your subscription AI units are depleted (0/${TIER_LIMITS[sub.tier].maxAiUnits} remaining). Please upgrade your subscription tier or contact support to recharge.`;
+  // If AI Mode is not turned on, don't allow or don't deduct (in this case, block AI because it's turned off)
+  if (!sub.aiModeEnabled) {
+    const msg = "AI Mode is currently turned OFF. Please turn ON AI Mode in the top header or Workspace Settings to use AI features.";
     window.dispatchEvent(new CustomEvent('cravebiz_subscription_error', { detail: { message: msg } }));
     throw new Error(msg);
   }

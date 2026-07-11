@@ -1709,6 +1709,10 @@ class CraveBizApi {
     };
     if (companyId) {
       headers['X-Tenant-Id'] = companyId;
+      const savedAiMode = localStorage.getItem(`cravebiz_aimode_${companyId}`);
+      if (savedAiMode) {
+        headers['X-AI-Mode-Enabled'] = savedAiMode;
+      }
     }
     try {
       const { data: { session } } = await supabase.auth.getSession();
