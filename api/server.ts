@@ -57,6 +57,10 @@ async function getTenantUser(req: any) {
 // Multi-Tenant Isolation Middleware
 async function verifyTenant(req: any, res: any, next: any) {
     try {
+        const authHeader = req.headers.authorization;
+        if (authHeader && authHeader.startsWith("Bearer ")) {
+            req.token = authHeader.split(" ")[1];
+        }
         let user = await getTenantUser(req);
         if (!user) {
             console.warn("verifyTenant: No active Supabase session found. Falling back to default system admin user.");
@@ -166,6 +170,125 @@ async function verifyTenant(req: any, res: any, next: any) {
     } catch (err) {
         console.error("verifyTenant middleware exception:", err);
         res.status(500).json({ error: "Tenant verification failure" });
+    }
+}
+
+// Authenticated Supabase Client factory for RLS context
+function getAuthenticatedClient(token?: string) {
+    if (!token) {
+        return supabaseClient;
+    }
+    return createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
+        global: {
+            headers: {
+                Authorization: `Bearer ${token}`
+            }
+        }
+    });
+}
+
+// Server-side secure subscription validation and AI unit deduction
+async function deductAiUnitServerSide(tenantId: string, token?: string, userEmail?: string): Promise<void> {
+    if (!tenantId) {
+        throw new Error("Tenant ID/Workspace context is required to use AI features.");
+    }
+    
+    const isCravebizInc = tenantId === "cravebiz-inc";
+    
+    // Get docId (UUID representation)
+    let docId = tenantId;
+    if (isCravebizInc) {
+        docId = "00000000-0000-0000-0000-000000000000";
+    } else if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(tenantId)) {
+        docId = "11111111-1111-1111-1111-111111111111";
+    }
+
+    // Fetch workspace settings from DB using the request-specific authenticated client
+    const client = getAuthenticatedClient(token);
+    const { data, error } = await client
+        .from("generated_documents")
+        .select("*")
+        .eq("id", docId)
+        .maybeSingle();
+
+    if (error) {
+        console.warn("Server-side subscription fetch error:", error);
+    }
+
+    let tier = isCravebizInc ? "Enterprise" : "Free";
+    let aiUnits = isCravebizInc ? 1000 : 0;
+    let aiModeEnabled = isCravebizInc ? true : false;
+    let memberPermissions: Record<string, boolean> = {};
+
+    if (data && data.content) {
+        const content = data.content as any;
+        tier = content.tier || tier;
+        aiUnits = content.aiUnits !== undefined ? content.aiUnits : aiUnits;
+        aiModeEnabled = content.aiModeEnabled !== undefined ? content.aiModeEnabled : aiModeEnabled;
+        memberPermissions = content.memberPermissions || {};
+    } else {
+        // Fallback or initialization inside DB if not found
+        // If it is 'cravebiz-inc' we automatically create and initialize it in the DB to avoid any first-time issues
+        if (isCravebizInc) {
+            try {
+                await client.from("generated_documents").upsert({
+                    id: docId,
+                    company_id: tenantId,
+                    document_type: "cravebiz_workspace_settings",
+                    content: {
+                        tier,
+                        aiUnits,
+                        aiModeEnabled,
+                        memberPermissions
+                    }
+                });
+            } catch (initErr) {
+                console.warn("Could not auto-initialize cravebiz-inc settings:", initErr);
+            }
+        }
+    }
+
+    // Perform checks
+    if (userEmail) {
+        const emailLower = userEmail.toLowerCase();
+        if (memberPermissions[emailLower] === false) {
+            throw new Error("Your user account is not authorized to use this workspace's AI tokens. Please contact the workspace owner to enable AI permissions.");
+        }
+    }
+
+    if (tier === "Free" && aiUnits <= 0) {
+        throw new Error("AI features are not available on the Free Subscription Plan. Please upgrade your subscription tier or purchase an AI Credit Refill.");
+    }
+
+    if (!aiModeEnabled) {
+        throw new Error("AI Mode is currently turned OFF. Please turn ON AI Mode in the workspace header or settings to use AI features.");
+    }
+
+    if (aiUnits <= 0) {
+        throw new Error("Your subscription AI units are depleted. Please upgrade your subscription tier or contact support to recharge.");
+    }
+
+    // Deduct 1 unit
+    const newUnits = aiUnits - 1;
+
+    // Upsert the updated balance back to DB (uses tenantId directly as company_id to satisfy RLS)
+    const { error: upsertError } = await client
+        .from("generated_documents")
+        .upsert({
+            id: docId,
+            company_id: tenantId,
+            document_type: "cravebiz_workspace_settings",
+            content: {
+                tier,
+                aiUnits: newUnits,
+                aiModeEnabled,
+                memberPermissions
+            }
+        });
+
+    if (upsertError) {
+        console.error("Server-side AI unit deduction upsert error:", upsertError);
+        throw new Error("Failed to update AI unit balance in database.");
     }
 }
 
@@ -773,8 +896,9 @@ app.post("/api/signify/workspaces/:tenantId", verifyTenant, (req, res) => {
 });
 
 
-app.post("/api/ai/text-response", async (req, res) => {
+app.post("/api/ai/text-response", verifyTenant, async (req: any, res) => {
     try {
+        await deductAiUnitServerSide(req.tenantId, req.token, req.user?.email);
         const { prompt, model, systemInstruction } = req.body;
         const text = await generateTextResponse(prompt, model, systemInstruction);
         res.json({ text });
@@ -784,8 +908,9 @@ app.post("/api/ai/text-response", async (req, res) => {
     }
 });
 
-app.post("/api/ai/transform-document", async (req, res) => {
+app.post("/api/ai/transform-document", verifyTenant, async (req: any, res) => {
     try {
+        await deductAiUnitServerSide(req.tenantId, req.token, req.user?.email);
         const { rawContent, companyContext } = req.body;
         const doc = await transformDocument(rawContent, companyContext);
         res.json(doc);
@@ -795,8 +920,9 @@ app.post("/api/ai/transform-document", async (req, res) => {
     }
 });
 
-app.post("/api/ai/renewal-suggestion", async (req, res) => {
+app.post("/api/ai/renewal-suggestion", verifyTenant, async (req: any, res) => {
     try {
+        await deductAiUnitServerSide(req.tenantId, req.token, req.user?.email);
         const { clientId, expiringItems } = req.body;
         const suggestion = await generateRenewalInvoiceSuggestion(clientId, expiringItems);
         res.json(suggestion);
@@ -806,8 +932,9 @@ app.post("/api/ai/renewal-suggestion", async (req, res) => {
     }
 });
 
-app.post("/api/ai/client-payment-health-report", async (req, res) => {
+app.post("/api/ai/client-payment-health-report", verifyTenant, async (req: any, res) => {
     try {
+        await deductAiUnitServerSide(req.tenantId, req.token, req.user?.email);
         const { clientId, paymentHistory } = req.body;
         const text = await generateClientPaymentHealthReport(clientId, paymentHistory);
         res.json({ text });
@@ -817,8 +944,9 @@ app.post("/api/ai/client-payment-health-report", async (req, res) => {
     }
 });
 
-app.post("/api/ai/generate-document-from-purpose", async (req, res) => {
+app.post("/api/ai/generate-document-from-purpose", verifyTenant, async (req: any, res) => {
     try {
+        await deductAiUnitServerSide(req.tenantId, req.token, req.user?.email);
         const { purpose, companyContext } = req.body;
         const doc = await generateDocumentFromPurpose(purpose, companyContext);
         res.json(doc);
@@ -828,8 +956,9 @@ app.post("/api/ai/generate-document-from-purpose", async (req, res) => {
     }
 });
 
-app.post("/api/ai/review-document-content", async (req, res) => {
+app.post("/api/ai/review-document-content", verifyTenant, async (req: any, res) => {
     try {
+        await deductAiUnitServerSide(req.tenantId, req.token, req.user?.email);
         const { documentText } = req.body;
         const report = await reviewDocumentContent(documentText);
         res.json(report);
@@ -839,8 +968,9 @@ app.post("/api/ai/review-document-content", async (req, res) => {
     }
 });
 
-app.post("/api/ai/invoice-insight", async (req, res) => {
+app.post("/api/ai/invoice-insight", verifyTenant, async (req: any, res) => {
     try {
+        await deductAiUnitServerSide(req.tenantId, req.token, req.user?.email);
         const { prompt, complex } = req.body;
         const text = await generateInvoiceInsight(prompt, complex);
         res.json({ text });

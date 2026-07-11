@@ -57,7 +57,7 @@ export async function saveSubscriptionInfoToDb(companyId: string): Promise<void>
   try {
     const { error } = await supabase.from('generated_documents').upsert({
       id: docId,
-      company_id: companyId === 'cravebiz-inc' ? '00000000-0000-0000-0000-000000000000' : companyId,
+      company_id: companyId,
       document_type: 'cravebiz_workspace_settings',
       content: {
         tier: sub.tier,
@@ -123,7 +123,7 @@ export async function saveGlobalPlanSettings(limits: typeof TIER_LIMITS): Promis
   try {
     const { error } = await supabase.from('generated_documents').upsert({
       id: '99999999-9999-9999-9999-999999999999',
-      company_id: '00000000-0000-0000-0000-000000000000',
+      company_id: 'cravebiz-inc',
       document_type: 'cravebiz_global_pricing_settings',
       content: limits
     });

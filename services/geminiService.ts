@@ -1,24 +1,23 @@
-import { deductAiUnit } from "./subscriptionService.ts";
-
-function preCheckAndDeduct() {
-    const companyId = localStorage.getItem('cravebiz_tenant');
-    if (companyId) {
-        deductAiUnit(companyId);
-    }
-}
+import { api } from "../lib/api.ts";
+import { syncSubscriptionInfoFromDb } from "./subscriptionService.ts";
 
 export async function generateInvoiceInsight(prompt: string, complex: boolean = false): Promise<string> {
     try {
-        preCheckAndDeduct();
+        const companyId = localStorage.getItem('cravebiz_tenant') || '';
+        const headers = await api.getAuthHeaders(companyId);
         const response = await fetch("/api/ai/invoice-insight", {
             method: "POST",
-            headers: { "Content-Type": "application/json" },
+            headers,
             body: JSON.stringify({ prompt, complex })
         });
         if (!response.ok) {
-            throw new Error(`HTTP error! status: ${response.status}`);
+            const errData = await response.json().catch(() => ({}));
+            throw new Error(errData.error || `HTTP error! status: ${response.status}`);
         }
         const data = await response.json();
+        if (companyId) {
+            syncSubscriptionInfoFromDb(companyId).catch(err => console.warn("Sync err:", err));
+        }
         return data.text || "I'm sorry, I couldn't generate an insight for this invoice at the moment.";
     } catch (error: any) {
         console.error("Client Error calling generateInvoiceInsight API:", error);

@@ -1,12 +1,6 @@
 import { GeneratedDocument, Invoice, InvoiceItem, DocumentReviewResult } from "../types.ts";
-import { deductAiUnit } from "./subscriptionService.ts";
-
-function preCheckAndDeduct() {
-    const companyId = localStorage.getItem('cravebiz_tenant');
-    if (companyId) {
-        deductAiUnit(companyId);
-    }
-}
+import { api } from "../lib/api.ts";
+import { syncSubscriptionInfoFromDb } from "./subscriptionService.ts";
 
 export async function generateTextResponse(
     prompt: string,
@@ -14,16 +8,21 @@ export async function generateTextResponse(
     systemInstruction?: string,
 ): Promise<string> {
     try {
-        preCheckAndDeduct();
+        const companyId = localStorage.getItem('cravebiz_tenant') || '';
+        const headers = await api.getAuthHeaders(companyId);
         const response = await fetch("/api/ai/text-response", {
             method: "POST",
-            headers: { "Content-Type": "application/json" },
+            headers,
             body: JSON.stringify({ prompt, model, systemInstruction })
         });
         if (!response.ok) {
-            throw new Error(`HTTP error! status: ${response.status}`);
+            const errData = await response.json().catch(() => ({}));
+            throw new Error(errData.error || `HTTP error! status: ${response.status}`);
         }
         const data = await response.json();
+        if (companyId) {
+            syncSubscriptionInfoFromDb(companyId).catch(err => console.warn("Sync err:", err));
+        }
         return data.text || "Sorry, I encountered an error while processing your request.";
     } catch (error: any) {
         console.error("Client Error calling generateTextResponse API:", error);
@@ -36,19 +35,24 @@ export async function transformDocument(
     companyContext: any
 ): Promise<GeneratedDocument | null> {
     try {
-        preCheckAndDeduct();
+        const companyId = localStorage.getItem('cravebiz_tenant') || '';
+        const headers = await api.getAuthHeaders(companyId);
         const response = await fetch("/api/ai/transform-document", {
             method: "POST",
-            headers: { "Content-Type": "application/json" },
+            headers,
             body: JSON.stringify({ rawContent, companyContext })
         });
         if (!response.ok) {
-            throw new Error(`HTTP error! status: ${response.status}`);
+            const errData = await response.json().catch(() => ({}));
+            throw new Error(errData.error || `HTTP error! status: ${response.status}`);
+        }
+        if (companyId) {
+            syncSubscriptionInfoFromDb(companyId).catch(err => console.warn("Sync err:", err));
         }
         return await response.json();
-    } catch (error) {
+    } catch (error: any) {
         console.error("Client Error calling transformDocument API:", error);
-        return null;
+        throw error;
     }
 }
 
@@ -57,14 +61,19 @@ export async function generateRenewalInvoiceSuggestion(
     expiringItems: InvoiceItem[]
 ): Promise<Partial<Invoice> | null> {
     try {
-        preCheckAndDeduct();
+        const companyId = localStorage.getItem('cravebiz_tenant') || '';
+        const headers = await api.getAuthHeaders(companyId);
         const response = await fetch("/api/ai/renewal-suggestion", {
             method: "POST",
-            headers: { "Content-Type": "application/json" },
+            headers,
             body: JSON.stringify({ clientId, expiringItems })
         });
         if (!response.ok) {
-            throw new Error(`HTTP error! status: ${response.status}`);
+            const errData = await response.json().catch(() => ({}));
+            throw new Error(errData.error || `HTTP error! status: ${response.status}`);
+        }
+        if (companyId) {
+            syncSubscriptionInfoFromDb(companyId).catch(err => console.warn("Sync err:", err));
         }
         return await response.json();
     } catch (error) {
@@ -78,16 +87,21 @@ export async function generateClientPaymentHealthReport(
     paymentHistory: any[]
 ): Promise<string> {
     try {
-        preCheckAndDeduct();
+        const companyId = localStorage.getItem('cravebiz_tenant') || '';
+        const headers = await api.getAuthHeaders(companyId);
         const response = await fetch("/api/ai/client-payment-health-report", {
             method: "POST",
-            headers: { "Content-Type": "application/json" },
+            headers,
             body: JSON.stringify({ clientId, paymentHistory })
         });
         if (!response.ok) {
-            throw new Error(`HTTP error! status: ${response.status}`);
+            const errData = await response.json().catch(() => ({}));
+            throw new Error(errData.error || `HTTP error! status: ${response.status}`);
         }
         const data = await response.json();
+        if (companyId) {
+            syncSubscriptionInfoFromDb(companyId).catch(err => console.warn("Sync err:", err));
+        }
         return data.text || "Failed to generate health report.";
     } catch (error: any) {
         console.error("Client Error calling client payment health report API:", error);
@@ -100,19 +114,24 @@ export async function generateDocumentFromPurpose(
     companyContext: any
 ): Promise<GeneratedDocument | null> {
     try {
-        preCheckAndDeduct();
+        const companyId = localStorage.getItem('cravebiz_tenant') || '';
+        const headers = await api.getAuthHeaders(companyId);
         const response = await fetch("/api/ai/generate-document-from-purpose", {
             method: "POST",
-            headers: { "Content-Type": "application/json" },
+            headers,
             body: JSON.stringify({ purpose, companyContext })
         });
         if (!response.ok) {
-            throw new Error(`HTTP error! status: ${response.status}`);
+            const errData = await response.json().catch(() => ({}));
+            throw new Error(errData.error || `HTTP error! status: ${response.status}`);
+        }
+        if (companyId) {
+            syncSubscriptionInfoFromDb(companyId).catch(err => console.warn("Sync err:", err));
         }
         return await response.json();
-    } catch (error) {
+    } catch (error: any) {
         console.error("Client Error calling generateDocumentFromPurpose API:", error);
-        return null;
+        throw error;
     }
 }
 
@@ -120,18 +139,23 @@ export async function reviewDocumentContent(
     documentText: string
 ): Promise<DocumentReviewResult | null> {
     try {
-        preCheckAndDeduct();
+        const companyId = localStorage.getItem('cravebiz_tenant') || '';
+        const headers = await api.getAuthHeaders(companyId);
         const response = await fetch("/api/ai/review-document-content", {
             method: "POST",
-            headers: { "Content-Type": "application/json" },
+            headers,
             body: JSON.stringify({ documentText })
         });
         if (!response.ok) {
-            throw new Error(`HTTP error! status: ${response.status}`);
+            const errData = await response.json().catch(() => ({}));
+            throw new Error(errData.error || `HTTP error! status: ${response.status}`);
+        }
+        if (companyId) {
+            syncSubscriptionInfoFromDb(companyId).catch(err => console.warn("Sync err:", err));
         }
         return await response.json();
-    } catch (error) {
+    } catch (error: any) {
         console.error("Client Error calling reviewDocumentContent API:", error);
-        return null;
+        throw error;
     }
 }
