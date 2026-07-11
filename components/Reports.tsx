@@ -4,6 +4,8 @@ import { BarChart, PieChart, Pie, Cell, Bar, XAxis, YAxis, CartesianGrid, Toolti
 import StatCard from './StatCard';
 import { Invoice, Client, Service, InvoiceStatus } from '../types';
 import { generateTextResponse } from '../services/aiGenerationService';
+import { getSubscriptionInfo } from '../services/subscriptionService';
+import ReactMarkdown from 'react-markdown';
 
 // Helper to convert data to CSV string
 const convertToCsv = (data: any[], headers: string[]): string => {
@@ -49,15 +51,19 @@ interface ReportsProps {
     invoices: Invoice[];
     clients: Client[];
     services: Service[];
+    activeTenantId?: string;
 }
 
 type DateRange = 'all_time' | 'last_30_days' | 'this_quarter' | 'this_year';
 
-const Reports: React.FC<ReportsProps> = ({invoices, clients, services}) => {
+const Reports: React.FC<ReportsProps> = ({invoices, clients, services, activeTenantId}) => {
     const [reportQuery, setReportQuery] = useState('');
     const [aiReportResponse, setAiReportResponse] = useState<string | null>(null);
     const [isLoadingReport, setIsLoadingReport] = useState(false);
     const [dateRange, setDateRange] = useState<DateRange>('all_time');
+
+    const subInfo = useMemo(() => getSubscriptionInfo(activeTenantId || ''), [activeTenantId]);
+    const isAiEnabled = subInfo.aiModeEnabled;
 
     const isInvoiceInDateRange = useCallback((invoice: Invoice, startDate: Date | null, endDate: Date | null) => {
         const invoiceDate = new Date(invoice.issueDate);
@@ -223,13 +229,27 @@ const Reports: React.FC<ReportsProps> = ({invoices, clients, services}) => {
 
     const handleGenerateReportAI = async (e: React.FormEvent) => {
         e.preventDefault();
+        if (!isAiEnabled) {
+            setAiReportResponse("AI Mode is currently turned OFF. Please turn ON AI Mode in the workspace header or settings to use AI features.");
+            return;
+        }
         if (!reportQuery.trim() || isLoadingReport) return;
         setIsLoadingReport(true);
         setAiReportResponse(null);
         try {
             const dataDump = `Filtered by ${dateRange}. Total Revenue: ₦${totalRevenue.toLocaleString()}. Invoices: ${totalInvoicesOverall}. Paid: ${paidInvoicesCount}. Aging: ${overdueAgingData.map(d => `${d.label}: ₦${d.amount}`).join(', ')}`;
-            const prompt = `Based on the following data, answer: "${reportQuery}". Data: ${dataDump}`;
-            const response = await generateTextResponse(prompt, 'gemini-3-pro-preview', "Platform Financial Analyst.");
+            
+            const systemInstruction = `You are a professional Chief Financial Officer (CFO) and lead SME performance analyst.
+Produce highly polished, boardroom-ready, executive-grade financial analysis.
+Format your output with high-level professional markdown styling. Use clear, structured sections.
+Present quantitative metrics and KPI breakdowns clearly (using bullets or beautifully formatted tables where relevant).
+Avoid informal jargon, conversational filler, or leaking raw prompt details. Focus on actionable insights, liquidity tracking, aging summary, and collection efficiency. Use elegant presentation principles.`;
+
+            const prompt = `Based on the following SME operations ledger data, provide a pristine, executive-grade financial analysis answering the user's inquiry.
+Inquiry: "${reportQuery}"
+Operational Dataset: ${dataDump}`;
+
+            const response = await generateTextResponse(prompt, 'gemini-3-pro-preview', systemInstruction);
             setAiReportResponse(response);
         } catch (error) {
             setAiReportResponse("AI service disrupted. Please retry.");
@@ -289,25 +309,69 @@ const Reports: React.FC<ReportsProps> = ({invoices, clients, services}) => {
               <svg className="w-6 h-6 text-primary-600" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M13 10V3L4 14h7v7l9-11h-7z"></path></svg>
               AI Performance Analysis
           </h3>
+
+          {!isAiEnabled && (
+              <div className="bg-amber-50 border border-amber-200 text-amber-900 rounded-2xl p-5 text-xs font-semibold mb-6 flex items-start gap-3.5 leading-relaxed">
+                  <svg className="w-5 h-5 text-amber-600 shrink-0 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
+                  </svg>
+                  <div>
+                      <p className="font-bold text-amber-950 uppercase tracking-wider text-[10px] mb-1">AI Mode is Off</p>
+                      <p>The AI Performance Analysis feature is currently inactive because AI Mode is turned OFF for this workspace. Please enable AI Mode in the workspace header or settings to run advanced queries and compile financial dossiers.</p>
+                  </div>
+              </div>
+          )}
+
           <form onSubmit={handleGenerateReportAI} className="space-y-6">
               <textarea
                   id="reportQuery"
                   value={reportQuery}
                   onChange={e => setReportQuery(e.target.value)}
                   rows={2}
-                  className="w-full px-6 py-4 border-2 border-gray-100 rounded-2xl outline-none focus:border-primary-500 font-medium bg-gray-50/30"
-                  placeholder="Ask a specific financial question about this period..."
-                  disabled={isLoadingReport}
+                  className="w-full px-6 py-4 border-2 border-gray-100 rounded-2xl outline-none focus:border-primary-500 font-medium bg-gray-50/30 disabled:opacity-50 disabled:cursor-not-allowed"
+                  placeholder={isAiEnabled ? "Ask a specific financial question about this period..." : "AI Mode is disabled. Enable AI Mode in the header to ask financial questions."}
+                  disabled={isLoadingReport || !isAiEnabled}
               ></textarea>
               <div className="flex justify-end">
-                  <button type="submit" className="bg-primary-600 text-white px-10 py-4 rounded-2xl font-black uppercase tracking-widest text-xs shadow-xl hover:bg-primary-700 transition-all disabled:bg-gray-300 cursor-pointer" disabled={isLoadingReport || !reportQuery.trim()}>
+                  <button type="submit" className="bg-primary-600 text-white px-10 py-4 rounded-2xl font-black uppercase tracking-widest text-xs shadow-xl hover:bg-primary-700 transition-all disabled:bg-gray-350 disabled:cursor-not-allowed cursor-pointer" disabled={isLoadingReport || !reportQuery.trim() || !isAiEnabled}>
                       {isLoadingReport ? "Analyzing..." : "Query Database"}
                   </button>
               </div>
           </form>
+
           {aiReportResponse && (
-              <div className="mt-8 p-6 bg-primary-50 rounded-2xl border border-primary-100 text-sm font-medium leading-relaxed italic text-primary-900 animate-in slide-in-from-top-4">
-                  {aiReportResponse}
+              <div className="mt-8 bg-slate-50 border border-slate-200 rounded-[2rem] p-8 shadow-inner animate-in slide-in-from-top-4">
+                  <div className="flex items-center justify-between mb-6 pb-4 border-b border-slate-200">
+                      <div>
+                          <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest block mb-0.5">EXECUTIVE PERFORMANCE DOSSIER</span>
+                          <h4 className="text-sm font-black text-slate-800 uppercase tracking-tight">Financial & SME Analysis Report</h4>
+                      </div>
+                      <span className="bg-slate-200 text-slate-850 px-3 py-1 rounded-md text-[9px] font-black tracking-widest uppercase shadow-sm">
+                          CONFIDENTIAL
+                      </span>
+                  </div>
+                  <div className="prose prose-slate max-w-none">
+                      <ReactMarkdown
+                          components={{
+                              h1: ({node, ...props}) => <h1 className="text-sm font-black text-slate-900 mt-6 mb-2 tracking-widest uppercase border-b pb-1 border-slate-300" {...props} />,
+                              h2: ({node, ...props}) => <h2 className="text-xs font-black text-slate-800 mt-5 mb-2 tracking-wider uppercase" {...props} />,
+                              h3: ({node, ...props}) => <h3 className="text-xs font-bold text-slate-800 mt-4 mb-1.5 uppercase" {...props} />,
+                              p: ({node, ...props}) => <p className="text-xs text-slate-600 leading-relaxed mb-3" {...props} />,
+                              ul: ({node, ...props}) => <ul className="list-disc pl-5 mb-4 space-y-1.5 text-xs text-slate-600" {...props} />,
+                              ol: ({node, ...props}) => <ol className="list-decimal pl-5 mb-4 space-y-1.5 text-xs text-slate-600" {...props} />,
+                              li: ({node, ...props}) => <li className="pl-1 leading-relaxed" {...props} />,
+                              strong: ({node, ...props}) => <strong className="font-extrabold text-slate-950" {...props} />,
+                              table: ({node, ...props}) => <div className="overflow-x-auto my-4"><table className="min-w-full divide-y divide-slate-200 border border-slate-200 rounded-xl text-xs bg-white shadow-sm" {...props} /></div>,
+                              thead: ({node, ...props}) => <thead className="bg-slate-50" {...props} />,
+                              tbody: ({node, ...props}) => <tbody className="divide-y divide-slate-200" {...props} />,
+                              tr: ({node, ...props}) => <tr className="hover:bg-slate-50/50 transition-colors" {...props} />,
+                              th: ({node, ...props}) => <th className="px-4 py-2 text-left text-[10px] font-black text-slate-700 uppercase tracking-wider" {...props} />,
+                              td: ({node, ...props}) => <td className="px-4 py-2 text-xs text-slate-600 font-medium" {...props} />,
+                          }}
+                      >
+                          {aiReportResponse}
+                      </ReactMarkdown>
+                  </div>
               </div>
           )}
       </div>

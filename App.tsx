@@ -815,7 +815,7 @@ export default function App() {
               setSyncError(stringifyError(e));
           }
       }} />;
-      case 'reports': return <Reports invoices={invoices} clients={clients} services={services} />;
+      case 'reports': return <Reports invoices={invoices} clients={clients} services={services} activeTenantId={activeTenantId || ''} />;
       case 'payment-intelligence': return <PaymentIntelligence invoices={invoices} clients={clients} />;
       case 'admin-dashboard': {
           const allTenantsData: AllTenantsData = {};

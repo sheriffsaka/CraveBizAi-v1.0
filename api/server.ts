@@ -330,15 +330,8 @@ async function deductAiUnitServerSide(tenantId: string, token?: string, userEmai
         throw new Error("AI features are not available on the Free Subscription Plan. Please upgrade your subscription tier or purchase an AI Credit Refill.");
     }
 
-    // Smart self-healing: If AI mode is currently turned OFF, but they have positive AI units and are explicitly
-    // requesting an AI feature, we auto-enable and heal the status to avoid blocking the user.
     if (!aiModeEnabled) {
-        if (aiUnits > 0) {
-            console.log(`[AI Deduct] Auto-healing: AI Mode was OFF, but user has ${aiUnits} units. Auto-enabling AI Mode.`);
-            aiModeEnabled = true;
-        } else {
-            throw new Error("AI Mode is currently turned OFF. Please turn ON AI Mode in the workspace header or settings to use AI features.");
-        }
+        throw new Error("AI Mode is currently turned OFF. Please turn ON AI Mode in the workspace header or settings to use AI features.");
     }
 
     if (aiUnits <= 0) {
