@@ -980,6 +980,227 @@ app.post("/api/ai/invoice-insight", verifyTenant, async (req: any, res) => {
     }
 });
 
+// SECURE SUBSCRIPTION MANAGEMENT ENDPOINTS (VERIFY VIA FLUTTERWAVE IF KEY PROVIDED)
+
+// 1. Upgrade subscription tier
+app.post("/api/subscription/upgrade", verifyTenant, async (req: any, res) => {
+    try {
+        const { tier, transactionId } = req.body;
+        const tenantId = req.tenantId;
+
+        if (!['Free', 'Starter', 'Growth', 'Enterprise'].includes(tier)) {
+            return res.status(400).json({ error: "Invalid subscription tier." });
+        }
+
+        const expectedAmounts: Record<string, number> = {
+            Free: 0,
+            Starter: 15000,
+            Growth: 35000,
+            Enterprise: 85000
+        };
+
+        const expectedAmount = expectedAmounts[tier];
+
+        // If a paid tier, and FLUTTERWAVE_SECRET_KEY is provided, we securely verify the transaction with Flutterwave API
+        const flwSecretKey = process.env.FLUTTERWAVE_SECRET_KEY;
+        if (tier !== 'Free' && flwSecretKey && transactionId) {
+            console.log(`Verifying Flutterwave transaction ${transactionId} for tier ${tier}...`);
+            const verifyUrl = `https://api.flutterwave.com/v3/transactions/${transactionId}/verify`;
+            
+            try {
+                const flwRes = await fetch(verifyUrl, {
+                    method: "GET",
+                    headers: {
+                        "Authorization": `Bearer ${flwSecretKey}`,
+                        "Content-Type": "application/json"
+                    }
+                });
+
+                if (!flwRes.ok) {
+                    const flwErrorText = await flwRes.text();
+                    console.error("Flutterwave API verification call failed:", flwErrorText);
+                    return res.status(400).json({ error: "Could not securely verify payment with Flutterwave API." });
+                }
+
+                const flwData: any = await flwRes.json();
+                if (flwData.status !== "success" || !flwData.data || (flwData.data.status !== "successful" && flwData.data.status !== "completed")) {
+                    return res.status(400).json({ error: "Payment transaction was not successful or is incomplete." });
+                }
+
+                if (flwData.data.currency !== "NGN") {
+                    return res.status(400).json({ error: "Invalid currency. Must pay in NGN." });
+                }
+
+                if (flwData.data.amount < expectedAmount) {
+                    return res.status(400).json({ error: `Insufficient payment amount. Paid: ${flwData.data.amount}, Expected: ${expectedAmount}` });
+                }
+            } catch (flwErr: any) {
+                console.error("Flutterwave API fetch error:", flwErr);
+                return res.status(400).json({ error: "Failed to communicate with Flutterwave verification servers." });
+            }
+        }
+
+        // Get docId
+        let docId = tenantId;
+        if (tenantId === "cravebiz-inc") {
+            docId = "00000000-0000-0000-0000-000000000000";
+        } else if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(tenantId)) {
+            docId = "11111111-1111-1111-1111-111111111111";
+        }
+
+        // Retrieve current settings first to preserve fields like memberPermissions
+        const client = getAuthenticatedClient(req.token);
+        const { data: currentSettings } = await client
+            .from("generated_documents")
+            .select("*")
+            .eq("id", docId)
+            .maybeSingle();
+
+        let memberPermissions = {};
+        if (currentSettings && currentSettings.content) {
+            memberPermissions = (currentSettings.content as any).memberPermissions || {};
+        }
+
+        const tierLimits: Record<string, number> = {
+            Free: 0,
+            Starter: 200,
+            Growth: 500,
+            Enterprise: 1000
+        };
+
+        const newUnits = tierLimits[tier];
+
+        // Securely upsert the new tier and reset AI credits to standard plan limits
+        const { error: upsertError } = await client
+            .from("generated_documents")
+            .upsert({
+                id: docId,
+                company_id: tenantId,
+                document_type: "cravebiz_workspace_settings",
+                content: {
+                    tier,
+                    aiUnits: newUnits,
+                    aiModeEnabled: tier !== 'Free',
+                    memberPermissions
+                }
+            });
+
+        if (upsertError) {
+            console.error("Backend subscription upgrade upsert error:", upsertError);
+            return res.status(500).json({ error: "Failed to update subscription in secure cloud vault." });
+        }
+
+        res.json({ success: true, tier, aiUnits: newUnits });
+    } catch (err: any) {
+        console.error("Express /api/subscription/upgrade error:", err);
+        res.status(500).json({ error: err.message || "Internal server error" });
+    }
+});
+
+// 2. Refill AI credits
+app.post("/api/subscription/refill", verifyTenant, async (req: any, res) => {
+    try {
+        const { transactionId } = req.body;
+        const tenantId = req.tenantId;
+
+        const expectedAmount = 2500; // Refill cost is ₦2,500 NGN for 50 credits
+
+        // If FLUTTERWAVE_SECRET_KEY is provided, verify transaction
+        const flwSecretKey = process.env.FLUTTERWAVE_SECRET_KEY;
+        if (flwSecretKey && transactionId) {
+            console.log(`Verifying Flutterwave transaction ${transactionId} for refill...`);
+            const verifyUrl = `https://api.flutterwave.com/v3/transactions/${transactionId}/verify`;
+            
+            try {
+                const flwRes = await fetch(verifyUrl, {
+                    method: "GET",
+                    headers: {
+                        "Authorization": `Bearer ${flwSecretKey}`,
+                        "Content-Type": "application/json"
+                    }
+                });
+
+                if (!flwRes.ok) {
+                    const flwErrorText = await flwRes.text();
+                    console.error("Flutterwave API verification call failed:", flwErrorText);
+                    return res.status(400).json({ error: "Could not securely verify payment with Flutterwave API." });
+                }
+
+                const flwData: any = await flwRes.json();
+                if (flwData.status !== "success" || !flwData.data || (flwData.data.status !== "successful" && flwData.data.status !== "completed")) {
+                    return res.status(400).json({ error: "Payment transaction was not successful or is incomplete." });
+                }
+
+                if (flwData.data.currency !== "NGN") {
+                    return res.status(400).json({ error: "Invalid currency. Must pay in NGN." });
+                }
+
+                if (flwData.data.amount < expectedAmount) {
+                    return res.status(400).json({ error: `Insufficient payment amount. Paid: ${flwData.data.amount}, Expected: ${expectedAmount}` });
+                }
+            } catch (flwErr: any) {
+                console.error("Flutterwave API fetch error:", flwErr);
+                return res.status(400).json({ error: "Failed to communicate with Flutterwave verification servers." });
+            }
+        }
+
+        // Get docId
+        let docId = tenantId;
+        if (tenantId === "cravebiz-inc") {
+            docId = "00000000-0000-0000-0000-000000000000";
+        } else if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(tenantId)) {
+            docId = "11111111-1111-1111-1111-111111111111";
+        }
+
+        const client = getAuthenticatedClient(req.token);
+        const { data: currentSettings } = await client
+            .from("generated_documents")
+            .select("*")
+            .eq("id", docId)
+            .maybeSingle();
+
+        let tier = "Free";
+        let aiUnits = 0;
+        let aiModeEnabled = false;
+        let memberPermissions = {};
+
+        if (currentSettings && currentSettings.content) {
+            const content = currentSettings.content as any;
+            tier = content.tier || tier;
+            aiUnits = content.aiUnits !== undefined ? content.aiUnits : aiUnits;
+            aiModeEnabled = content.aiModeEnabled !== undefined ? content.aiModeEnabled : aiModeEnabled;
+            memberPermissions = content.memberPermissions || {};
+        }
+
+        const newUnits = aiUnits + 50;
+
+        // Securely upsert the new credit balance
+        const { error: upsertError } = await client
+            .from("generated_documents")
+            .upsert({
+                id: docId,
+                company_id: tenantId,
+                document_type: "cravebiz_workspace_settings",
+                content: {
+                    tier,
+                    aiUnits: newUnits,
+                    aiModeEnabled: aiModeEnabled || tier !== 'Free',
+                    memberPermissions
+                }
+            });
+
+        if (upsertError) {
+            console.error("Backend subscription refill upsert error:", upsertError);
+            return res.status(500).json({ error: "Failed to update AI units in secure cloud vault." });
+        }
+
+        res.json({ success: true, tier, aiUnits: newUnits });
+    } catch (err: any) {
+        console.error("Express /api/subscription/refill error:", err);
+        res.status(500).json({ error: err.message || "Internal server error" });
+    }
+});
+
 // Vite Dev Server / Static Hosting setup (only when not on Vercel)
 if (!process.env.VERCEL) {
     if (process.env.NODE_ENV !== "production") {

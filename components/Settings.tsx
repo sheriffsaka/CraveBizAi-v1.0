@@ -3,7 +3,7 @@ import { Company, BankAccount, User, WorkspaceRole, AuditLog } from '../types';
 import { supabase } from '../lib/api';
 import ImageCropperModal from './ImageCropperModal';
 import Icon from './common/Icon';
-import { getSubscriptionInfo, setSubscriptionInfo, SubscriptionTier, TIER_LIMITS, saveSubscriptionInfoToDb } from '../services/subscriptionService';
+import { getSubscriptionInfo, setSubscriptionInfo, SubscriptionTier, TIER_LIMITS, saveSubscriptionInfoToDb, secureUpgradeSubscriptionOnDb, secureRefillCreditsOnDb } from '../services/subscriptionService';
 
 interface SettingsProps {
   company: Company | null;
@@ -181,15 +181,21 @@ const Settings: React.FC<SettingsProps> = ({ company, onSaveChanges, onInviteUse
         console.log("Flutterwave Plan upgrade response:", data);
         if (data.status === "successful" || data.status === "completed") {
           isSuccess = true;
-          // Set subscription info and reset units to plan default
-          setSubscriptionInfo(activeTenantId, tier);
-          setSubInfo(getSubscriptionInfo(activeTenantId));
-          window.dispatchEvent(new Event('cravebiz_subscription_change'));
+          const transactionId = data.transaction_id || data.tx_ref || "";
           
-          if (onTriggerAuditLog) {
-            onTriggerAuditLog('Purchase Subscription', 'Subscription', `Upgraded to ${tier} Plan for ₦${checkoutAmount.toLocaleString()}`);
-          }
-          alert(`Congratulations! Your workspace has been successfully upgraded to the ${tier} Plan.`);
+          // Securely upgrade on backend DB
+          secureUpgradeSubscriptionOnDb(activeTenantId, tier, transactionId)
+            .then(() => {
+              setSubInfo(getSubscriptionInfo(activeTenantId));
+              if (onTriggerAuditLog) {
+                onTriggerAuditLog('Purchase Subscription', 'Subscription', `Upgraded to ${tier} Plan for ₦${checkoutAmount.toLocaleString()}`);
+              }
+              alert(`Congratulations! Your workspace has been successfully upgraded to the ${tier} Plan.`);
+            })
+            .catch((err: any) => {
+              console.error("Backend upgrade error:", err);
+              alert(`Subscription Payment was received, but we encountered an issue syncing it to our secure vault: ${err.message || err}. Please contact support with your Transaction ID: ${transactionId}.`);
+            });
         } else {
           alert(`Failed Subscription Upgrade: Payment transaction status was '${data.status}'. Please try again.`);
         }
@@ -276,15 +282,21 @@ const Settings: React.FC<SettingsProps> = ({ company, onSaveChanges, onInviteUse
         console.log("Flutterwave Success response:", data);
         if (data.status === "successful" || data.status === "completed") {
           isSuccess = true;
-          const newUnits = subInfo.aiUnits + 50;
-          setSubscriptionInfo(activeTenantId, subInfo.tier, newUnits, true);
-          setSubInfo(getSubscriptionInfo(activeTenantId));
-          window.dispatchEvent(new Event('cravebiz_subscription_change'));
+          const transactionId = data.transaction_id || data.tx_ref || "";
           
-          if (onTriggerAuditLog) {
-            onTriggerAuditLog('Purchase Credits', 'Subscription', `Purchased 50 AI Credits for ₦${checkoutAmount.toLocaleString()}`);
-          }
-          alert(`Refill Successful! 50 AI credits have been added and AI Mode enabled for your workspace.`);
+          // Securely refill credits on backend DB
+          secureRefillCreditsOnDb(activeTenantId, transactionId)
+            .then(() => {
+              setSubInfo(getSubscriptionInfo(activeTenantId));
+              if (onTriggerAuditLog) {
+                onTriggerAuditLog('Purchase Credits', 'Subscription', `Purchased 50 AI Credits for ₦${checkoutAmount.toLocaleString()}`);
+              }
+              alert(`Refill Successful! 50 AI credits have been added and AI Mode enabled for your workspace.`);
+            })
+            .catch((err: any) => {
+              console.error("Backend refill error:", err);
+              alert(`Refill Payment was received, but we encountered an issue syncing credits to our secure vault: ${err.message || err}. Please contact support with your Transaction ID: ${transactionId}.`);
+            });
         } else {
           alert(`Failed Refill: Payment transaction status was '${data.status}'. Please try again.`);
         }

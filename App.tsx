@@ -26,7 +26,7 @@ import PublicSigningPortal from './components/PublicSigningPortal';
 import ProjectManagement from './components/ProjectManagement';
 import { api, supabase } from './lib/api';
 import { generateRenewalInvoiceSuggestion } from './services/aiGenerationService';
-import { getSubscriptionInfo, setSubscriptionInfo, SubscriptionTier, TIER_LIMITS, syncGlobalPlanSettings, syncSubscriptionInfoFromDb } from './services/subscriptionService';
+import { getSubscriptionInfo, setSubscriptionInfo, SubscriptionTier, TIER_LIMITS, syncGlobalPlanSettings, syncSubscriptionInfoFromDb, secureRefillCreditsOnDb } from './services/subscriptionService';
 import { Invoice, Client, Service, Company, User, TenantData, InvoiceStatus, AllTenantsData, GeneratedDocument, DbDocumentSignatory, Project, WorkspaceRole, AuditLog } from './types';
 import Icon from './components/common/Icon';
 
@@ -1007,13 +1007,18 @@ export default function App() {
                           console.log("Flutterwave refill response:", data);
                           if (data.status === "successful" || data.status === "completed") {
                             isSuccess = true;
-                            // Refill 50 credits and update
-                            const sub = getSubscriptionInfo(companyId);
-                            const newUnits = sub.aiUnits + 50;
-                            setSubscriptionInfo(companyId, sub.tier, newUnits, sub.aiModeEnabled);
-                            window.dispatchEvent(new Event('cravebiz_subscription_change'));
-                            setSubErrorMsg(null);
-                            alert("Congratulations! 50 AI credits have been successfully added to your workspace.");
+                            const transactionId = data.transaction_id || data.tx_ref || "";
+                            
+                            // Securely refill credits on backend DB
+                            secureRefillCreditsOnDb(companyId, transactionId)
+                              .then(() => {
+                                setSubErrorMsg(null);
+                                alert("Congratulations! 50 AI credits have been successfully added to your workspace.");
+                              })
+                              .catch((err: any) => {
+                                console.error("Backend refill error:", err);
+                                alert(`Refill Payment was received, but we encountered an issue syncing credits to our secure vault: ${err.message || err}. Please contact support with your Transaction ID: ${transactionId}.`);
+                              });
                           } else {
                             alert(`Failed Token Refill: Payment status was '${data.status}'. Please try again.`);
                           }

@@ -1,4 +1,4 @@
-import { supabase } from '../lib/api';
+import { supabase, api } from '../lib/api';
 
 export type SubscriptionTier = 'Free' | 'Starter' | 'Growth' | 'Enterprise';
 
@@ -345,6 +345,68 @@ export function deductAiUnit(companyId: string): void {
   saveSubscriptionInfoToDb(companyId).catch(err => console.warn("Failed to sync AI deduction to Supabase:", err));
 
   // Dispatch event for UI re-render
+  window.dispatchEvent(new Event('cravebiz_subscription_change'));
+}
+
+/**
+ * Securely calls backend to upgrade subscription tier in DB
+ */
+export async function secureUpgradeSubscriptionOnDb(
+  companyId: string,
+  tier: SubscriptionTier,
+  transactionId?: string
+): Promise<void> {
+  if (!companyId) return;
+  const headers = await api.getAuthHeaders(companyId);
+  
+  const response = await fetch("/api/subscription/upgrade", {
+    method: "POST",
+    headers,
+    body: JSON.stringify({ tier, transactionId })
+  });
+
+  if (!response.ok) {
+    const errData = await response.json().catch(() => ({}));
+    throw new Error(errData.error || `Upgrade failed with status ${response.status}`);
+  }
+
+  const data = await response.json();
+  
+  // Update client-side local cache synchronously
+  localStorage.setItem(`cravebiz_tier_${companyId}`, tier);
+  localStorage.setItem(`cravebiz_units_${companyId}`, data.aiUnits.toString());
+  localStorage.setItem(`cravebiz_aimode_${companyId}`, (tier !== 'Free').toString());
+  
+  window.dispatchEvent(new Event('cravebiz_subscription_change'));
+}
+
+/**
+ * Securely calls backend to refill AI credits in DB
+ */
+export async function secureRefillCreditsOnDb(
+  companyId: string,
+  transactionId?: string
+): Promise<void> {
+  if (!companyId) return;
+  const headers = await api.getAuthHeaders(companyId);
+  
+  const response = await fetch("/api/subscription/refill", {
+    method: "POST",
+    headers,
+    body: JSON.stringify({ transactionId })
+  });
+
+  if (!response.ok) {
+    const errData = await response.json().catch(() => ({}));
+    throw new Error(errData.error || `Refill failed with status ${response.status}`);
+  }
+
+  const data = await response.json();
+  
+  // Update client-side local cache synchronously
+  localStorage.setItem(`cravebiz_units_${companyId}`, data.aiUnits.toString());
+  localStorage.setItem(`cravebiz_aimode_${companyId}`, 'true');
+  
   window.dispatchEvent(new Event('cravebiz_subscription_change'));
 }
 
