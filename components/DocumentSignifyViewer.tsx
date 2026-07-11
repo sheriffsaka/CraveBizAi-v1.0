@@ -224,6 +224,11 @@ export const DocumentSignifyViewer: React.FC<DocumentSignifyViewerProps> = ({
               } catch (e) {
                 console.warn("Failed decoding raw base64 string:", e);
               }
+            } else if (fileUrl.startsWith('http://') || fileUrl.startsWith('https://')) {
+              const currentOrigin = window.location.origin;
+              if (!fileUrl.startsWith(currentOrigin)) {
+                pdfSource = `/api/file-proxy?url=${encodeURIComponent(fileUrl)}`;
+              }
             }
           }
 

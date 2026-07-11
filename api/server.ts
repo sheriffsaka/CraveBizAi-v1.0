@@ -24,8 +24,49 @@ const supabaseClient = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 const app = express();
 const PORT = 3000;
 
-// Serve uploaded original and signed documents statically
-app.use("/uploads", express.static(path.join(process.cwd(), "uploads")));
+// Serve uploaded original and signed documents statically with CORS headers
+app.use("/uploads", (req, res, next) => {
+    res.setHeader("Access-Control-Allow-Origin", "*");
+    res.setHeader("Access-Control-Allow-Methods", "GET, OPTIONS");
+    res.setHeader("Access-Control-Allow-Headers", "*");
+    if (req.method === "OPTIONS") {
+        return res.sendStatus(200);
+    }
+    next();
+}, express.static(path.join(process.cwd(), "uploads")));
+
+// Serve a server-side proxy for remote files to bypass CORS issues on clients
+app.get("/api/file-proxy", async (req, res) => {
+    try {
+        const fileUrl = req.query.url as string;
+        if (!fileUrl) {
+            return res.status(400).json({ error: "Missing url parameter" });
+        }
+
+        // Validate url parameter
+        if (!fileUrl.startsWith("http://") && !fileUrl.startsWith("https://")) {
+            return res.status(400).json({ error: "Invalid URL format" });
+        }
+
+        console.log(`[Proxy] Fetching remote file: ${fileUrl}`);
+        const response = await fetch(fileUrl);
+        if (!response.ok) {
+            return res.status(response.status).json({ error: `Failed to fetch remote file, status: ${response.status}` });
+        }
+
+        const contentType = response.headers.get("content-type") || "application/pdf";
+        res.setHeader("Content-Type", contentType);
+        res.setHeader("Access-Control-Allow-Origin", "*");
+        res.setHeader("Cache-Control", "public, max-age=3600");
+
+        const arrayBuffer = await response.arrayBuffer();
+        const buffer = Buffer.from(arrayBuffer);
+        res.send(buffer);
+    } catch (err: any) {
+        console.error("Error in /api/file-proxy:", err);
+        res.status(500).json({ error: err.message || "Internal server error" });
+    }
+});
 
 // Body parsing middleware (handling larger base64 uploads)
 app.use(express.json({ limit: '50mb' }));
