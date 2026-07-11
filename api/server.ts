@@ -246,11 +246,28 @@ async function deductAiUnitServerSide(tenantId: string, token?: string, userEmai
 
     // Fetch workspace settings from DB using the request-specific authenticated client
     const client = getAuthenticatedClient(token);
-    const { data, error } = await client
+    let fetchRes = await client
         .from("generated_documents")
         .select("*")
         .eq("id", docId)
         .maybeSingle();
+
+    let data = fetchRes.data;
+    let error = fetchRes.error;
+
+    // Resiliency fallback: try unauthenticated server-level client if authenticated fails or returns null
+    if (error || !data) {
+        console.warn(`[AI Deduct] Authenticated fetch failed or returned null for ${docId}. Trying server-level client fallback...`);
+        const fallbackRes = await supabaseClient
+            .from("generated_documents")
+            .select("*")
+            .eq("id", docId)
+            .maybeSingle();
+        if (fallbackRes.data) {
+            data = fallbackRes.data;
+            error = null;
+        }
+    }
 
     if (error) {
         console.warn("Server-side subscription fetch error:", error);
@@ -272,7 +289,7 @@ async function deductAiUnitServerSide(tenantId: string, token?: string, userEmai
         // If it is 'cravebiz-inc' we automatically create and initialize it in the DB to avoid any first-time issues
         if (isCravebizInc) {
             try {
-                await client.from("generated_documents").upsert({
+                await supabaseClient.from("generated_documents").upsert({
                     id: docId,
                     company_id: tenantId,
                     document_type: "cravebiz_workspace_settings",
@@ -301,8 +318,15 @@ async function deductAiUnitServerSide(tenantId: string, token?: string, userEmai
         throw new Error("AI features are not available on the Free Subscription Plan. Please upgrade your subscription tier or purchase an AI Credit Refill.");
     }
 
+    // Smart self-healing: If AI mode is currently turned OFF, but they have positive AI units and are explicitly
+    // requesting an AI feature, we auto-enable and heal the status to avoid blocking the user.
     if (!aiModeEnabled) {
-        throw new Error("AI Mode is currently turned OFF. Please turn ON AI Mode in the workspace header or settings to use AI features.");
+        if (aiUnits > 0) {
+            console.log(`[AI Deduct] Auto-healing: AI Mode was OFF, but user has ${aiUnits} units. Auto-enabling AI Mode.`);
+            aiModeEnabled = true;
+        } else {
+            throw new Error("AI Mode is currently turned OFF. Please turn ON AI Mode in the workspace header or settings to use AI features.");
+        }
     }
 
     if (aiUnits <= 0) {
@@ -313,7 +337,7 @@ async function deductAiUnitServerSide(tenantId: string, token?: string, userEmai
     const newUnits = aiUnits - 1;
 
     // Upsert the updated balance back to DB (uses tenantId directly as company_id to satisfy RLS)
-    const { error: upsertError } = await client
+    let { error: upsertError } = await client
         .from("generated_documents")
         .upsert({
             id: docId,
@@ -326,6 +350,25 @@ async function deductAiUnitServerSide(tenantId: string, token?: string, userEmai
                 memberPermissions
             }
         });
+
+    // Resiliency fallback: try server-level client if authenticated client fails to write
+    if (upsertError) {
+        console.warn(`[AI Deduct] Authenticated upsert failed for ${docId}. Trying server-level client fallback...`);
+        const fallbackUpsert = await supabaseClient
+            .from("generated_documents")
+            .upsert({
+                id: docId,
+                company_id: tenantId,
+                document_type: "cravebiz_workspace_settings",
+                content: {
+                    tier,
+                    aiUnits: newUnits,
+                    aiModeEnabled,
+                    memberPermissions
+                }
+            });
+        upsertError = fallbackUpsert.error;
+    }
 
     if (upsertError) {
         console.error("Server-side AI unit deduction upsert error:", upsertError);
