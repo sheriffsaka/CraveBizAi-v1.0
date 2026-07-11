@@ -410,3 +410,123 @@ export async function secureRefillCreditsOnDb(
   window.dispatchEvent(new Event('cravebiz_subscription_change'));
 }
 
+/**
+ * Intercepts FlutterwaveCheckout calls. If using the default placeholder public key,
+ * triggers a polished simulation modal overlay so that users can complete payments and upgrades.
+ * Otherwise, routes to the real Flutterwave secure system.
+ */
+export function safeFlutterwaveCheckout(config: any): void {
+  const isPlaceholderKey = !config.public_key || config.public_key === "FLWPUBK_TEST-e5e54eb86bc8c9bc88a8d11d7c3ee7c0-X";
+
+  if (!isPlaceholderKey) {
+    if ((window as any).FlutterwaveCheckout) {
+      (window as any).FlutterwaveCheckout(config);
+    } else {
+      alert("Flutterwave secure system is currently loading. Please try again in a few seconds.");
+    }
+    return;
+  }
+
+  // Create the simulation modal overlay
+  const overlay = document.createElement('div');
+  overlay.id = 'flutterwave-simulator-overlay';
+  overlay.style.position = 'fixed';
+  overlay.style.top = '0';
+  overlay.style.left = '0';
+  overlay.style.width = '100vw';
+  overlay.style.height = '100vh';
+  overlay.style.backgroundColor = 'rgba(15, 23, 42, 0.65)'; // slate-900 with opacity
+  overlay.style.backdropFilter = 'blur(4px)';
+  overlay.style.display = 'flex';
+  overlay.style.alignItems = 'center';
+  overlay.style.justifyContent = 'center';
+  overlay.style.zIndex = '999999';
+  overlay.style.fontFamily = '"Inter", sans-serif';
+
+  // Modal Card
+  const card = document.createElement('div');
+  card.className = 'bg-white rounded-[2.5rem] p-8 shadow-2xl border border-slate-100 max-w-md w-full mx-4 transform scale-95 transition-transform duration-300 ease-out animate-in fade-in zoom-in-95';
+  card.style.maxHeight = '90vh';
+  card.style.overflowY = 'auto';
+
+  // Form structure
+  card.innerHTML = `
+    <div class="text-center mb-6">
+      <div class="inline-flex items-center justify-center w-12 h-12 bg-amber-50 text-amber-600 rounded-2xl mb-3 border border-amber-100">
+        <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z" />
+        </svg>
+      </div>
+      <p class="text-[10px] font-black text-amber-600 uppercase tracking-widest mb-0.5">CraveBiZ Sandbox</p>
+      <h3 class="text-lg font-black text-slate-900 uppercase tracking-tight">Payment Gateway Simulator</h3>
+      <p class="text-xs text-slate-500 mt-1">Intercepted default key to prevent Flutterwave checkout errors</p>
+    </div>
+
+    <div class="space-y-4 mb-6">
+      <div class="p-4 bg-slate-50 rounded-2xl border border-slate-100 space-y-1.5 text-left">
+        <div class="flex justify-between items-center text-xs">
+          <span class="text-slate-400 font-bold">Checkout Item:</span>
+          <span class="text-slate-800 font-extrabold text-right">${config.customizations?.title || 'Upgrade / Settlement'}</span>
+        </div>
+        <div class="flex justify-between items-center text-xs">
+          <span class="text-slate-400 font-bold">Description:</span>
+          <span class="text-slate-600 font-medium text-right line-clamp-1">${config.customizations?.description || ''}</span>
+        </div>
+        <div class="flex justify-between items-center text-xs border-t border-slate-200/50 pt-1.5 mt-1">
+          <span class="text-slate-400 font-bold">Total Payable:</span>
+          <span class="text-primary-600 font-black text-sm">₦${Number(config.amount).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
+        </div>
+      </div>
+
+      <div class="p-4 bg-blue-50/50 border border-blue-100 rounded-2xl text-[11px] text-blue-900 leading-relaxed space-y-1 text-left">
+        <p class="font-extrabold uppercase tracking-wide text-blue-950 text-[9px]">💡 Why am I seeing this?</p>
+        <p>No valid live/test key was supplied in your environment variables. This sandbox safely handles the transaction in memory so you can test all premium workspace subscription and settlement mechanics perfectly.</p>
+      </div>
+    </div>
+
+    <div class="space-y-2.5">
+      <button id="sim-btn-success" class="w-full py-4 bg-emerald-600 text-white font-black uppercase tracking-widest text-xs rounded-2xl hover:bg-emerald-700 transition-all shadow-md cursor-pointer">
+        ✓ Simulate Successful Payment
+      </button>
+      <button id="sim-btn-fail" class="w-full py-4 bg-rose-500 text-white font-black uppercase tracking-widest text-xs rounded-2xl hover:bg-rose-600 transition-all shadow-md cursor-pointer">
+        ✗ Simulate Failed Payment
+      </button>
+      <button id="sim-btn-close" class="w-full py-3.5 bg-slate-100 hover:bg-slate-200 text-slate-600 font-black uppercase tracking-widest text-[10px] rounded-2xl transition-all cursor-pointer">
+        Cancel Checkout
+      </button>
+    </div>
+  `;
+
+  overlay.appendChild(card);
+  document.body.appendChild(overlay);
+
+  // Add event listeners
+  const successBtn = card.querySelector('#sim-btn-success');
+  const failBtn = card.querySelector('#sim-btn-fail');
+  const closeBtn = card.querySelector('#sim-btn-close');
+
+  successBtn?.addEventListener('click', () => {
+    document.body.removeChild(overlay);
+    config.callback({
+      status: 'successful',
+      transaction_id: 'sim-tx-' + Date.now(),
+      tx_ref: config.tx_ref
+    });
+  });
+
+  failBtn?.addEventListener('click', () => {
+    document.body.removeChild(overlay);
+    config.callback({
+      status: 'failed',
+      tx_ref: config.tx_ref
+    });
+  });
+
+  closeBtn?.addEventListener('click', () => {
+    document.body.removeChild(overlay);
+    if (typeof config.onclose === 'function') {
+      config.onclose();
+    }
+  });
+}
+

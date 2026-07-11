@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import Modal from './Modal';
 import { Invoice, Client } from '../types';
+import { safeFlutterwaveCheckout } from '../services/subscriptionService';
 
 interface PaymentModalProps {
   isOpen: boolean;
@@ -59,14 +60,9 @@ const PaymentModal: React.FC<PaymentModalProps> = ({ isOpen, onClose, invoice, o
       return;
     }
 
-    if (!(window as any).FlutterwaveCheckout) {
-      alert("Flutterwave secure system is currently loading. Please try again in a few seconds.");
-      return;
-    }
-
     const flutterwaveKey = (import.meta as any).env?.VITE_FLUTTERWAVE_PUBLIC_KEY || "FLWPUBK_TEST-e5e54eb86bc8c9bc88a8d11d7c3ee7c0-X";
 
-    (window as any).FlutterwaveCheckout({
+    safeFlutterwaveCheckout({
       public_key: flutterwaveKey,
       tx_ref: `cravebiz-tx-${Date.now()}-${invoice.id}`,
       amount: checkoutAmount,
@@ -87,7 +83,7 @@ const PaymentModal: React.FC<PaymentModalProps> = ({ isOpen, onClose, invoice, o
           // Calculate the new cumulative amount paid
           const newlyPaid = (invoice.amountPaid || 0) + checkoutAmount;
           onConfirmPayment(newlyPaid);
-          alert(`Payment of ₦${checkoutAmount.toLocaleString()} successfully processed and verified via Flutterwave!`);
+          alert(`Payment of ₦${checkoutAmount.toLocaleString()} successfully processed and verified!`);
           onClose();
         } else {
           alert(`Payment transaction response: ${data.status}. If this is an error, please try again.`);

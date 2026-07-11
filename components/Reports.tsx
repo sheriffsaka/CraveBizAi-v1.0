@@ -63,7 +63,21 @@ const Reports: React.FC<ReportsProps> = ({invoices, clients, services, activeTen
     const [dateRange, setDateRange] = useState<DateRange>('all_time');
 
     const subInfo = useMemo(() => getSubscriptionInfo(activeTenantId || ''), [activeTenantId]);
+    
+    const isPlanFree = subInfo.tier === 'Free' && subInfo.aiUnits <= 0;
+    const isUnitsDepleted = subInfo.aiUnits <= 0;
     const isAiEnabled = subInfo.aiModeEnabled;
+
+    const hasAiAccess = !isPlanFree && !isUnitsDepleted;
+
+    const isTextareaDisabled = isLoadingReport || !isAiEnabled || !hasAiAccess;
+    const placeholderText = isPlanFree
+        ? "AI Performance Analysis is not available on the Free Subscription Plan. Please upgrade to write queries."
+        : isUnitsDepleted
+        ? "Your subscription AI units are depleted. Please recharge or upgrade to ask questions."
+        : !isAiEnabled
+        ? "AI Mode is turned OFF. Enable AI Mode in the workspace header or settings to ask financial questions."
+        : "Ask a specific financial question about this period...";
 
     const isInvoiceInDateRange = useCallback((invoice: Invoice, startDate: Date | null, endDate: Date | null) => {
         const invoiceDate = new Date(invoice.issueDate);
@@ -229,6 +243,14 @@ const Reports: React.FC<ReportsProps> = ({invoices, clients, services, activeTen
 
     const handleGenerateReportAI = async (e: React.FormEvent) => {
         e.preventDefault();
+        if (isPlanFree) {
+            setAiReportResponse("AI features are not available on the Free Subscription Plan. Please upgrade your subscription tier or purchase an AI Credit Refill.");
+            return;
+        }
+        if (isUnitsDepleted) {
+            setAiReportResponse("Your subscription AI units are depleted. Please upgrade your subscription tier or contact support to recharge.");
+            return;
+        }
         if (!isAiEnabled) {
             setAiReportResponse("AI Mode is currently turned OFF. Please turn ON AI Mode in the workspace header or settings to use AI features.");
             return;
@@ -310,7 +332,31 @@ Operational Dataset: ${dataDump}`;
               AI Performance Analysis
           </h3>
 
-          {!isAiEnabled && (
+          {isPlanFree && (
+              <div className="bg-blue-50 border border-blue-200 text-blue-900 rounded-2xl p-5 text-xs font-semibold mb-6 flex items-start gap-3.5 leading-relaxed">
+                  <svg className="w-5 h-5 text-blue-600 shrink-0 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                  </svg>
+                  <div>
+                      <p className="font-bold text-blue-950 uppercase tracking-wider text-[10px] mb-1">Premium Feature Required</p>
+                      <p>AI Performance Analysis is not available on the Free Subscription Plan. Please upgrade your workspace to Starter, Growth, or Enterprise in the settings to run advanced queries, generate executive insights, and compile financial dossiers.</p>
+                  </div>
+              </div>
+          )}
+
+          {!isPlanFree && isUnitsDepleted && (
+              <div className="bg-rose-50 border border-rose-200 text-rose-900 rounded-2xl p-5 text-xs font-semibold mb-6 flex items-start gap-3.5 leading-relaxed">
+                  <svg className="w-5 h-5 text-rose-600 shrink-0 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
+                  </svg>
+                  <div>
+                      <p className="font-bold text-rose-950 uppercase tracking-wider text-[10px] mb-1">AI Units Depleted</p>
+                      <p>Your subscription's AI credit balance has been fully utilized. Please upgrade your subscription tier or contact support/purchase a credit refill to recharge and resume automated intelligence reporting.</p>
+                  </div>
+              </div>
+          )}
+
+          {!isPlanFree && !isUnitsDepleted && !isAiEnabled && (
               <div className="bg-amber-50 border border-amber-200 text-amber-900 rounded-2xl p-5 text-xs font-semibold mb-6 flex items-start gap-3.5 leading-relaxed">
                   <svg className="w-5 h-5 text-amber-600 shrink-0 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
@@ -329,11 +375,11 @@ Operational Dataset: ${dataDump}`;
                   onChange={e => setReportQuery(e.target.value)}
                   rows={2}
                   className="w-full px-6 py-4 border-2 border-gray-100 rounded-2xl outline-none focus:border-primary-500 font-medium bg-gray-50/30 disabled:opacity-50 disabled:cursor-not-allowed"
-                  placeholder={isAiEnabled ? "Ask a specific financial question about this period..." : "AI Mode is disabled. Enable AI Mode in the header to ask financial questions."}
-                  disabled={isLoadingReport || !isAiEnabled}
+                  placeholder={placeholderText}
+                  disabled={isTextareaDisabled}
               ></textarea>
               <div className="flex justify-end">
-                  <button type="submit" className="bg-primary-600 text-white px-10 py-4 rounded-2xl font-black uppercase tracking-widest text-xs shadow-xl hover:bg-primary-700 transition-all disabled:bg-gray-350 disabled:cursor-not-allowed cursor-pointer" disabled={isLoadingReport || !reportQuery.trim() || !isAiEnabled}>
+                  <button type="submit" className="bg-primary-600 text-white px-10 py-4 rounded-2xl font-black uppercase tracking-widest text-xs shadow-xl hover:bg-primary-700 transition-all disabled:bg-gray-350 disabled:cursor-not-allowed cursor-pointer" disabled={isTextareaDisabled || !reportQuery.trim()}>
                       {isLoadingReport ? "Analyzing..." : "Query Database"}
                   </button>
               </div>

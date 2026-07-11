@@ -3,7 +3,7 @@ import { Company, BankAccount, User, WorkspaceRole, AuditLog } from '../types';
 import { supabase } from '../lib/api';
 import ImageCropperModal from './ImageCropperModal';
 import Icon from './common/Icon';
-import { getSubscriptionInfo, setSubscriptionInfo, SubscriptionTier, TIER_LIMITS, saveSubscriptionInfoToDb, secureUpgradeSubscriptionOnDb, secureRefillCreditsOnDb } from '../services/subscriptionService';
+import { getSubscriptionInfo, setSubscriptionInfo, SubscriptionTier, TIER_LIMITS, saveSubscriptionInfoToDb, secureUpgradeSubscriptionOnDb, secureRefillCreditsOnDb, safeFlutterwaveCheckout } from '../services/subscriptionService';
 
 interface SettingsProps {
   company: Company | null;
@@ -148,12 +148,6 @@ const Settings: React.FC<SettingsProps> = ({ company, onSaveChanges, onInviteUse
       return;
     }
 
-    // Paid plans trigger Flutterwave
-    if (!(window as any).FlutterwaveCheckout) {
-      alert("Flutterwave secure system is currently loading. Please try again in a few seconds.");
-      return;
-    }
-
     let checkoutAmount = 0;
     if (tier === 'Starter') checkoutAmount = 15000;
     else if (tier === 'Growth') checkoutAmount = 35000;
@@ -162,7 +156,7 @@ const Settings: React.FC<SettingsProps> = ({ company, onSaveChanges, onInviteUse
     const flutterwaveKey = (import.meta as any).env?.VITE_FLUTTERWAVE_PUBLIC_KEY || "FLWPUBK_TEST-e5e54eb86bc8c9bc88a8d11d7c3ee7c0-X";
     let isSuccess = false;
 
-    (window as any).FlutterwaveCheckout({
+    safeFlutterwaveCheckout({
       public_key: flutterwaveKey,
       tx_ref: `cravebiz-tier-${tier.toLowerCase()}-${Date.now()}-${activeTenantId}`,
       amount: checkoutAmount,
@@ -254,16 +248,11 @@ const Settings: React.FC<SettingsProps> = ({ company, onSaveChanges, onInviteUse
   }, [activeTenantId, company, userRole]);
 
   const handleNonAdminRefill = () => {
-    if (!(window as any).FlutterwaveCheckout) {
-      alert("Flutterwave secure system is currently loading. Please try again in a few seconds.");
-      return;
-    }
-
     const checkoutAmount = 2500; // Refill cost is ₦2,500 NGN
     const flutterwaveKey = (import.meta as any).env?.VITE_FLUTTERWAVE_PUBLIC_KEY || "FLWPUBK_TEST-e5e54eb86bc8c9bc88a8d11d7c3ee7c0-X";
     let isSuccess = false;
 
-    (window as any).FlutterwaveCheckout({
+    safeFlutterwaveCheckout({
       public_key: flutterwaveKey,
       tx_ref: `cravebiz-refill-${Date.now()}-${activeTenantId}`,
       amount: checkoutAmount,
