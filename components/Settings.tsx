@@ -284,7 +284,10 @@ const Settings: React.FC<SettingsProps> = ({ company, onSaveChanges, onInviteUse
 
             // Remove/filter out uninvited pre-seeded dummy fallback workspace members (e.g. member@cravebiz.com)
             const isUserOwner = company?.email && email && email.toLowerCase() === company.email.toLowerCase();
-            if (!isUserOwner && (!email || email === 'member@cravebiz.com')) {
+            const isSuperAdminEmail = email && email.toLowerCase() === 'cravebiz@cloudcraves.com';
+            const isCravebizDomain = email && email.toLowerCase().endsWith('@cravebiz.com');
+            const isMockOrDummy = isCravebizDomain && !isUserOwner && !isSuperAdminEmail;
+            if (isMockOrDummy || !email || email === 'member@cravebiz.com') {
               continue; // Skip this uninvited mock member
             }
 

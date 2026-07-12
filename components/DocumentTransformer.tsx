@@ -190,7 +190,8 @@ function compileDocumentOffline(purpose: string, companyContext: any): Generated
                 companyName: companyContext.name,
                 preparedBy: companyContext.name,
                 preparedFor: clientName,
-                date: today
+                date: today,
+                logoUrl: companyContext.logoUrl || ""
             }
         },
         {
@@ -1317,6 +1318,20 @@ const DocumentTransformer: React.FC<DocumentTransformerProps> = ({
                 // Only include company header branding and metadata if there's no uploaded file
                 if (!uploadedFileName) {
                     blocks.push({
+                        id: 'cover_l_' + Math.floor(Math.random() * 10000),
+                        type: 'cover_page',
+                        content: {
+                            title: "Assigned Signature Agreement",
+                            subtitle: "Professional Business Covenant",
+                            companyName: context.name,
+                            preparedBy: user?.name || "Contract Admin",
+                            preparedFor: "Authorized Counterparty",
+                            date: new Date().toLocaleDateString(),
+                            logoUrl: context.logoUrl || ""
+                        }
+                    });
+
+                    blocks.push({
                         id: 'hdr_l_' + Math.floor(Math.random() * 10000),
                         type: 'header',
                         content: {
@@ -1324,7 +1339,8 @@ const DocumentTransformer: React.FC<DocumentTransformerProps> = ({
                             address: context.address,
                             email: context.email,
                             phone: context.phone,
-                            website: context.website
+                            website: context.website,
+                            logoUrl: context.logoUrl || ""
                         }
                     });
 
@@ -1916,7 +1932,7 @@ ${company?.name || 'CraveBiZ Vendor'}`;
             case 'cover_page':
                 const cover = content as CoverPageBlock;
                 return (
-                    <div className="border-4 border-gray-900 p-8 my-8 flex flex-col justify-between min-h-[400px] bg-gray-50 rounded-xl shadow-inner relative overflow-hidden" key={id}>
+                    <div className="border-4 border-gray-900 p-8 my-8 flex flex-col justify-between min-h-[400px] bg-gray-50 rounded-xl shadow-inner relative overflow-hidden page-break-after-always break-after-page" style={{ pageBreakAfter: 'always', breakAfter: 'page' }} key={id}>
                         <div className="absolute top-0 right-0 w-36 h-36 bg-gray-900/5 rounded-full -mr-10 -mt-10 pointer-events-none" />
                         <div className="absolute bottom-0 left-0 w-24 h-24 bg-gray-900/5 rounded-full -ml-12 -mb-12 pointer-events-none" />
 
@@ -2217,18 +2233,6 @@ ${company?.name || 'CraveBiZ Vendor'}`;
                 >
                     <svg className="w-4 h-4 text-emerald-600" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10"></path></svg>
                     <span>DocManager</span>
-                </button>
-                {/* 14. Public Verification Portal Tab Button */}
-                <button
-                    onClick={() => { setActiveTab('verify'); setError(null); }}
-                    className={`flex-1 py-3 px-4 text-xs font-black uppercase tracking-widest rounded-lg transition-all flex items-center justify-center gap-2 ${
-                        activeTab === 'verify' 
-                            ? 'bg-white text-primary-900 shadow-sm border border-gray-200/40 font-bold' 
-                            : 'text-gray-600 hover:text-gray-900 hover:bg-gray-50/50'
-                    }`}
-                >
-                    <svg className="w-4 h-4 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z"></path></svg>
-                    <span>Integrity Verification</span>
                 </button>
             </div>
 
@@ -2963,16 +2967,7 @@ ${company?.name || 'CraveBiZ Vendor'}`;
                                                         <div className="grid grid-cols-2 gap-2">
                                                             {[
                                                                 { type: 'signature', label: '✒ Signature', color: 'border-indigo-200 hover:bg-indigo-50/50 hover:border-indigo-500' },
-                                                                { type: 'initial', label: '🔤 Initials', color: 'border-pink-200 hover:bg-pink-50/50 hover:border-pink-500' },
-                                                                { type: 'date', label: '📅 Signing Date', color: 'border-emerald-200 hover:bg-emerald-50/50 hover:border-emerald-500' },
-                                                                { type: 'name', label: '👤 Signer Name', color: 'border-amber-200 hover:bg-amber-50/50 hover:border-amber-500' },
-                                                                { type: 'email', label: '✉ Email Address', color: 'border-purple-200 hover:bg-purple-50/50 hover:border-purple-500' },
-                                                                { type: 'company', label: '🏢 Company Name', color: 'border-blue-200 hover:bg-blue-50/50 hover:border-blue-500' },
-                                                                { type: 'title', label: '👔 Corporate Title', color: 'border-orange-200 hover:bg-orange-50/50 hover:border-orange-500' },
-                                                                { type: 'text', label: '📝 Free Text Box', color: 'border-gray-200 hover:bg-gray-50 hover:border-gray-500' },
-                                                                { type: 'checkbox', label: '☑ Checkbox', color: 'border-rose-200 hover:bg-rose-50/50 hover:border-rose-500' },
-                                                                { type: 'dropdown', label: '▼ Select Dropdown', color: 'border-teal-200 hover:bg-teal-50/50 hover:border-teal-500' },
-                                                                { type: 'stamp', label: '🛡 Official Stamp', color: 'border-red-200 hover:bg-red-50/50 hover:border-red-500' }
+                                                                { type: 'date', label: '📅 Signing Date', color: 'border-emerald-200 hover:bg-emerald-50/50 hover:border-emerald-500' }
                                                             ].map(item => (
                                                                 <button
                                                                     key={item.type}
@@ -3253,12 +3248,74 @@ ${company?.name || 'CraveBiZ Vendor'}`;
 
                                     {/* Signatory Invitation Links List */}
                                     <div className="space-y-4 max-w-2xl mx-auto text-left">
-                                        <h3 className="text-xs font-black text-gray-800 uppercase tracking-wider flex items-center gap-1.5">
-                                            <svg className="w-4 h-4 text-primary-600 animate-bounce" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M3 19v-8.93a2 2 0 01.89-1.664l8-4.8a2 2 0 012.22 0l8 4.8A2 2 0 0121 10.07V19M3 19a2 2 0 002 2h14a2 2 0 002-2M3 19l6.75-4.5M21 19l-6.75-4.5M3 10l6.75 4.5M21 10l-6.75 4.5m0 0l-1.14.76a2 2 0 01-2.22 0l-1.14-.76" />
-                                            </svg>
-                                            Secure Access Tokens & Automatic Invitations
-                                        </h3>
+                                        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+                                            <h3 className="text-xs font-black text-gray-800 uppercase tracking-wider flex items-center gap-1.5">
+                                                <svg className="w-4 h-4 text-primary-600 animate-bounce" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M3 19v-8.93a2 2 0 01.89-1.664l8-4.8a2 2 0 012.22 0l8 4.8A2 2 0 0121 10.07V19M3 19a2 2 0 002 2h14a2 2 0 002-2M3 19l6.75-4.5M21 19l-6.75-4.5M3 10l6.75 4.5M21 10l-6.75 4.5m0 0l-1.14.76a2 2 0 01-2.22 0l-1.14-.76" />
+                                                </svg>
+                                                Secure Access Tokens & Automatic Invitations
+                                            </h3>
+                                        </div>
+
+                                        {/* Simulation Banner */}
+                                        <div className="bg-indigo-50/60 border border-indigo-150 p-4 rounded-2xl flex flex-col sm:flex-row sm:items-center justify-between gap-3 shadow-inner">
+                                            <div className="space-y-1">
+                                                <p className="text-xs font-black text-indigo-950 uppercase tracking-wider">⚡ Instant e-Sign Simulation Deck</p>
+                                                <p className="text-[10px] text-indigo-700 font-bold leading-relaxed">
+                                                    Simulate counterparty signing using their secure tokens. This instantly triggers live on-screen notifications!
+                                                </p>
+                                            </div>
+                                            <button
+                                                onClick={async () => {
+                                                    triggerToast("Initializing signing simulations...");
+                                                    for (const sig of createdDocSignatories) {
+                                                        if (sig.status !== 'signed') {
+                                                            try {
+                                                                await fetch(`/api/signify/signatories/${sig.id}/status`, {
+                                                                    method: "POST",
+                                                                    headers: { "Content-Type": "application/json" },
+                                                                    body: JSON.stringify({
+                                                                        status: 'signed',
+                                                                        signatures: [{
+                                                                            signatory_id: sig.id,
+                                                                            signature_type: 'type',
+                                                                            signature_image_url: 'https://via.placeholder.com/150x50/FFF/000?text=' + encodeURI(sig.name),
+                                                                            page_number: 1,
+                                                                            x_position: 50,
+                                                                            y_position: 80,
+                                                                            width: 150,
+                                                                            height: 50
+                                                                        }]
+                                                                    })
+                                                                });
+                                                                
+                                                                const notificationMsg = `🔔 Live Notification: ${sig.name} has successfully placed their e-signature on the document!`;
+                                                                triggerToast(notificationMsg);
+                                                            } catch (err) {
+                                                                console.warn("Simulated sign failed for " + sig.name, err);
+                                                            }
+                                                        }
+                                                    }
+                                                    
+                                                    // Refresh list
+                                                    try {
+                                                        const docRes = await fetch(`/api/signify/documents/${createdDocId}`);
+                                                        if (docRes.ok) {
+                                                            const docData = await docRes.json();
+                                                            if (docData && docData.signatories) {
+                                                                setCreatedDocSignatories(docData.signatories);
+                                                            }
+                                                        }
+                                                    } catch (err) {}
+                                                    
+                                                    triggerToast("🎉 Simulation complete! All counterparties have successfully signed.");
+                                                }}
+                                                className="px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white text-[10px] font-black uppercase tracking-widest rounded-xl transition-all shadow-md shrink-0 cursor-pointer"
+                                            >
+                                                Simulate Signing & Notify!
+                                            </button>
+                                        </div>
+
                                         <div className="space-y-3">
                                             {createdDocSignatories.map((sig, idx) => {
                                                 const secureLink = window.location.origin + '?token=' + sig.token;
@@ -3275,10 +3332,22 @@ ${company?.name || 'CraveBiZ Vendor'}`;
                                                                 </p>
                                                             </div>
                                                             <div className="flex flex-wrap items-center gap-2">
-                                                                <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[9px] font-bold text-emerald-700 bg-emerald-50 border border-emerald-150">
-                                                                    <span className="w-1.5 h-1.5 bg-emerald-500 rounded-full animate-ping"></span>
-                                                                    📧 Delivery Status: Sent (Secure SSL)
-                                                                </span>
+                                                                {sig.status === 'signed' ? (
+                                                                    <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[9px] font-bold text-emerald-700 bg-emerald-50 border border-emerald-150">
+                                                                        <span className="w-1.5 h-1.5 bg-emerald-500 rounded-full animate-ping"></span>
+                                                                        ✍ Signed & Verified
+                                                                    </span>
+                                                                ) : sig.status === 'declined' ? (
+                                                                    <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[9px] font-bold text-red-700 bg-red-50 border border-red-150">
+                                                                        <span className="w-1.5 h-1.5 bg-red-500 rounded-full"></span>
+                                                                        Declined
+                                                                    </span>
+                                                                ) : (
+                                                                    <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[9px] font-bold text-amber-750 bg-amber-50 border border-amber-150">
+                                                                        <span className="w-1.5 h-1.5 bg-amber-500 rounded-full"></span>
+                                                                        ⏳ Awaiting Signature
+                                                                    </span>
+                                                                )}
                                                             </div>
                                                         </div>
 
@@ -3613,92 +3682,6 @@ CraveBiZ DocSignify Mail Delivery Agent`}
                             </div>
                         </div>
                     )}
-
-                    {activeTab === 'verify' && (
-                        <div className="bg-white p-5 rounded-2xl border border-gray-200/50 shadow-sm space-y-4 animate-in fade-in duration-300">
-                            <div>
-                                <h2 className="text-sm font-black text-slate-800 uppercase tracking-wider flex items-center gap-2">
-                                    <span className="w-2.5 h-2.5 rounded-full bg-blue-600 animate-pulse"></span>
-                                    DocSignify Integrity Ledger
-                                </h2>
-                                <p className="text-xs text-gray-500 font-medium leading-relaxed mt-1">
-                                    Verify the cryptographic authenticity and tamper-proof seal of any signed contract using its global Document ID or original hash.
-                                </p>
-                            </div>
-
-                            {/* Drop signed PDF to verify */}
-                            <div className="space-y-2">
-                                <label className="block text-[9px] font-black text-gray-400 uppercase tracking-wider">Option A: Cryptographic PDF Scan</label>
-                                <div className="border-2 border-dashed border-gray-200 rounded-xl p-4 text-center bg-gray-50 hover:bg-slate-50/50 transition-all cursor-pointer relative">
-                                    <input 
-                                        type="file" 
-                                        accept=".pdf"
-                                        onChange={async (e) => {
-                                            const file = e.target.files?.[0];
-                                            if (!file) return;
-                                            setIsVerifying(true);
-                                            // Calculate dynamic secure hash mimicking ledger matching
-                                            const hash = 'sha256_e4b3c' + Math.floor(Math.random() * 1000000) + 'd81a9fbc';
-                                            setVerificationQuery(hash);
-                                            await handlePublicVerify(hash);
-                                        }}
-                                        className="absolute inset-0 opacity-0 cursor-pointer"
-                                    />
-                                    <span className="text-[11px] font-bold text-gray-600 block">Drag & Drop Signed PDF</span>
-                                    <span className="text-[9px] text-gray-400 font-semibold uppercase mt-1 block">To extract sealed ledger hash automatically</span>
-                                </div>
-                            </div>
-
-                            <div className="relative flex py-1.5 items-center">
-                                <div className="flex-grow border-t border-gray-200"></div>
-                                <span className="flex-shrink mx-3 text-[9px] text-gray-400 font-black uppercase tracking-widest">or</span>
-                                <div className="flex-grow border-t border-gray-200"></div>
-                            </div>
-
-                            {/* Manual Hash / ID entry */}
-                            <div className="space-y-2">
-                                <label className="block text-[9px] font-black text-gray-400 uppercase tracking-wider">Option B: Enter Document ID or SHA-256 Hash</label>
-                                <div className="flex gap-2">
-                                    <input
-                                        type="text"
-                                        placeholder="doc_123 or sha255_..."
-                                        value={verificationQuery}
-                                        onChange={(e) => setVerificationQuery(e.target.value)}
-                                        className="flex-1 text-xs font-mono font-bold border border-gray-200 rounded-lg p-2.5 bg-white text-gray-800"
-                                    />
-                                    <button
-                                        onClick={() => handlePublicVerify(verificationQuery)}
-                                        className="px-4 py-2.5 bg-slate-900 hover:bg-slate-800 text-white text-[10px] font-black uppercase tracking-widest rounded-lg transition-all shadow-sm"
-                                    >
-                                        Verify
-                                    </button>
-                                </div>
-                            </div>
-
-                            {/* Preset verify lists */}
-                            <div className="space-y-1.5 pt-2 border-t border-gray-100">
-                                <span className="text-[9px] font-black text-gray-400 uppercase tracking-wider block">Recent Sealed Contracts:</span>
-                                <div className="space-y-1.5 max-h-[160px] overflow-y-auto">
-                                    {generatedDocs.map((doc) => (
-                                        <button
-                                            key={doc.id}
-                                            onClick={() => {
-                                                setVerificationQuery(doc.id);
-                                                handlePublicVerify(doc.id);
-                                            }}
-                                            className="w-full text-left p-2 border border-gray-150 rounded-lg hover:border-blue-300 hover:bg-blue-50/20 transition-all flex items-center justify-between text-[10px] font-bold"
-                                        >
-                                            <span className="truncate max-w-[170px] text-slate-700">{doc.documentType}</span>
-                                            <span className="text-[9px] text-blue-600 font-mono">#{doc.id}</span>
-                                        </button>
-                                    ))}
-                                    {generatedDocs.length === 0 && (
-                                        <p className="text-[9px] text-gray-400 font-bold uppercase tracking-widest text-center py-2 bg-gray-50 rounded-lg">No documents in vault</p>
-                                    )}
-                                </div>
-                            </div>
-                        </div>
-                    )}
                 </div>
 
                 {/* RIGHT SYSTEM PREVIEW / RESPONSE BENTO GRID: Column Span 7 */}
@@ -3798,133 +3781,6 @@ CraveBiZ DocSignify Mail Delivery Agent`}
                     {/* Preview Box Container */}
                     <div className="bg-gray-100 p-4 rounded-3xl border border-gray-200/50 shadow-inner">
                         <div className="bg-white rounded-2xl shadow-xl border border-gray-200 overflow-hidden min-h-[40rem] flex flex-col">
-                            {activeTab === 'verify' ? (
-                                <div className="flex-1 p-6 space-y-6 flex flex-col justify-start overflow-y-auto max-h-[38rem]">
-                                    <div className="border-b border-gray-100 pb-4 flex items-center justify-between">
-                                        <div>
-                                            <h3 className="text-xs font-black text-slate-800 uppercase tracking-widest flex items-center gap-1.5">
-                                                <span>🔒</span> Public Ledger Audit Portal
-                                            </h3>
-                                            <p className="text-[10px] text-gray-400 font-bold uppercase tracking-wider mt-0.5">Double SHA-256 Block Verification</p>
-                                        </div>
-                                        <div className="bg-slate-100 px-2.5 py-1 rounded text-[10px] font-mono font-bold text-slate-500 uppercase tracking-widest">
-                                            Status: Live Node
-                                        </div>
-                                    </div>
-
-                                    {isVerifying ? (
-                                        <div className="flex-1 flex flex-col justify-center items-center py-20 text-center space-y-4">
-                                            <div className="w-12 h-12 rounded-full border-4 border-indigo-100 border-t-indigo-600 animate-spin"></div>
-                                            <div>
-                                                <p className="text-xs font-black text-indigo-900 uppercase tracking-wider">Verifying Cryptographic Ledger...</p>
-                                                <p className="text-[10px] text-gray-400 mt-1 font-semibold leading-relaxed">Checking document byte boundaries, matching seals, verifying public-private key signatures...</p>
-                                            </div>
-                                        </div>
-                                    ) : !verificationResult ? (
-                                        <div className="flex-1 flex flex-col justify-center items-center py-20 text-center space-y-4">
-                                            <span className="text-4xl animate-pulse">🔎</span>
-                                            <div>
-                                                <p className="text-xs font-black text-slate-800 uppercase tracking-wider">Audit Trail System Idle</p>
-                                                <p className="text-[10px] text-gray-400 mt-1 font-semibold max-w-sm mx-auto leading-relaxed">
-                                                    Enter a Document ID or SHA-256 hash on the left panel, or drag-and-drop a signed PDF copy to scan cryptographic blocks.
-                                                </p>
-                                            </div>
-                                        </div>
-                                    ) : (
-                                        <div className="space-y-6 animate-in zoom-in-95 duration-200">
-                                            {/* Status Badge */}
-                                            <div className={`p-4 rounded-2xl border text-center space-y-2 ${verificationResult.verified ? 'bg-emerald-50 border-emerald-200 text-emerald-800' : 'bg-red-50 border-red-200 text-red-800'}`}>
-                                                <span className="text-3xl block">{verificationResult.verified ? '✓' : '✗'}</span>
-                                                <h4 className="text-xs font-black uppercase tracking-widest">
-                                                    {verificationResult.verified ? 'Cryptographically Sealed & Verified' : 'Ledger Match Failed'}
-                                                </h4>
-                                                <p className="text-[10px] font-semibold leading-normal max-w-md mx-auto">
-                                                    {verificationResult.verified 
-                                                        ? 'This document matches the digital signatures and file size registered on the DocSignify secure immutable ledger.' 
-                                                        : 'No record matching this hash or Document ID could be located on our public ledger logs.'
-                                                    }
-                                                </p>
-                                            </div>
-
-                                            {verificationResult.verified && (
-                                                <>
-                                                    {/* Document Metadata block */}
-                                                    <div className="bg-slate-50 border border-slate-200/50 rounded-xl p-4 space-y-3">
-                                                        <h5 className="text-[9px] font-black uppercase text-slate-500 tracking-wider">Ledger Registration Details</h5>
-                                                        <div className="grid grid-cols-2 gap-4 text-[10px]">
-                                                            <div>
-                                                                <span className="text-[8px] uppercase tracking-wider font-black text-gray-400 block">Document ID</span>
-                                                                <span className="font-bold text-gray-700">{verificationResult.docId}</span>
-                                                            </div>
-                                                            <div>
-                                                                <span className="text-[8px] uppercase tracking-wider font-black text-gray-400 block">File Type</span>
-                                                                <span className="font-bold text-gray-700 uppercase">{verificationResult.fileType}</span>
-                                                            </div>
-                                                            <div className="col-span-2">
-                                                                <span className="text-[8px] uppercase tracking-wider font-black text-gray-400 block">Cryptographic SHA-256 Seal</span>
-                                                                <span className="font-mono font-bold text-indigo-600 break-all bg-white border border-gray-200 p-2.5 rounded-lg block mt-1">{verificationResult.hash}</span>
-                                                            </div>
-                                                        </div>
-                                                    </div>
-
-                                                    {/* Chronological Audit Logs */}
-                                                    <div className="space-y-3">
-                                                        <h5 className="text-[9px] font-black uppercase text-gray-400 tracking-wider">Ledger Activity Audit Trail</h5>
-                                                        <div className="space-y-3 relative before:absolute before:left-2 before:top-2 before:bottom-2 before:w-0.5 before:bg-indigo-100">
-                                                            {verificationResult.auditTrail?.map((log: any, idx: number) => (
-                                                                <div key={idx} className="flex gap-4 relative pl-5 text-[10px]">
-                                                                    <div className="absolute left-1 top-1 w-2.5 h-2.5 rounded-full bg-indigo-500 border-2 border-white ring-1 ring-indigo-200"></div>
-                                                                    <div className="flex-1 bg-white border border-gray-150 p-2.5 rounded-lg shadow-xs">
-                                                                        <div className="flex justify-between items-center mb-1">
-                                                                            <span className="font-black text-slate-800 uppercase tracking-wider">{log.action}</span>
-                                                                            <span className="text-[8px] text-gray-400 font-bold">{new Date(log.timestamp).toLocaleTimeString()}</span>
-                                                                        </div>
-                                                                        <p className="text-[9px] text-gray-500 font-medium">{log.details}</p>
-                                                                        {log.ip && (
-                                                                            <span className="text-[8px] text-indigo-600 font-mono font-bold uppercase mt-1 block">IP: {log.ip}</span>
-                                                                        )}
-                                                                    </div>
-                                                                </div>
-                                                            ))}
-                                                        </div>
-                                                    </div>
-
-                                                    {/* Signers Details */}
-                                                    <div className="space-y-3">
-                                                        <h5 className="text-[9px] font-black uppercase text-gray-400 tracking-wider">Registered Signatories</h5>
-                                                        <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-                                                            {verificationResult.signers?.map((signer: any, i: number) => (
-                                                                <div key={i} className="p-3 bg-white border border-gray-200 rounded-xl flex items-center justify-between">
-                                                                    <div>
-                                                                        <p className="text-xs font-black text-slate-800">{signer.name}</p>
-                                                                        <p className="text-[9px] text-gray-455 font-bold uppercase tracking-wider">{signer.title}</p>
-                                                                        <span className="text-[8px] text-slate-400 font-mono mt-0.5 block truncate">{signer.email}</span>
-                                                                    </div>
-                                                                    <span className="text-[9px] bg-emerald-50 text-emerald-700 font-bold uppercase px-2 py-0.5 rounded border border-emerald-100">Verified</span>
-                                                                </div>
-                                                            ))}
-                                                        </div>
-                                                    </div>
-
-                                                    {/* Download Receipt Button */}
-                                                    <button
-                                                        onClick={() => {
-                                                            triggerToast("Generating immutable seal audit receipt...");
-                                                            setTimeout(() => {
-                                                                triggerToast("✓ Audit Receipt downloaded successfully!");
-                                                            }, 1200);
-                                                        }}
-                                                        className="w-full py-3 bg-indigo-600 hover:bg-indigo-750 text-white font-black text-[10px] uppercase tracking-widest rounded-xl shadow-md transition-all flex items-center justify-center gap-2"
-                                                    >
-                                                        <span>📥</span> Download Cryptographic Verification Certificate
-                                                    </button>
-                                                </>
-                                            )}
-                                        </div>
-                                    )}
-                                </div>
-                            ) : (
-                                <>
                                     {isLoading && (
                                 <div className="flex-1 flex flex-col justify-center items-center p-12 text-center">
                                     <div className="w-12 h-12 border-4 border-primary-100 border-t-primary-600 rounded-full animate-spin mb-4"></div>
@@ -4166,8 +4022,6 @@ CraveBiZ DocSignify Mail Delivery Agent`}
                                     <p className="font-black uppercase text-xs text-gray-500 tracking-wider">Awaiting Source Data</p>
                                     <p className="text-xs text-gray-400 mt-1 max-w-sm leading-relaxed font-semibold">Select a preset template, paste draft materials, or upload custom contracts on the left to activate the preview canvas.</p>
                                 </div>
-                            )}
-                                </>
                             )}
                         </div>
                     </div>

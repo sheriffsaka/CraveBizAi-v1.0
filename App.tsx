@@ -890,13 +890,21 @@ export default function App() {
     }
   };
 
+  const handleLogout = async () => {
+    localStorage.removeItem('cravebiz_tenant');
+    localStorage.removeItem('cravebiz_is_super_admin');
+    localStorage.removeItem('cravebiz_signup_tier');
+    await supabase.auth.signOut();
+    window.location.href = '/';
+  };
+
   return (
     <div className="flex h-screen bg-gray-50 text-gray-900 overflow-hidden">
       <Sidebar 
         activePage={activePage} 
         setActivePage={navigateTo} 
         companyName={activeCompany?.name || 'Synchronizing Vault...'} 
-        onLogout={async () => { localStorage.removeItem('cravebiz_tenant'); await supabase.auth.signOut(); }} 
+        onLogout={handleLogout} 
         isAdmin={currentUser?.isAdmin || false} 
         isOpen={isMobileMenuOpen} 
         onClose={() => setIsMobileMenuOpen(false)} 
@@ -911,7 +919,7 @@ export default function App() {
             onSwitchTenant={(id) => { setActiveTenantId(id); localStorage.setItem('cravebiz_tenant', id); forceSyncData(id); }} 
             user={currentUser} 
             onOpenUserProfile={() => setIsUserProfileModalOpen(true)} 
-            onLogout={async () => { await supabase.auth.signOut(); }} 
+            onLogout={handleLogout} 
             onToggleMobileMenu={() => setIsMobileMenuOpen(true)} 
             isSidebarCollapsed={isSidebarCollapsed}
             onToggleSidebar={() => setIsSidebarCollapsed(prev => !prev)}
