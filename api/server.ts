@@ -25,6 +25,20 @@ const app = express();
 const PORT = 3000;
 
 // Serve uploaded original and signed documents statically with CORS headers
+const isProductionDir = process.env.VERCEL === "1" || process.env.NODE_ENV === "production";
+const uploadsDirectory = isProductionDir
+    ? path.join("/tmp", "uploads")
+    : path.join(process.cwd(), "uploads");
+
+// Ensure directory exists
+try {
+    if (!fs.existsSync(uploadsDirectory)) {
+        fs.mkdirSync(uploadsDirectory, { recursive: true });
+    }
+} catch (e) {
+    console.warn("Failed to create uploads directory:", e);
+}
+
 app.use("/uploads", (req, res, next) => {
     res.setHeader("Access-Control-Allow-Origin", "*");
     res.setHeader("Access-Control-Allow-Methods", "GET, OPTIONS");
@@ -33,7 +47,7 @@ app.use("/uploads", (req, res, next) => {
         return res.sendStatus(200);
     }
     next();
-}, express.static(path.join(process.cwd(), "uploads")));
+}, express.static(uploadsDirectory));
 
 // Serve a server-side proxy for remote files to bypass CORS issues on clients
 app.get("/api/file-proxy", async (req, res) => {
