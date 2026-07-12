@@ -116,6 +116,7 @@ const extractTextFromPdf = async (arrayBuffer: ArrayBuffer): Promise<string> => 
 interface DocumentTransformerProps {
     company: Company | null;
     user: User | null;
+    userRole?: string;
     generatedDocs: StoredGeneratedDoc[];
     onSaveDoc: (doc: GeneratedDocument, id?: string) => Promise<string | undefined>;
     onDeleteDoc: (id: string) => Promise<void>;
@@ -313,13 +314,26 @@ function compileDocumentOffline(purpose: string, companyContext: any): Generated
 const DocumentTransformer: React.FC<DocumentTransformerProps> = ({ 
     company, 
     user, 
-    generatedDocs, 
+    userRole,
+    generatedDocs: rawGeneratedDocs, 
     onSaveDoc, 
     onDeleteDoc,
     initialTab,
     prefillProject,
     prefillClient
 }) => {
+    // Filter documents for security compliance: Owner and Admin can access all, others only those they created/own
+    const generatedDocs = (rawGeneratedDocs || []).filter(doc => {
+        if (userRole === 'Owner' || userRole === 'Admin') {
+            return true;
+        }
+        const docOwnerId = (doc as any).ownerId || (doc as any).content?.ownerId;
+        if (docOwnerId && user && docOwnerId === user.id) {
+            return true;
+        }
+        return false;
+    });
+
     // Tab State: generate (Purpose-made), sign (E-Signature), manage (Workspace Archive), verify (Integrity Verification)
     const [activeTab, setActiveTab] = useState<'generate' | 'sign' | 'manage' | 'verify'>('generate');
     const [useLocalCompiler, setUseLocalCompiler] = useState(false);

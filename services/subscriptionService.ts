@@ -106,6 +106,23 @@ export async function saveSubscriptionInfoToDb(companyId: string): Promise<void>
     console.warn("Could not read localstorage permissions:", e);
   }
 
+  // Collect invited member info to sync to cloud
+  const invitedMembers: Record<string, { email: string; name: string }> = {};
+  try {
+    for (let i = 0; i < localStorage.length; i++) {
+      const key = localStorage.key(i);
+      if (key && key.startsWith(`cravebiz_invited_member_info_${companyId}_`)) {
+        const userId = key.replace(`cravebiz_invited_member_info_${companyId}_`, '');
+        const val = localStorage.getItem(key);
+        if (val) {
+          invitedMembers[userId] = JSON.parse(val);
+        }
+      }
+    }
+  } catch (e) {
+    console.warn("Could not read localstorage invited members:", e);
+  }
+
   try {
     const { error } = await supabase.from('generated_documents').upsert({
       id: docId,
@@ -115,7 +132,8 @@ export async function saveSubscriptionInfoToDb(companyId: string): Promise<void>
         tier: sub.tier,
         aiUnits: sub.aiUnits,
         aiModeEnabled: sub.aiModeEnabled,
-        memberPermissions
+        memberPermissions,
+        invitedMembers
       }
     });
     if (error) {
@@ -153,12 +171,20 @@ export async function syncSubscriptionInfoFromDb(companyId: string): Promise<voi
       if (content.aiUnits !== undefined) {
         localStorage.setItem(`cravebiz_units_${companyId}`, content.aiUnits.toString());
       }
+      // DO NOT overwrite cravebiz_aimode from database sync on app load to ensure AI Mode defaults to OFF on app loads
+      /*
       if (content.aiModeEnabled !== undefined) {
         localStorage.setItem(`cravebiz_aimode_${companyId}`, content.aiModeEnabled.toString());
       }
+      */
       if (content.memberPermissions) {
         Object.entries(content.memberPermissions).forEach(([email, allowed]) => {
           localStorage.setItem(`cravebiz_member_ai_allowed_${companyId}_${email}`, String(allowed));
+        });
+      }
+      if (content.invitedMembers) {
+        Object.entries(content.invitedMembers).forEach(([userId, info]: [string, any]) => {
+          localStorage.setItem(`cravebiz_invited_member_info_${companyId}_${userId}`, JSON.stringify(info));
         });
       }
       window.dispatchEvent(new Event('cravebiz_subscription_change'));
@@ -235,6 +261,10 @@ export async function syncGlobalPlanSettings(): Promise<void> {
   }
 }
 
+// Track which workspaces have had their AI mode initialized during this application session.
+// This ensures they default to OFF on initial app loads/reloads as requested.
+const initializedAiModes: Record<string, boolean> = {};
+
 /**
  * Helper to get subscription details for a specific company
  */
@@ -249,6 +279,12 @@ export function getSubscriptionInfo(companyId: string): SubscriptionInfo {
   const isActiveSuperAdminTenant = isSuperAdmin && (companyId === activeTenantId || !companyId);
   const defaultTier: SubscriptionTier = (isCravebizInc || isActiveSuperAdminTenant) ? 'Enterprise' : 'Free';
 
+  // Initialize AI Mode to OFF on initial application load for this companyId
+  if (companyId && !initializedAiModes[companyId]) {
+    localStorage.setItem(`cravebiz_aimode_${companyId}`, 'false');
+    initializedAiModes[companyId] = true;
+  }
+
   if (!companyId) {
     const limits = TIER_LIMITS[defaultTier];
     return { 
@@ -257,7 +293,7 @@ export function getSubscriptionInfo(companyId: string): SubscriptionInfo {
       maxInvoices: limits.maxInvoices, 
       maxReceipts: limits.maxReceipts,
       maxUsers: limits.maxUsers,
-      aiModeEnabled: limits.aiAvailable 
+      aiModeEnabled: false 
     };
   }
 
@@ -274,7 +310,7 @@ export function getSubscriptionInfo(companyId: string): SubscriptionInfo {
 
   // Retrieve AI mode toggle
   const savedAiMode = localStorage.getItem(`cravebiz_aimode_${companyId}`);
-  const defaultAiMode = 'true';
+  const defaultAiMode = 'false';
   const aiModeEnabled = (limits.aiAvailable || aiUnits > 0) && (savedAiMode !== null ? savedAiMode === 'true' : defaultAiMode === 'true');
 
   return {

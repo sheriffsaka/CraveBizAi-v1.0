@@ -287,7 +287,7 @@ async function deductAiUnitServerSide(tenantId: string, token?: string, userEmai
 
     let tier = isCravebizInc ? "Enterprise" : "Free";
     let aiUnits = isCravebizInc ? 1000 : 10;
-    let aiModeEnabled = true;
+    let aiModeEnabled = false;
     let memberPermissions: Record<string, boolean> = {};
 
     if (data && data.content) {

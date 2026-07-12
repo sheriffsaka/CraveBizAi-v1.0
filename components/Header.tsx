@@ -15,6 +15,7 @@ interface HeaderProps {
     onToggleMobileMenu: () => void;
     isSidebarCollapsed?: boolean;
     onToggleSidebar?: () => void;
+    onNavigate?: (page: any) => void;
 }
 
 const UserAvatar: React.FC<{ user: User; onOpenUserProfile: () => void; onLogout: () => void; }> = ({ user, onOpenUserProfile, onLogout }) => {
@@ -63,7 +64,8 @@ const Header: React.FC<HeaderProps> = ({
     onLogout, 
     onToggleMobileMenu,
     isSidebarCollapsed = false,
-    onToggleSidebar
+    onToggleSidebar,
+    onNavigate
 }) => {
     const [isWorkspaceOpen, setIsWorkspaceOpen] = useState(false);
     const activeCompany = companies.find(c => c.id === activeTenantId);
@@ -151,7 +153,7 @@ const Header: React.FC<HeaderProps> = ({
                         </span>
                         
                         {(subInfo.tier !== 'Free' || subInfo.aiUnits > 0) ? (
-                            <div className="flex items-center space-x-1 sm:space-x-1.5 border-l border-gray-200 pl-1.5 sm:pl-2">
+                            <div className="flex items-center space-x-1.5 sm:space-x-2 border-l border-gray-200 pl-1.5 sm:pl-2">
                                 <span className="text-[9px] sm:text-[10px] font-bold text-gray-500 hidden xs:inline">AI:</span>
                                 <button
                                     onClick={() => {
@@ -166,10 +168,23 @@ const Header: React.FC<HeaderProps> = ({
                                 >
                                     <span className={`pointer-events-none inline-block h-3 w-3 sm:h-4 sm:w-4 transform rounded-full bg-white shadow ring-0 transition duration-200 ease-in-out ${subInfo.aiModeEnabled ? 'translate-x-3 sm:translate-x-4' : 'translate-x-0'}`} />
                                 </button>
-                                <span className="text-[8px] sm:text-[9px] font-bold text-gray-400">({subInfo.aiUnits})</span>
+                                <button
+                                    onClick={() => onNavigate?.('settings')}
+                                    className="flex items-center hover:bg-primary-50 text-gray-500 hover:text-primary-600 px-1.5 py-0.5 rounded transition-colors text-[8px] sm:text-[9px] font-black cursor-pointer bg-white border border-gray-100 shadow-3xs"
+                                    title="Click to view subscription & buy credits"
+                                >
+                                    <span className="uppercase tracking-wider mr-1 text-[7.5px] sm:text-[8px] font-bold text-gray-400">AI Credit</span>
+                                    <span className="text-primary-600 font-black font-mono">({subInfo.aiUnits})</span>
+                                </button>
                             </div>
                         ) : (
-                            <span className="text-[8px] sm:text-[9px] font-bold text-red-500 bg-red-50 px-1 py-0.5 rounded ml-1 border border-red-100">No AI</span>
+                            <button
+                                onClick={() => onNavigate?.('settings')}
+                                className="text-[8px] sm:text-[9px] font-bold text-red-500 bg-red-50 px-1.5 py-0.5 rounded ml-1 border border-red-100 hover:bg-red-100 transition-colors cursor-pointer"
+                                title="Click to upgrade subscription & buy credits"
+                            >
+                                No AI Credit
+                            </button>
                         )}
                     </div>
                 )}

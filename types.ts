@@ -194,12 +194,14 @@ export interface GeneratedDocument {
   originalFileName?: string;
   originalFileUrl?: string;
   projectId?: string; // Links Generated Document to Project
+  ownerId?: string;
 }
 
 export interface StoredGeneratedDoc extends GeneratedDocument {
   id: string;
   companyId: string;
   createdAt: string;
+  ownerId?: string;
 }
 
 export interface DocumentReviewResult {

@@ -5,6 +5,23 @@ import ImageCropperModal from './ImageCropperModal';
 import Icon from './common/Icon';
 import { getSubscriptionInfo, setSubscriptionInfo, SubscriptionTier, TIER_LIMITS, saveSubscriptionInfoToDb, secureUpgradeSubscriptionOnDb, secureRefillCreditsOnDb, safeFlutterwaveCheckout } from '../services/subscriptionService';
 
+const getPlanActionLabel = (targetTier: string, currentTier: string): string => {
+  const TIER_RANKS: Record<string, number> = {
+    'Free': 0,
+    'Starter': 1,
+    'Growth': 2,
+    'Enterprise': 3
+  };
+  const targetRank = TIER_RANKS[targetTier] ?? 0;
+  const currentRank = TIER_RANKS[currentTier] ?? 0;
+  
+  if (targetRank > currentRank) {
+    return `Upgrade to ${targetTier}`;
+  } else {
+    return `Downgrade to ${targetTier}`;
+  }
+};
+
 interface SettingsProps {
   company: Company | null;
   onSaveChanges: (companyId: string, updatedDetails: Partial<Omit<Company, 'id'>>) => void;
@@ -233,14 +250,47 @@ const Settings: React.FC<SettingsProps> = ({ company, onSaveChanges, onInviteUse
           const membersList = [];
           for (const m of data) {
             const { data: profile } = await supabase.from('profiles').select('*').eq('id', m.user_id).maybeSingle();
+            
+            let email = (profile as any)?.email;
+            let name = (profile as any)?.full_name || (profile as any)?.name;
+
+            // Fallback to invited member local cache if profile is missing/unregistered
+            if (!email || !name) {
+              const savedStr = localStorage.getItem(`cravebiz_invited_member_info_${activeTenantId}_${m.user_id}`);
+              if (savedStr) {
+                const saved = JSON.parse(savedStr);
+                email = email || saved.email;
+                name = name || saved.name;
+              }
+            }
+
+            // Remove/filter out uninvited pre-seeded dummy fallback workspace members (e.g. member@cravebiz.com)
+            const isUserOwner = company?.email && email && email.toLowerCase() === company.email.toLowerCase();
+            if (!isUserOwner && (!email || email === 'member@cravebiz.com')) {
+              continue; // Skip this uninvited mock member
+            }
+
             membersList.push({
               id: m.user_id,
-              name: (profile as any)?.full_name || (profile as any)?.name || 'Workspace Member',
-              email: (profile as any)?.email || 'member@cravebiz.com',
+              name: name || 'Workspace Member',
+              email: email || 'member@cravebiz.com',
               role: m.role.charAt(0).toUpperCase() + m.role.slice(1).toLowerCase(),
               status: m.status || 'Active'
             });
           }
+
+          // Ensure the logged-in user / workspace owner ("You") is always included
+          const hasOwnerInList = membersList.some(m => company?.email && m.email.toLowerCase() === company.email.toLowerCase());
+          if (!hasOwnerInList && company?.email) {
+            membersList.unshift({
+              id: '1',
+              name: 'You',
+              email: company.email,
+              role: userRole || 'Owner',
+              status: 'Active'
+            });
+          }
+
           setTeamMembers(membersList);
         } else {
           setTeamMembers([
@@ -411,6 +461,12 @@ const Settings: React.FC<SettingsProps> = ({ company, onSaveChanges, onInviteUse
       // Save invited user's AI Token permission to local storage
       localStorage.setItem(`cravebiz_member_ai_allowed_${activeTenantId}_${inviteEmail.trim().toLowerCase()}`, inviteAiAllowed.toString());
 
+      // Save invited user's metadata (email and name) to local storage so it's preserved dynamically and synced to cloud
+      localStorage.setItem(`cravebiz_invited_member_info_${activeTenantId}_${tempUserId}`, JSON.stringify({
+        email: inviteEmail.trim().toLowerCase(),
+        name: inviteName.trim() || 'Workspace Member'
+      }));
+
       // Sync to cloud DB
       await saveSubscriptionInfoToDb(activeTenantId);
 
@@ -561,7 +617,7 @@ const Settings: React.FC<SettingsProps> = ({ company, onSaveChanges, onInviteUse
               <span className="text-[10px] font-bold text-gray-700">10 Invoices / 10 Receipts</span>
               <span className="text-[9px] font-bold text-primary-700 bg-primary-50 px-1.5 py-0.5 rounded self-start">10 AI Credits included</span>
               {subInfo.tier !== 'Free' && !isReadOnly && (
-                <button type="button" onClick={() => handleUpdateTier('Free')} className="mt-1 text-xs font-bold text-primary-600 hover:text-primary-700 text-left">Downgrade to Free</button>
+                <button type="button" onClick={() => handleUpdateTier('Free')} className="mt-1 text-xs font-bold text-primary-600 hover:text-primary-700 text-left">{getPlanActionLabel('Free', subInfo.tier)}</button>
               )}
             </div>
           </div>
@@ -584,7 +640,7 @@ const Settings: React.FC<SettingsProps> = ({ company, onSaveChanges, onInviteUse
               <span className="text-[10px] font-bold text-gray-700">100 Invoices / 100 Receipts</span>
               <span className="text-[9px] font-bold text-primary-700 bg-primary-50 px-1.5 py-0.5 rounded self-start">100 AI Credits included</span>
               {subInfo.tier !== 'Starter' && !isReadOnly && (
-                <button type="button" onClick={() => handleUpdateTier('Starter')} className="mt-1 text-xs font-bold text-primary-600 hover:text-primary-700 text-left">Switch to Starter</button>
+                <button type="button" onClick={() => handleUpdateTier('Starter')} className="mt-1 text-xs font-bold text-primary-600 hover:text-primary-700 text-left">{getPlanActionLabel('Starter', subInfo.tier)}</button>
               )}
             </div>
           </div>
@@ -607,7 +663,7 @@ const Settings: React.FC<SettingsProps> = ({ company, onSaveChanges, onInviteUse
               <span className="text-[10px] font-bold text-gray-700">Unlimited Invoices & Receipts</span>
               <span className="text-[9px] font-bold text-purple-700 bg-purple-50 px-1.5 py-0.5 rounded self-start">300 AI Credits included</span>
               {subInfo.tier !== 'Growth' && !isReadOnly && (
-                <button type="button" onClick={() => handleUpdateTier('Growth')} className="mt-1 text-xs font-bold text-primary-600 hover:text-primary-700 text-left">Switch to Growth</button>
+                <button type="button" onClick={() => handleUpdateTier('Growth')} className="mt-1 text-xs font-bold text-primary-600 hover:text-primary-700 text-left">{getPlanActionLabel('Growth', subInfo.tier)}</button>
               )}
             </div>
           </div>
@@ -630,7 +686,7 @@ const Settings: React.FC<SettingsProps> = ({ company, onSaveChanges, onInviteUse
               <span className="text-[10px] font-bold text-gray-700">Unlimited Invoices & Receipts</span>
               <span className="text-[9px] font-bold text-amber-700 bg-amber-50 px-1.5 py-0.5 rounded self-start">2,500 AI Credits included</span>
               {subInfo.tier !== 'Enterprise' && !isReadOnly && (
-                <button type="button" onClick={() => handleUpdateTier('Enterprise')} className="mt-1 text-xs font-bold text-primary-600 hover:text-primary-700 text-left">Upgrade to Enterprise</button>
+                <button type="button" onClick={() => handleUpdateTier('Enterprise')} className="mt-1 text-xs font-bold text-primary-600 hover:text-primary-700 text-left">{getPlanActionLabel('Enterprise', subInfo.tier)}</button>
               )}
             </div>
           </div>

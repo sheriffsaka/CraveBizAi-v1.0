@@ -612,6 +612,7 @@ export default function App() {
       case 'document-transformer': return <DocumentTransformer 
           company={activeCompany} 
           user={currentUser} 
+          userRole={userRole}
           generatedDocs={generatedDocs} 
           initialTab={docTransformerPrefill?.initialTab}
           prefillProject={docTransformerPrefill?.prefillProject}
@@ -619,10 +620,11 @@ export default function App() {
           onSaveDoc={async (doc, id) => { 
               try {
                   let saved;
+                  const docWithOwner = { ...doc, ownerId: doc.ownerId || currentUser?.id };
                   if (id) {
-                      saved = await api.updateGeneratedDoc(activeTenantId!, id, doc);
+                      saved = await api.updateGeneratedDoc(activeTenantId!, id, docWithOwner);
                   } else {
-                      saved = await api.saveGeneratedDoc(activeTenantId!, doc); 
+                      saved = await api.saveGeneratedDoc(activeTenantId!, docWithOwner); 
                   }
                   const savedId = saved?.id;
                   if (savedId && (doc.originalFileBase64 || doc.originalFileUrl)) {
@@ -913,6 +915,7 @@ export default function App() {
             onToggleMobileMenu={() => setIsMobileMenuOpen(true)} 
             isSidebarCollapsed={isSidebarCollapsed}
             onToggleSidebar={() => setIsSidebarCollapsed(prev => !prev)}
+            onNavigate={navigateTo}
         />
         <main className="flex-1 overflow-y-auto p-4 md:p-8 relative">
             {syncError && (

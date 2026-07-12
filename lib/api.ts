@@ -570,7 +570,8 @@ class CraveBizApi {
       signatures: doc.signatures || [],
       originalFileBase64: doc.originalFileBase64,
       originalFileType: doc.originalFileType,
-      originalFileName: doc.originalFileName
+      originalFileName: doc.originalFileName,
+      ownerId: doc.ownerId
     };
 
     // 1. Write to generated_documents (standard table)
@@ -662,6 +663,7 @@ class CraveBizApi {
           let originalFileBase64: string | undefined = undefined;
           let originalFileType: string | undefined = undefined;
           let originalFileName: string | undefined = undefined;
+          let ownerId: string | undefined = undefined;
           if (doc.content) {
             if (Array.isArray(doc.content)) {
               blocks = doc.content;
@@ -671,6 +673,7 @@ class CraveBizApi {
               originalFileBase64 = (doc.content as any).originalFileBase64;
               originalFileType = (doc.content as any).originalFileType;
               originalFileName = (doc.content as any).originalFileName;
+              ownerId = (doc.content as any).ownerId;
             }
           }
           return {
@@ -682,7 +685,8 @@ class CraveBizApi {
             signatures,
             originalFileBase64,
             originalFileType,
-            originalFileName
+            originalFileName,
+            ownerId
           };
         });
       }
@@ -705,6 +709,7 @@ class CraveBizApi {
             let originalFileBase64: string | undefined = undefined;
             let originalFileType: string | undefined = undefined;
             let originalFileName: string | undefined = undefined;
+            let ownerId: string | undefined = undefined;
             if (doc.content) {
               if (Array.isArray(doc.content)) {
                 blocks = doc.content;
@@ -714,6 +719,7 @@ class CraveBizApi {
                 originalFileBase64 = (doc.content as any).originalFileBase64;
                 originalFileType = (doc.content as any).originalFileType;
                 originalFileName = (doc.content as any).originalFileName;
+                ownerId = (doc.content as any).ownerId;
               }
             }
             return {
@@ -725,7 +731,8 @@ class CraveBizApi {
               signatures,
               originalFileBase64,
               originalFileType,
-              originalFileName
+              originalFileName,
+              ownerId
             };
           });
         }
@@ -830,7 +837,8 @@ class CraveBizApi {
       createdAt: createdAt,
       documentType: doc.documentType,
       blocks: doc.blocks,
-      signatures: doc.signatures || []
+      signatures: doc.signatures || [],
+      ownerId: doc.ownerId
     };
     
     // Store in localStorage
@@ -870,6 +878,7 @@ class CraveBizApi {
     
     const foundIdx = list.findIndex(d => d.id === id);
     const createdAt = foundIdx > -1 ? list[foundIdx].createdAt : new Date().toISOString();
+    const originalOwnerId = foundIdx > -1 ? list[foundIdx].ownerId : undefined;
     
     // Sync to all database tables & server file system copy
     await this.syncDocumentToTables(companyId, id, doc, createdAt);
@@ -880,7 +889,8 @@ class CraveBizApi {
       createdAt: createdAt,
       documentType: doc.documentType,
       blocks: doc.blocks,
-      signatures: doc.signatures || []
+      signatures: doc.signatures || [],
+      ownerId: doc.ownerId || originalOwnerId
     };
     
     if (foundIdx > -1) {
