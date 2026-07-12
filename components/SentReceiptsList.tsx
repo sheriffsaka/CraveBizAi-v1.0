@@ -228,7 +228,7 @@ const SentReceiptsList: React.FC<SentReceiptsListProps> = ({ invoices, clients, 
             <ResponsiveContainer width="100%" height="100%">
               <BarChart data={stats.clientChartData} margin={{ top: 10, right: 10, left: 10, bottom: 0 }}>
                 <XAxis dataKey="name" stroke="#94A3B8" fontSize={10} tickLine={false} axisLine={false} />
-                <YAxis stroke="#94A3B8" fontSize={10} tickLine={false} axisLine={false} formatter={(value: number) => `₦${(value / 1000).toLocaleString()}k`} />
+                <YAxis stroke="#94A3B8" fontSize={10} tickLine={false} axisLine={false} tickFormatter={(value: number) => `₦${(value / 1000).toLocaleString()}k`} />
                 <Tooltip cursor={{ fill: 'rgba(241, 245, 249, 0.5)' }} formatter={(value: number) => [`₦${value.toLocaleString()}`, 'Total Receipts']} contentStyle={{ borderRadius: '8px', fontSize: '11px', fontWeight: 'bold' }} />
                 <Bar dataKey="value" name="Settled Payments" radius={[8, 8, 0, 0]} maxBarSize={45}>
                   {stats.clientChartData.map((entry, index) => (

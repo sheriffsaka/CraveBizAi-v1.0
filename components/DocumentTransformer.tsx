@@ -322,9 +322,9 @@ const DocumentTransformer: React.FC<DocumentTransformerProps> = ({
     prefillProject,
     prefillClient
 }) => {
-    // Filter documents for security compliance: Owner and Admin can access all, others only those they created/own
+    // Filter documents for security compliance: Workspace Owner can access all, others only those they created/own
     const generatedDocs = (rawGeneratedDocs || []).filter(doc => {
-        if (userRole === 'Owner' || userRole === 'Admin') {
+        if (userRole === 'Owner') {
             return true;
         }
         const docOwnerId = (doc as any).ownerId || (doc as any).content?.ownerId;
@@ -352,7 +352,7 @@ const DocumentTransformer: React.FC<DocumentTransformerProps> = ({
     // Feature ii: E-Signature
     const [isSignModalOpen, setIsSignModalOpen] = useState(false);
     const [sigType, setSigType] = useState<'draw' | 'type' | 'upload'>('draw');
-    const [typedName, setTypedName] = useState(user?.full_name || 'Sheriff Dean');
+    const [typedName, setTypedName] = useState(user?.name || 'Sheriff Dean');
     const [selectedCursiveStyle, setSelectedCursiveStyle] = useState<number>(0);
     const [sigTitle, setSigTitle] = useState('Executive Partner');
     const [drawnSigUrl, setDrawnSigUrl] = useState<string | null>(null);
@@ -555,7 +555,7 @@ const DocumentTransformer: React.FC<DocumentTransformerProps> = ({
                             content: {
                                 documentTitle: 'SERVICE EXECUTION AGREEMENT',
                                 clientName: clientName,
-                                preparedBy: user?.full_name || 'CraveBiZ Representative',
+                                preparedBy: user?.name || 'CraveBiZ Representative',
                                 date: new Date().toLocaleDateString(),
                                 reference: `CB-${prefillProject.id.slice(0, 5).toUpperCase()}`
                             }
@@ -588,7 +588,7 @@ const DocumentTransformer: React.FC<DocumentTransformerProps> = ({
                     id: 'creator',
                     type: 'type',
                     value: '',
-                    name: user?.full_name || company?.name || 'Authorized Provider',
+                    name: user?.name || company?.name || 'Authorized Provider',
                     title: 'Authorized Representative',
                     date: '',
                     signatoryType: 'Main',
@@ -637,7 +637,7 @@ const DocumentTransformer: React.FC<DocumentTransformerProps> = ({
     const saveOfflineDraft = () => {
         const draft = {
             id: 'draft_' + Date.now(),
-            title: generatedDoc?.title || uploadedFileName || "Offline Draft",
+            title: (generatedDoc as any)?.title || uploadedFileName || "Offline Draft",
             fields: designerFields,
             signatories,
             expiryDays,
@@ -676,7 +676,7 @@ const DocumentTransformer: React.FC<DocumentTransformerProps> = ({
             for (const draft of drafts) {
                 // Synthesize the document registration
                 const docId = 'doc_' + Math.floor(Math.random() * 89999 + 10000);
-                const fileUrl = generatedDoc?.original_file_url || "/uploads/placeholder_document.pdf";
+                const fileUrl = (generatedDoc as any)?.originalFileUrl || "/uploads/placeholder_document.pdf";
                 
                 await api.createDocSignifyDocument(
                     docId,
@@ -730,8 +730,8 @@ const DocumentTransformer: React.FC<DocumentTransformerProps> = ({
         setAiInsightsLoading(true);
         try {
             // Read standard document text block or construct from title
-            const textToAnalyze = generatedDoc.content_json?.htmlContent || generatedDoc.title || "Standard Sales SLA Agreement";
-            const insights = await api.getDocSignifyInsights(generatedDoc.id, textToAnalyze, company?.id);
+            const textToAnalyze = (generatedDoc as any).content_json?.htmlContent || (generatedDoc as any).title || "Standard Sales SLA Agreement";
+            const insights = await api.getDocSignifyInsights((generatedDoc as any).id, textToAnalyze, company?.id);
             setAiInsights(insights);
             triggerToast("🧠 AI Document Insights & suggested signature overlays loaded!");
             
@@ -1113,7 +1113,7 @@ const DocumentTransformer: React.FC<DocumentTransformerProps> = ({
                     // Prepare lightweight payload for URL hash (robust fallback)
                     const payload = {
                         t: nextDoc.documentType,
-                        c: nextDoc.companyId,
+                        c: (nextDoc as any).companyId || company?.id || '',
                         b: nextDoc.blocks.map(b => ({
                             i: b.id,
                             t: b.type,
@@ -1200,7 +1200,7 @@ const DocumentTransformer: React.FC<DocumentTransformerProps> = ({
                 id: 'creator',
                 type: 'type',
                 value: '',
-                name: user?.full_name || company?.name || 'Creator',
+                name: user?.name || company?.name || 'Creator',
                 title: 'Authorized Representative',
                 date: '',
                 signatoryType: 'Main',
@@ -1216,7 +1216,7 @@ const DocumentTransformer: React.FC<DocumentTransformerProps> = ({
             id: 'creator',
             type: 'type',
             value: '',
-            name: user?.full_name || company?.name || 'Creator',
+            name: user?.name || company?.name || 'Creator',
             title: 'Authorized Representative',
             date: '',
             signatoryType: 'Main',
@@ -1334,7 +1334,7 @@ const DocumentTransformer: React.FC<DocumentTransformerProps> = ({
                         content: {
                             documentTitle: "Assigned Signature Agreement",
                             clientName: "Authorized Counterparty",
-                            preparedBy: user?.full_name || "Contract Admin",
+                            preparedBy: user?.name || "Contract Admin",
                             date: new Date().toLocaleDateString(),
                             reference: "REF-" + Math.floor(Math.random() * 89999 + 10000)
                         }
@@ -1806,7 +1806,7 @@ ${company?.name || 'CraveBiZ Vendor'}`;
             id: 'creator',
             type: 'type',
             value: '',
-            name: user?.full_name || company?.name || 'Creator',
+            name: user?.name || company?.name || 'Creator',
             title: 'Authorized Representative',
             date: '',
             signatoryType: 'Main',
@@ -1921,6 +1921,14 @@ ${company?.name || 'CraveBiZ Vendor'}`;
                         <div className="absolute bottom-0 left-0 w-24 h-24 bg-gray-900/5 rounded-full -ml-12 -mb-12 pointer-events-none" />
 
                         <div className="space-y-4">
+                            {(cover.logoUrl || company?.logoUrl) && (
+                                <img 
+                                    src={cover.logoUrl || company?.logoUrl} 
+                                    alt="Workspace Logo" 
+                                    className="h-14 w-auto object-contain mb-4" 
+                                    referrerPolicy="no-referrer"
+                                />
+                            )}
                             <div className="h-1 w-20 bg-gray-900 mb-6" />
                             <h1 className="text-3xl font-black text-gray-900 uppercase tracking-tight leading-none">
                                 <EditableBlock as="span" value={cover.title} onUpdate={val => handleUpdateBlock(id, { ...cover, title: val })} />
@@ -2073,7 +2081,7 @@ ${company?.name || 'CraveBiZ Vendor'}`;
                         <span className="text-[10px] font-black text-gray-400 uppercase tracking-widest">Team Workspace Directory</span>
                         <div className="flex items-center gap-1.5 mt-1.5">
                             {[
-                                { name: user?.full_name || 'Owner', role: 'Owner', color: 'bg-indigo-600 text-white' },
+                                { name: user?.name || 'Owner', role: 'Owner', color: 'bg-indigo-600 text-white' },
                                 { name: 'Sarah Connor', role: 'Admin', color: 'bg-emerald-600 text-white' },
                                 { name: 'Marcus Wright', role: 'Manager', color: 'bg-amber-600 text-white' },
                                 { name: 'Kyle Reese', role: 'Member', color: 'bg-slate-600 text-white' }
@@ -3192,11 +3200,13 @@ ${company?.name || 'CraveBiZ Vendor'}`;
                                                     fields={designerFields}
                                                     signatories={signatories.map((s, idx) => ({
                                                         id: s.id,
+                                                        document_id: (generatedDoc as any).id || '',
                                                         name: s.name,
                                                         email: s.email || '',
                                                         role: s.signatoryType === 'Main' ? 'main_signatory' : 'witness',
                                                         status: s.isSigned ? 'signed' : 'pending',
-                                                        token: ''
+                                                        token: '',
+                                                        signed_at: null
                                                     }))}
                                                     isDesignerMode={true}
                                                     activeSignatoryId={activeDesignerSignerId}
@@ -3344,12 +3354,12 @@ ${company?.name || 'CraveBiZ Vendor'}`;
                                                             <input
                                                                 type="text"
                                                                 readOnly
-                                                                value={`Action Required: Secure E-Sign Invitation for '${generatedDoc?.title || "your agreement"}'`}
+                                                                value={`Action Required: Secure E-Sign Invitation for '${(generatedDoc as any)?.title || generatedDoc?.originalFileName || "your agreement"}'`}
                                                                 className="flex-1 px-3 py-2 bg-gray-50 border border-gray-200 rounded-lg text-xs font-medium text-gray-700 select-all"
                                                             />
                                                             <button
                                                                 onClick={() => {
-                                                                    navigator.clipboard.writeText(`Action Required: Secure E-Sign Invitation for '${generatedDoc?.title || "your agreement"}'`);
+                                                                    navigator.clipboard.writeText(`Action Required: Secure E-Sign Invitation for '${(generatedDoc as any)?.title || generatedDoc?.originalFileName || "your agreement"}'`);
                                                                     triggerToast("Subject copied!");
                                                                 }}
                                                                 className="px-3 py-1 bg-gray-100 hover:bg-gray-200 text-[10px] font-black uppercase tracking-widest text-gray-700 rounded-lg transition-all"
@@ -3366,7 +3376,7 @@ ${company?.name || 'CraveBiZ Vendor'}`;
                                                             readOnly
                                                             value={`Dear ${fallbackModalSig.sig.name},
 
-You are registered as a signatory for the document: '${generatedDoc?.title || "Service Agreement"}' with the corporate role of: ${fallbackModalSig.sig.role.replace('_', ' ').toUpperCase()}.
+You are registered as a signatory for the document: '${(generatedDoc as any)?.title || generatedDoc?.originalFileName || "Service Agreement"}' with the corporate role of: ${fallbackModalSig.sig.role.replace('_', ' ').toUpperCase()}.
 
 Please click the secure access link below to review and sign the document:
 ${fallbackModalSig.secureLink}
@@ -3390,7 +3400,7 @@ CraveBiZ DocSignify Mail Delivery Agent`}
                                                     </button>
                                                     <button
                                                         onClick={() => {
-                                                            const bodyText = `Dear ${fallbackModalSig.sig.name},\n\nYou are registered as a signatory for the document: '${generatedDoc?.title || "Service Agreement"}' with the corporate role of: ${fallbackModalSig.sig.role.replace('_', ' ').toUpperCase()}.\n\nPlease click the secure access link below to review and sign the document:\n${fallbackModalSig.secureLink}\n\nSecurity ID: CRAVEBIZ-SECURE-${fallbackModalSig.sig.id}\nVerification: Two-Factor SSL Check Active\n\nBest Regards,\nCraveBiZ DocSignify Mail Delivery Agent`;
+                                                            const bodyText = `Dear ${fallbackModalSig.sig.name},\n\nYou are registered as a signatory for the document: '${(generatedDoc as any)?.title || generatedDoc?.originalFileName || "Service Agreement"}' with the corporate role of: ${fallbackModalSig.sig.role.replace('_', ' ').toUpperCase()}.\n\nPlease click the secure access link below to review and sign the document:\n${fallbackModalSig.secureLink}\n\nSecurity ID: CRAVEBIZ-SECURE-${fallbackModalSig.sig.id}\nVerification: Two-Factor SSL Check Active\n\nBest Regards,\nCraveBiZ DocSignify Mail Delivery Agent`;
                                                             navigator.clipboard.writeText(bodyText);
                                                             triggerToast("Full email message body copied to clipboard!");
                                                         }}
@@ -3987,7 +3997,9 @@ CraveBiZ DocSignify Mail Delivery Agent`}
                                                                 y_position: s.y_position !== undefined ? s.y_position : (80 + idx * 5),
                                                                 width: s.width || 140,
                                                                 height: 55,
-                                                                signature_image_url: s.isSigned ? s.value : undefined
+                                                                signature_image_url: s.isSigned ? s.value : '',
+                                                                signature_type: 'draw' as const,
+                                                                created_at: new Date().toISOString()
                                                             }))}
                                                             signatories={signatories.map((s, idx) => ({
                                                                 id: s.id || `sig-${idx}`,
@@ -3995,7 +4007,9 @@ CraveBiZ DocSignify Mail Delivery Agent`}
                                                                 name: s.name,
                                                                 email: s.email || '',
                                                                 role: (s.signatoryType === 'Main' ? 'main_signatory' : s.signatoryType === 'Witness' ? 'witness' : 'additional_signatory') as DbDocumentSignatory['role'],
-                                                                status: s.isSigned ? 'signed' : 'pending'
+                                                                status: s.isSigned ? 'signed' : 'pending',
+                                                                token: '',
+                                                                signed_at: s.date || null
                                                             }))}
                                                             activeSignatory={selectedSigIndexToPlace !== null ? {
                                                                 id: signatories[selectedSigIndexToPlace]?.id || `sig-${selectedSigIndexToPlace}`,
@@ -4003,30 +4017,16 @@ CraveBiZ DocSignify Mail Delivery Agent`}
                                                                 name: signatories[selectedSigIndexToPlace]?.name || 'Creator',
                                                                 email: signatories[selectedSigIndexToPlace]?.email || '',
                                                                 role: (signatories[selectedSigIndexToPlace]?.signatoryType === 'Main' ? 'main_signatory' : 'witness') as DbDocumentSignatory['role'],
-                                                                status: 'pending'
+                                                                status: 'pending',
+                                                                token: '',
+                                                                signed_at: null
                                                             } : null}
-                                                            readOnly={false}
-                                                            onPlaceSignature={(placement) => {
-                                                                if (selectedSigIndexToPlace === null) return;
-                                                                const updated = signatories.map((sig, idx) => {
-                                                                    if (idx === selectedSigIndexToPlace) {
-                                                                        return {
-                                                                            ...sig,
-                                                                            page_number: placement.page_number,
-                                                                            x_position: placement.x_position,
-                                                                            y_position: placement.y_position,
-                                                                            width: placement.width || 140,
-                                                                            height: placement.height || 55
-                                                                        };
-                                                                    }
-                                                                    return sig;
-                                                                });
-                                                                setSignatories(updated);
-                                                                onSaveDoc({ ...generatedDoc, signatures: updated }, editingDocId || undefined).then(savedId => {
-                                                                    if (savedId) setEditingDocId(savedId);
-                                                                });
-                                                                triggerToast(`Positioned signature box for ${signatories[selectedSigIndexToPlace]?.name || 'Signer'}!`);
-                                                            }}
+                                                            isDesignerMode={true}
+                                                            onPlaceFieldAtCoordinates={handlePlaceFieldAtCoordinates}
+                                                            onFieldMove={handleFieldMove}
+                                                            onFieldResize={handleFieldResize}
+                                                            onFieldDelete={handleFieldDelete}
+                                                            onFieldUpdate={handleFieldUpdate}
                                                         />
                                                     </div>
                                                 ) : (

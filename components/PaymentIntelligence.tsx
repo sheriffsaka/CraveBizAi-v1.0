@@ -222,7 +222,7 @@ const PaymentIntelligence: React.FC<PaymentIntelligenceProps> = ({ invoices, cli
             <ResponsiveContainer width="100%" height="100%">
               <BarChart data={clientChartData} margin={{ top: 10, right: 10, left: 10, bottom: 5 }}>
                 <XAxis dataKey="name" stroke="#94A3B8" fontSize={10} tickLine={false} axisLine={false} />
-                <YAxis stroke="#94A3B8" fontSize={10} tickLine={false} axisLine={false} formatter={(value: number) => `₦${(value / 1000).toLocaleString()}k`} />
+                <YAxis stroke="#94A3B8" fontSize={10} tickLine={false} axisLine={false} tickFormatter={(value: number) => `₦${(value / 1000).toLocaleString()}k`} />
                 <Tooltip cursor={{ fill: 'rgba(241, 245, 249, 0.5)' }} formatter={(value: number, name: string) => [`₦${value.toLocaleString()}`, name === 'paid' ? 'Paid' : 'Outstanding']} contentStyle={{ borderRadius: '8px', fontSize: '11px', fontWeight: 'bold' }} />
                 <Bar dataKey="paid" fill="#10B981" radius={[4, 4, 0, 0]} maxBarSize={30} name="Paid" />
                 <Bar dataKey="outstanding" fill="#EF4444" radius={[4, 4, 0, 0]} maxBarSize={30} name="Outstanding" />

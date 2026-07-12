@@ -84,7 +84,7 @@ export default function App() {
   const isMounted = useRef(true);
   const currentUserIdRef = useRef<string | null>(null);
 
-  const [selectedProvisionTier, setSelectedProvisionTier] = useState<SubscriptionTier>('Standard');
+  const [selectedProvisionTier, setSelectedProvisionTier] = useState<SubscriptionTier>('Growth');
   const [subTrigger, setSubTrigger] = useState(0);
   const [subErrorMsg, setSubErrorMsg] = useState<string | null>(null);
 
@@ -258,7 +258,7 @@ export default function App() {
                     const tid = (activeTenantId && allComps.some(c => c.id === activeTenantId)) ? activeTenantId : allComps[0].id;
                     setActiveTenantId(tid);
                     localStorage.setItem('cravebiz_tenant', tid);
-                    await forceSyncData(tid);
+                    forceSyncData(tid);
                 }
             } else {
                 const discovered = await api.getMyCompanies();
@@ -267,7 +267,7 @@ export default function App() {
                     const tid = (activeTenantId && discovered.some(c => c.id === activeTenantId)) ? activeTenantId : discovered[0].id;
                     setActiveTenantId(tid);
                     localStorage.setItem('cravebiz_tenant', tid);
-                    await forceSyncData(tid);
+                    forceSyncData(tid);
                 }
             }
         }
@@ -554,26 +554,26 @@ export default function App() {
                     <div className="grid grid-cols-3 gap-2 mb-8">
                         <button
                             type="button"
-                            onClick={() => setSelectedProvisionTier('Basic')}
-                            className={`p-3 rounded-2xl border text-left transition-all flex flex-col justify-between h-28 outline-none ${selectedProvisionTier === 'Basic' ? 'border-primary-600 bg-primary-50/40 ring-2 ring-primary-500/20 font-semibold' : 'border-gray-200 hover:bg-gray-50'}`}
+                            onClick={() => setSelectedProvisionTier('Starter')}
+                            className={`p-3 rounded-2xl border text-left transition-all flex flex-col justify-between h-28 outline-none ${selectedProvisionTier === 'Starter' ? 'border-primary-600 bg-primary-50/40 ring-2 ring-primary-500/20 font-semibold' : 'border-gray-200 hover:bg-gray-50'}`}
                         >
                             <div>
-                                <p className="font-bold text-xs text-gray-900">Basic</p>
-                                <p className="text-[10px] text-gray-500 mt-1">5 Invoices/mo</p>
+                                <p className="font-bold text-xs text-gray-900">Starter</p>
+                                <p className="text-[10px] text-gray-500 mt-1">100 Invoices/mo</p>
                             </div>
-                            <span className="text-[9px] text-red-600 font-bold bg-red-50 px-1.5 py-0.5 rounded self-start">No AI</span>
+                            <span className="text-[9px] text-primary-700 font-bold bg-primary-50 px-1.5 py-0.5 rounded self-start">Starter limits</span>
                         </button>
 
                         <button
                             type="button"
-                            onClick={() => setSelectedProvisionTier('Standard')}
-                            className={`p-3 rounded-2xl border text-left transition-all flex flex-col justify-between h-28 outline-none ${selectedProvisionTier === 'Standard' ? 'border-primary-600 bg-primary-50/40 ring-2 ring-primary-500/20 font-semibold' : 'border-gray-200 hover:bg-gray-50'}`}
+                            onClick={() => setSelectedProvisionTier('Growth')}
+                            className={`p-3 rounded-2xl border text-left transition-all flex flex-col justify-between h-28 outline-none ${selectedProvisionTier === 'Growth' ? 'border-primary-600 bg-primary-50/40 ring-2 ring-primary-500/20 font-semibold' : 'border-gray-200 hover:bg-gray-50'}`}
                         >
                             <div>
-                                <p className="font-bold text-xs text-gray-900">Standard</p>
-                                <p className="text-[10px] text-gray-500 mt-1">20 Invoices/mo</p>
+                                <p className="font-bold text-xs text-gray-900">Growth</p>
+                                <p className="text-[10px] text-gray-500 mt-1">Unlimited Invoices</p>
                             </div>
-                            <span className="text-[9px] text-primary-700 font-bold bg-primary-50 px-1.5 py-0.5 rounded self-start">Invoice AI</span>
+                            <span className="text-[9px] text-emerald-700 font-bold bg-emerald-50 px-1.5 py-0.5 rounded self-start">Flagship Plan</span>
                         </button>
 
                         <button

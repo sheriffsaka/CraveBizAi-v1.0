@@ -135,6 +135,7 @@ export interface CoverPageBlock {
   date?: string;
   preparedFor?: string;
   preparedBy?: string;
+  logoUrl?: string;
 }
 
 export interface HeaderBlock {

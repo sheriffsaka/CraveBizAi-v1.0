@@ -1,5 +1,5 @@
 import React, { useState, useMemo, useEffect } from 'react';
-import { Project, ProjectStatus, Client, StoredGeneratedDoc, Invoice, AuditLog } from '../types';
+import { Project, ProjectStatus, Client, StoredGeneratedDoc, Invoice, AuditLog, InvoiceStatus } from '../types';
 import { motion, AnimatePresence } from 'motion/react';
 import Icon from './common/Icon';
 import PaymentModal from './PaymentModal';
@@ -495,7 +495,7 @@ locked.
             <ResponsiveContainer width="100%" height="100%">
               <BarChart data={stats.pipelineChartData} margin={{ top: 10, right: 10, left: 10, bottom: 0 }}>
                 <XAxis dataKey="name" stroke="#94A3B8" fontSize={10} tickLine={false} axisLine={false} />
-                <YAxis stroke="#94A3B8" fontSize={10} tickLine={false} axisLine={false} formatter={(value: number) => `$${(value / 1000).toLocaleString()}k`} />
+                <YAxis stroke="#94A3B8" fontSize={10} tickLine={false} axisLine={false} tickFormatter={(value: number) => `$${(value / 1000).toLocaleString()}k`} />
                 <Tooltip cursor={{ fill: 'rgba(241, 245, 249, 0.5)' }} formatter={(value: number) => [`$${value.toLocaleString()}`, 'Pipeline Value']} contentStyle={{ borderRadius: '8px', fontSize: '11px', fontWeight: 'bold' }} />
                 <Bar dataKey="value" name="Deal Value" radius={[8, 8, 0, 0]} maxBarSize={40}>
                   {stats.pipelineChartData.map((entry, index) => (
@@ -768,9 +768,9 @@ locked.
                                     </div>
                                   </div>
                                   <span className={`text-[9px] px-1.5 py-0.5 rounded-md font-black uppercase tracking-wider border ${
-                                    inv.status === 'paid' ? 'bg-emerald-100 text-emerald-800 border-emerald-200' :
-                                    inv.status === 'sent' ? 'bg-indigo-100 text-indigo-800 border-indigo-200 animate-pulse' :
-                                    inv.status === 'overdue' ? 'bg-rose-100 text-rose-800 border-rose-200' :
+                                    inv.status === InvoiceStatus.Paid ? 'bg-emerald-100 text-emerald-800 border-emerald-200' :
+                                    inv.status === InvoiceStatus.Sent ? 'bg-indigo-100 text-indigo-800 border-indigo-200 animate-pulse' :
+                                    inv.status === InvoiceStatus.Overdue ? 'bg-rose-100 text-rose-800 border-rose-200' :
                                     'bg-gray-100 text-gray-700 border-gray-200'
                                   }`}>
                                     {inv.status}
@@ -783,7 +783,7 @@ locked.
                                   </span>
                                 </div>
                                 
-                                {inv.status === 'paid' && (
+                                {inv.status === InvoiceStatus.Paid && (
                                   <div className="mt-1 bg-emerald-50/80 text-emerald-700 p-2 rounded border border-emerald-100 text-[10px] font-medium flex items-center gap-1.5">
                                     <span>🎉</span>
                                     <span>Payment Cleared! Ready to advance to the Next Phase.</span>
@@ -831,7 +831,7 @@ locked.
                             {projectInvoices.map((inv) => {
                               const amtPaid = inv.amountPaid || 0;
                               const outstanding = inv.total - amtPaid;
-                              const isPaid = outstanding <= 0 || inv.status === 'paid';
+                              const isPaid = outstanding <= 0 || inv.status === InvoiceStatus.Paid;
                               const pct = inv.total > 0 ? Math.min(100, Math.round((amtPaid / inv.total) * 100)) : 0;
                               
                               return (
@@ -846,8 +846,8 @@ locked.
                                     <div className="flex flex-col items-end gap-1">
                                       <span className={`text-[9px] px-1.5 py-0.5 rounded-md font-black uppercase tracking-wider border ${
                                         isPaid ? 'bg-emerald-100 text-emerald-800 border-emerald-200' :
-                                        inv.status === 'sent' ? 'bg-indigo-100 text-indigo-800 border-indigo-200 animate-pulse' :
-                                        inv.status === 'overdue' ? 'bg-rose-100 text-rose-800 border-rose-200' :
+                                        inv.status === InvoiceStatus.Sent ? 'bg-indigo-100 text-indigo-800 border-indigo-200 animate-pulse' :
+                                        inv.status === InvoiceStatus.Overdue ? 'bg-rose-100 text-rose-800 border-rose-200' :
                                         'bg-gray-100 text-gray-700 border-gray-200'
                                       }`}>
                                         {isPaid ? 'paid' : inv.status}
@@ -910,7 +910,7 @@ locked.
                             })}
 
                             {/* Phase Advancement Suggestion */}
-                            {projectInvoices.length > 0 && projectInvoices.every(i => (i.amountPaid || 0) >= i.total || i.status === 'paid') && (
+                            {projectInvoices.length > 0 && projectInvoices.every(i => (i.amountPaid || 0) >= i.total || i.status === InvoiceStatus.Paid) && (
                               <div className="bg-emerald-50 border border-emerald-200 rounded-xl p-4 text-center space-y-3 shadow-sm">
                                 <p className="text-xs text-emerald-800 font-extrabold leading-normal">
                                   🎉 All project milestones and billing items are fully paid and settled!
@@ -958,7 +958,7 @@ locked.
                           <div>
                             <span className="text-[10px] text-gray-500 block">Settled Billing:</span>
                             <span className="font-bold text-gray-700 block mt-0.5">
-                              {projectInvoices.filter(i => i.status === 'paid' || (i.amountPaid || 0) >= i.total).length} of {projectInvoices.length} Paid
+                              {projectInvoices.filter(i => i.status === InvoiceStatus.Paid || (i.amountPaid || 0) >= i.total).length} of {projectInvoices.length} Paid
                             </span>
                           </div>
                         </div>
@@ -1061,10 +1061,12 @@ locked.
                             Once archived, the project is locked and securely stored in compliance archives.
                           </p>
                         </div>
-                            {/* Archived Stage View */}
-                    {selectedProject.status === 'Archived' && (() => {
-                      const metrics = getRetentionMetrics(selectedProject);
-                      return (
+                      </div>
+                    )}
+                      {/* Archived Stage View */}
+                      {selectedProject.status === 'Archived' && (() => {
+                        const metrics = getRetentionMetrics(selectedProject);
+                        return (
                         <div className="bg-slate-900 text-white p-6 rounded-xl border border-slate-800 space-y-6 shadow-xl animate-fade-in text-left">
                           {/* Top Header Badge */}
                           <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between border-b border-slate-800 pb-4 gap-3">
@@ -1303,8 +1305,8 @@ locked.
                           </div>
                         </div>
                       );
-                    })()}                  </div>
-                    )}
+                    })()}
+                  </div>
                   </div>
 
                   {/* Connected Actions inside CRM Pipeline */}
@@ -1334,8 +1336,7 @@ locked.
                     )}
                   </div>
                 </div>
-              </div>
-            ) : (
+              ) : (
               <div className="flex flex-col items-center justify-center h-full text-gray-400 space-y-2">
                 <Icon name="projects" className="w-12 h-12 text-gray-300" />
                 <p className="text-sm italic font-medium">Please select a project to examine its lifecycle details.</p>

@@ -168,8 +168,11 @@ const Header: React.FC<HeaderProps> = ({
                                 >
                                     <span className={`pointer-events-none inline-block h-3 w-3 sm:h-4 sm:w-4 transform rounded-full bg-white shadow ring-0 transition duration-200 ease-in-out ${subInfo.aiModeEnabled ? 'translate-x-3 sm:translate-x-4' : 'translate-x-0'}`} />
                                 </button>
-                                <button
-                                    onClick={() => onNavigate?.('settings')}
+                                 <button
+                                    onClick={() => {
+                                        window.location.hash = '#workspace-subscription-section';
+                                        onNavigate?.('settings');
+                                    }}
                                     className="flex items-center hover:bg-primary-50 text-gray-500 hover:text-primary-600 px-1.5 py-0.5 rounded transition-colors text-[8px] sm:text-[9px] font-black cursor-pointer bg-white border border-gray-100 shadow-3xs"
                                     title="Click to view subscription & buy credits"
                                 >
@@ -179,7 +182,10 @@ const Header: React.FC<HeaderProps> = ({
                             </div>
                         ) : (
                             <button
-                                onClick={() => onNavigate?.('settings')}
+                                onClick={() => {
+                                    window.location.hash = '#workspace-subscription-section';
+                                    onNavigate?.('settings');
+                                }}
                                 className="text-[8px] sm:text-[9px] font-bold text-red-500 bg-red-50 px-1.5 py-0.5 rounded ml-1 border border-red-100 hover:bg-red-100 transition-colors cursor-pointer"
                                 title="Click to upgrade subscription & buy credits"
                             >

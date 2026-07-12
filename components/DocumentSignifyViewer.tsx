@@ -420,7 +420,7 @@ export const DocumentSignifyViewer: React.FC<DocumentSignifyViewerProps> = ({
         return (
           <div
             key={pageNum}
-            ref={el => pageRefs.current[pageNum] = el}
+            ref={el => { pageRefs.current[pageNum] = el; }}
             onClick={(e) => handlePageClick(pageNum, e)}
             className={`relative bg-white shadow-xl border border-slate-300 rounded-xl select-none transition-shadow duration-300 ${
               isDesignerMode ? 'cursor-crosshair hover:shadow-indigo-100/50 hover:border-indigo-400' : ''

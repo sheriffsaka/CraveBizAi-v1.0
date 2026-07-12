@@ -95,7 +95,7 @@ export default function PublicSigningPortal({ docId, token, prefilledRecipient, 
                             name: s.name,
                             email: s.email,
                             title: s.role.replace('_', ' ').toUpperCase(),
-                            signatoryType: s.role === 'main_signatory' ? 'Main' : s.role === 'witness' ? 'Witness' : 'Additional',
+                            signatoryType: (s.role === 'main_signatory' ? 'Main' : 'Witness') as 'Main' | 'Witness',
                             isSigned: s.status === 'signed',
                             value: '',
                             type: 'draw' as const,
@@ -129,7 +129,7 @@ export default function PublicSigningPortal({ docId, token, prefilledRecipient, 
                             name: s.name,
                             email: s.email,
                             title: s.role.replace('_', ' ').toUpperCase(),
-                            signatoryType: s.role === 'main_signatory' ? 'Main' : s.role === 'witness' ? 'Witness' : 'Additional',
+                            signatoryType: (s.role === 'main_signatory' ? 'Main' : 'Witness') as 'Main' | 'Witness',
                             isSigned: s.status === 'signed',
                             value: '',
                             type: 'draw' as const,
@@ -175,7 +175,7 @@ export default function PublicSigningPortal({ docId, token, prefilledRecipient, 
             const totalSigs = dbSignatories.length;
             const signedSigs = dbSignatories.filter(s => s.status === 'signed').length;
             return {
-                title: dbDoc.filename || dbDoc.document_type || 'Uploaded Agreement',
+                title: dbDoc.title || dbDoc.file_name || 'Uploaded Agreement',
                 company: 'DocSignify Secured',
                 date: dbDoc.created_at ? new Date(dbDoc.created_at).toLocaleDateString() : 'Recent',
                 client: '',
@@ -428,7 +428,8 @@ export default function PublicSigningPortal({ docId, token, prefilledRecipient, 
                         width: w,
                         height: h,
                         signature_image_url: finalSigImage,
-                        signed_at: new Date().toISOString()
+                        signature_type: 'draw' as const,
+                        created_at: new Date().toISOString()
                     };
                 } else {
                     targetSig = {
@@ -439,7 +440,8 @@ export default function PublicSigningPortal({ docId, token, prefilledRecipient, 
                         width: w,
                         height: h,
                         signature_image_url: finalSigImage,
-                        signed_at: new Date().toISOString()
+                        signature_type: 'draw' as const,
+                        created_at: new Date().toISOString()
                     };
                 }
 
@@ -721,74 +723,70 @@ export default function PublicSigningPortal({ docId, token, prefilledRecipient, 
                     </div>
 
                     {dbDoc ? (
-                        <div className="w-full mb-6">
-                            <DocumentSignifyViewer
-                                fileUrl={dbDoc.original_file_url || dbDoc.original_file_base64 || ''}
-                                fileType={dbDoc.original_file_type || 'pdf'}
-                                htmlContent={dbDoc.content_json?.htmlContent || ''}
-                                fields={dbDoc.content_json?.fields || []}
-                                activeSignatoryId={dbSignatory?.id}
-                                onFieldClick={(fieldId) => {
-                                    if (dbSignatory && !alreadySigned) {
-                                        setSelectedFieldId(fieldId);
-                                        setTypedName(dbSignatory.name);
-                                        setSigTitle(dbSignatory.role.toUpperCase().replace('_', ' '));
-                                        setIsSignModalOpen(true);
-                                    }
-                                }}
-                                signatures={dbSignatures}
-                                signatories={dbSignatories}
-                                activeSignatory={dbSignatory}
-                                readOnly={alreadySigned}
-                                onPlaceSignature={(placement) => {
-                                    if (dbSignatory && !alreadySigned) {
-                                        setTypedName(dbSignatory.name);
-                                        setSigTitle(dbSignatory.role.toUpperCase().replace('_', ' '));
-                                        setIsSignModalOpen(true);
-                                    }
-                                }}
-                            />
-                        </div>
+                    <div className="w-full mb-6">
+                        <DocumentSignifyViewer
+                            fileUrl={dbDoc.original_file_url || ''}
+                            fileType={dbDoc.file_type || 'pdf'}
+                            htmlContent={dbDoc.content_json?.htmlContent || ''}
+                            fields={dbDoc.content_json?.fields || []}
+                            activeSignatoryId={dbSignatory?.id}
+                            onFieldClick={(fieldId) => {
+                                if (dbSignatory && !alreadySigned) {
+                                    setSelectedFieldId(fieldId);
+                                    setTypedName(dbSignatory.name);
+                                    setSigTitle(dbSignatory.role.toUpperCase().replace('_', ' '));
+                                    setIsSignModalOpen(true);
+                                }
+                            }}
+                            signatures={dbSignatures}
+                            signatories={dbSignatories}
+                            activeSignatory={dbSignatory}
+                            readOnly={alreadySigned}
+                        />
+                    </div>
                     ) : document?.originalFileBase64 ? (
                         <div className="w-full mb-6">
-                            <DocumentSignifyViewer
-                                fileUrl={document.originalFileBase64}
-                                fileType={document.originalFileType || 'pdf'}
-                                htmlContent={document.originalFileType === 'docx-html' ? document.blocks.map(b => b.content.text).join('') : ''}
-                                signatures={dbSignatures.length > 0 ? dbSignatures : signatories.map((s, idx) => ({
-                                    id: s.id || `sig-${idx}`,
-                                    document_id: docId || '',
-                                    signatory_id: s.id || `sig-${idx}`,
-                                    page_number: 1,
-                                    x_position: 50,
-                                    y_position: 80 + idx * 5,
-                                    width: 140,
-                                    height: 55,
-                                    signature_image_url: s.isSigned ? s.value : undefined
-                                }))}
-                                signatories={dbSignatories.length > 0 ? dbSignatories : signatories.map((s, idx) => ({
-                                    id: s.id || `sig-${idx}`,
-                                    document_id: docId || '',
-                                    name: s.name,
-                                    email: s.email || '',
-                                    role: s.signatoryType === 'Main' ? 'main_signatory' : s.signatoryType === 'Witness' ? 'witness' : 'additional_signatory',
-                                    status: s.isSigned ? 'signed' : 'pending'
-                                }))}
-                                activeSignatory={activeSigIndex !== null ? (dbSignatory || {
-                                    id: signatories[activeSigIndex]?.id || `sig-${activeSigIndex}`,
-                                    document_id: docId || '',
-                                    name: signatories[activeSigIndex]?.name,
-                                    email: signatories[activeSigIndex]?.email || '',
-                                    role: signatories[activeSigIndex]?.signatoryType === 'Main' ? 'main_signatory' : 'witness',
-                                    status: 'pending'
-                                }) : null}
-                                readOnly={activeSigIndex === null}
-                                onPlaceSignature={() => {
-                                    if (activeSigIndex !== null) {
-                                        setIsSignModalOpen(true);
-                                    }
-                                }}
-                            />
+                        <DocumentSignifyViewer
+                            fileUrl={document.originalFileBase64}
+                            fileType={document.originalFileType || 'pdf'}
+                            htmlContent={document.originalFileType === 'docx-html' ? document.blocks.map(b => b.content.text).join('') : ''}
+                            signatures={(dbSignatures.length > 0 ? dbSignatures : signatories.map((s, idx) => ({
+                                id: s.id || `sig-${idx}`,
+                                document_id: docId || '',
+                                signatory_id: s.id || `sig-${idx}`,
+                                page_number: 1,
+                                x_position: 50,
+                                y_position: 80 + idx * 5,
+                                width: 140,
+                                height: 55,
+                                signature_type: 'draw' as const,
+                                signature_image_url: s.isSigned ? s.value : '',
+                                created_at: new Date().toISOString()
+                            }))) as DbDocumentSignature[]}
+                            signatories={(dbSignatories.length > 0 ? dbSignatories : signatories.map((s, idx) => ({
+                                id: s.id || `sig-${idx}`,
+                                document_id: docId || '',
+                                name: s.name,
+                                email: s.email || '',
+                                role: (s.signatoryType === 'Main' ? 'main_signatory' : s.signatoryType === 'Witness' ? 'witness' : 'additional_signatory') as any,
+                                status: s.isSigned ? 'signed' : 'pending',
+                                token: '',
+                                signed_at: s.date || null,
+                                created_at: new Date().toISOString()
+                            }))) as DbDocumentSignatory[]}
+                            activeSignatory={activeSigIndex !== null ? (dbSignatory || ({
+                                id: signatories[activeSigIndex]?.id || `sig-${activeSigIndex}`,
+                                document_id: docId || '',
+                                name: signatories[activeSigIndex]?.name || '',
+                                email: signatories[activeSigIndex]?.email || '',
+                                role: (signatories[activeSigIndex]?.signatoryType === 'Main' ? 'main_signatory' : 'witness') as any,
+                                status: 'pending',
+                                token: '',
+                                signed_at: null,
+                                created_at: new Date().toISOString()
+                            } as DbDocumentSignatory)) : null}
+                            readOnly={activeSigIndex === null}
+                        />
                         </div>
                     ) : (
                         document?.blocks.map(block => renderBlock(block))

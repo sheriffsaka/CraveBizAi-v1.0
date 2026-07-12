@@ -153,6 +153,24 @@ const Settings: React.FC<SettingsProps> = ({ company, onSaveChanges, onInviteUse
     setSubInfo(getSubscriptionInfo(activeTenantId));
   }, [activeTenantId]);
 
+  useEffect(() => {
+    const handleScrollToSection = () => {
+      const hash = window.location.hash;
+      if (hash === '#workspace-subscription-section') {
+        setTimeout(() => {
+          const el = document.getElementById('workspace-subscription-section');
+          if (el) {
+            el.scrollIntoView({ behavior: 'smooth', block: 'start' });
+          }
+        }, 300);
+      }
+    };
+
+    handleScrollToSection();
+    window.addEventListener('hashchange', handleScrollToSection);
+    return () => window.removeEventListener('hashchange', handleScrollToSection);
+  }, []);
+
   const handleUpdateTier = (tier: SubscriptionTier) => {
     if (isReadOnly) return;
     
@@ -575,7 +593,7 @@ const Settings: React.FC<SettingsProps> = ({ company, onSaveChanges, onInviteUse
       />
 
       <div className="bg-white p-8 rounded-[2.5rem] shadow-2xl border border-gray-100">
-        <h3 className="text-xl font-black text-gray-800 border-b pb-4 mb-4 uppercase tracking-tighter">Workspace Subscription</h3>
+        <h3 id="workspace-subscription-section" className="text-xl font-black text-gray-800 border-b pb-4 mb-4 uppercase tracking-tighter">Workspace Subscription</h3>
         <p className="text-xs text-gray-500 mb-6 leading-relaxed">
           Select the subscription tier that matches your SME operational needs. Subscription limits reset at the start of each billing cycle.
         </p>

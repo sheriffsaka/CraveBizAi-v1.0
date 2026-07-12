@@ -182,7 +182,8 @@ function compileMockDocument(text: string, companyContext: any): GeneratedDocume
                 companyName: ctx.name || "CRAVEBIZ AI CLIENT",
                 preparedBy: ctx.name || "CraveBiZ AI Transformer",
                 preparedFor: clientName,
-                date: today
+                date: today,
+                logoUrl: ctx.logoUrl || ctx.logo_url || ''
             }
         },
         {
@@ -678,7 +679,8 @@ export async function generateDocumentFromPurpose(purpose: string, companyContex
                         companyName: ctx.name || "CRAVEBIZ AI CLIENT",
                         preparedBy: preparedBy,
                         preparedFor: clientName,
-                        date: today
+                        date: today,
+                        logoUrl: ctx.logoUrl || ctx.logo_url || ''
                     }
                 };
                 parsed.blocks.unshift(coverBlock);

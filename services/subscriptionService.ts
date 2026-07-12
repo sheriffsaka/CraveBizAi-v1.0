@@ -262,8 +262,10 @@ export async function syncGlobalPlanSettings(): Promise<void> {
 }
 
 // Track which workspaces have had their AI mode initialized during this application session.
-// This ensures they default to OFF on initial app loads/reloads as requested.
-const initializedAiModes: Record<string, boolean> = {};
+// Track if we have already reset AI modes on initial application load.
+// This ensures they default to OFF on initial app loads/reloads as requested,
+// but do not turn off on their own during the session.
+let hasResetOnAppLoad = false;
 
 /**
  * Helper to get subscription details for a specific company
@@ -279,10 +281,16 @@ export function getSubscriptionInfo(companyId: string): SubscriptionInfo {
   const isActiveSuperAdminTenant = isSuperAdmin && (companyId === activeTenantId || !companyId);
   const defaultTier: SubscriptionTier = (isCravebizInc || isActiveSuperAdminTenant) ? 'Enterprise' : 'Free';
 
-  // Initialize AI Mode to OFF on initial application load for this companyId
-  if (companyId && !initializedAiModes[companyId]) {
+  // Initialize AI Mode to OFF on initial application load exactly once
+  if (companyId && !hasResetOnAppLoad) {
+    for (let i = 0; i < localStorage.length; i++) {
+      const key = localStorage.key(i);
+      if (key && key.startsWith('cravebiz_aimode_')) {
+        localStorage.setItem(key, 'false');
+      }
+    }
     localStorage.setItem(`cravebiz_aimode_${companyId}`, 'false');
-    initializedAiModes[companyId] = true;
+    hasResetOnAppLoad = true;
   }
 
   if (!companyId) {
@@ -311,7 +319,7 @@ export function getSubscriptionInfo(companyId: string): SubscriptionInfo {
   // Retrieve AI mode toggle
   const savedAiMode = localStorage.getItem(`cravebiz_aimode_${companyId}`);
   const defaultAiMode = 'false';
-  const aiModeEnabled = (limits.aiAvailable || aiUnits > 0) && (savedAiMode !== null ? savedAiMode === 'true' : defaultAiMode === 'true');
+  const aiModeEnabled = (limits.aiAvailable || aiUnits > 0) && (savedAiMode !== null ? savedAiMode === 'true' : false);
 
   return {
     tier,
