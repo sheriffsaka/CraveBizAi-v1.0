@@ -111,7 +111,8 @@ export async function generateClientPaymentHealthReport(
 
 export async function generateDocumentFromPurpose(
     purpose: string,
-    companyContext: any
+    companyContext: any,
+    selectedPreset?: string
 ): Promise<GeneratedDocument | null> {
     try {
         const companyId = localStorage.getItem('cravebiz_tenant') || '';
@@ -119,7 +120,7 @@ export async function generateDocumentFromPurpose(
         const response = await fetch("/api/ai/generate-document-from-purpose", {
             method: "POST",
             headers,
-            body: JSON.stringify({ purpose, companyContext })
+            body: JSON.stringify({ purpose, companyContext, selectedPreset })
         });
         if (!response.ok) {
             const errData = await response.json().catch(() => ({}));

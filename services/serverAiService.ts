@@ -114,62 +114,92 @@ async function callGeminiWithFallback(
     }
 }
 
-function compileMockDocument(text: string, companyContext: any): GeneratedDocument {
+function compileMockDocument(text: string, companyContext: any, selectedPreset?: string): GeneratedDocument {
     const today = new Date().toLocaleDateString();
     const ctx = companyContext || {};
     
-    // Heuristic analysis of the user's prompt or raw text
-    let docType = "Service Agreement";
-    let docTitle = "PROFESSIONAL SERVICES AGREEMENT";
-    const lowerText = text.toLowerCase();
+    // Determine Document Type and Title
+    let docType = selectedPreset || "Service Agreement";
+    let docTitle = (selectedPreset || "PROFESSIONAL SERVICES AGREEMENT").toUpperCase();
+    if (!docTitle.includes("AGREEMENT") && !docTitle.includes("CONTRACT") && !docTitle.includes("PROPOSAL") && !docTitle.includes("INVOICE") && !docTitle.includes("REPORT") && !docTitle.includes("MOU")) {
+        docTitle = docTitle + " AGREEMENT";
+    }
     
-    if (lowerText.includes("nda") || lowerText.includes("disclosure") || lowerText.includes("confidentiality")) {
-        docType = "Non-Disclosure Agreement";
-        docTitle = "MUTUAL NON-DISCLOSURE AGREEMENT";
-    } else if (lowerText.includes("invoice") || lowerText.includes("bill") || lowerText.includes("receipt") || lowerText.includes("payment")) {
-        docType = "Invoice";
-        docTitle = "COMMERCIAL TAX INVOICE";
-    } else if (lowerText.includes("proposal") || lowerText.includes("quote") || lowerText.includes("estimate") || lowerText.includes("valuation")) {
-        docType = "Proposal";
-        docTitle = "BUSINESS DEVELOPMENT PROPOSAL";
-    } else if (lowerText.includes("employment") || lowerText.includes("offer") || lowerText.includes("job") || lowerText.includes("hire")) {
-        docType = "Employment Agreement";
-        docTitle = "OFFER OF EMPLOYMENT & CONTRACT";
-    } else if (lowerText.includes("contract") || lowerText.includes("agreement")) {
-        docType = "Contract Agreement";
-        docTitle = "FORMAL BUSINESS COVENANT";
-    } else if (lowerText.includes("report") || lowerText.includes("analysis") || lowerText.includes("audit")) {
-        docType = "Report";
-        docTitle = "STRATEGIC AUDIT & SUMMARY REPORT";
+    const lowerText = text.toLowerCase();
+    if (!selectedPreset) {
+        if (lowerText.includes("nda") || lowerText.includes("disclosure") || lowerText.includes("confidentiality")) {
+            docType = "Non-Disclosure Agreement";
+            docTitle = "MUTUAL NON-DISCLOSURE AGREEMENT";
+        } else if (lowerText.includes("invoice") || lowerText.includes("bill") || lowerText.includes("receipt") || lowerText.includes("payment")) {
+            docType = "Invoice";
+            docTitle = "COMMERCIAL TAX INVOICE";
+        } else if (lowerText.includes("proposal") || lowerText.includes("quote") || lowerText.includes("estimate") || lowerText.includes("valuation")) {
+            docType = "Proposal";
+            docTitle = "BUSINESS DEVELOPMENT PROPOSAL";
+        } else if (lowerText.includes("employment") || lowerText.includes("offer") || lowerText.includes("job") || lowerText.includes("hire")) {
+            docType = "Employment Agreement";
+            docTitle = "OFFER OF EMPLOYMENT & CONTRACT";
+        } else if (lowerText.includes("contract") || lowerText.includes("agreement")) {
+            docType = "Contract Agreement";
+            docTitle = "FORMAL BUSINESS COVENANT";
+        } else if (lowerText.includes("report") || lowerText.includes("analysis") || lowerText.includes("audit")) {
+            docType = "Report";
+            docTitle = "STRATEGIC AUDIT & SUMMARY REPORT";
+        }
     }
 
     // Attempt to extract client name from text
     let clientName = "Authorized Counterparty Client";
-    const clientMatches = text.match(/(?:between|and|client|partner|for|with)\s+([A-Z][a-zA-Z0-9\s.]{2,30})/i);
+    const clientMatches = text.match(/(?:between|and|client|partner|for|with|to)\s+([A-Z][a-zA-Z0-9\s.]{2,30})/i);
     if (clientMatches && clientMatches[1]) {
         const candidate = clientMatches[1].trim();
         const upperCand = candidate.toUpperCase();
-        // Skip common helper words
-        if (upperCand !== "NDA" && upperCand !== "AGREEMENT" && upperCand !== "CONTRACT" && upperCand !== "THE" && upperCand !== "US" && upperCand !== "ME" && upperCand !== "YOU" && upperCand !== "A") {
+        if (upperCand !== "NDA" && upperCand !== "AGREEMENT" && upperCand !== "CONTRACT" && upperCand !== "THE" && upperCand !== "US" && upperCand !== "ME" && upperCand !== "YOU" && upperCand !== "A" && upperCand !== "CLIENT" && upperCand !== "PARTNER") {
             clientName = candidate;
         }
     }
 
-    // Attempt to extract monetary/fee values
-    const feeMatches = text.match(/\$[0-9,]+(?:\.[0-9]{2})?/g);
-    const feeString = feeMatches ? feeMatches[0] : "$2,500.00";
-    const numericFee = parseFloat(feeString.replace(/[^0-9.]/g, '')) || 2500;
+    // Parse specific items & prices from text to construct a dynamic, beautiful table
+    const tableRows: string[][] = [];
+    let parsedSubtotal = 0;
+    
+    // Split text by lines, semicolons, or bullet points
+    const textSegments = text.split(/[.;\n•]/);
+    for (const segment of textSegments) {
+        const trimmed = segment.trim();
+        if (!trimmed || trimmed.length < 5) continue;
+        const priceMatch = trimmed.match(/\$[0-9,]+(?:\.[0-9]{2})?/);
+        if (priceMatch) {
+            const priceStr = priceMatch[0];
+            const priceVal = parseFloat(priceStr.replace(/[^0-9.]/g, '')) || 0;
+            let desc = trimmed.replace(priceStr, '').replace(/(?:costing|for|price:?|cost:?|total:?|at|fee:?|of)\s*$/i, '').trim();
+            // Clean up separator characters or trailing/leading punctuation
+            desc = desc.replace(/^[\s-:,]+/g, '').replace(/[\s-:,]+$/g, '').trim();
+            if (desc.length > 3) {
+                tableRows.push([
+                    desc,
+                    "1",
+                    "$" + priceVal.toLocaleString('en-US', { minimumFractionDigits: 2 }),
+                    "$" + priceVal.toLocaleString('en-US', { minimumFractionDigits: 2 })
+                ]);
+                parsedSubtotal += priceVal;
+            }
+        }
+    }
 
-    // Detect subjects and generate targeted paragraphs
-    let subjects = ["professional advisory services"];
-    if (lowerText.includes("software") || lowerText.includes("app") || lowerText.includes("web") || lowerText.includes("code")) {
-        subjects = ["software architectural engineering and application development"];
-    } else if (lowerText.includes("design") || lowerText.includes("ui") || lowerText.includes("ux") || lowerText.includes("brand")) {
-        subjects = ["creative design audits, corporate user experience styling, and custom brand assets"];
-    } else if (lowerText.includes("marketing") || lowerText.includes("content") || lowerText.includes("campaign") || lowerText.includes("sales")) {
-        subjects = ["target audience campaigns, digital advertising management, and search engine optimization"];
-    } else if (lowerText.includes("consulting") || lowerText.includes("audit") || lowerText.includes("strategy") || lowerText.includes("advisory")) {
-        subjects = ["specialized consulting advisory services and strategic operational workshops"];
+    // If no tables rows were found but a single dollar amount is present, construct a general line
+    if (tableRows.length === 0) {
+        const singleFeeMatch = text.match(/\$[0-9,]+(?:\.[0-9]{2})?/);
+        if (singleFeeMatch) {
+            const feeVal = parseFloat(singleFeeMatch[0].replace(/[^0-9.]/g, '')) || 0;
+            tableRows.push([
+                `Contract Services: ${docType}`,
+                "1",
+                "$" + feeVal.toLocaleString('en-US', { minimumFractionDigits: 2 }),
+                "$" + feeVal.toLocaleString('en-US', { minimumFractionDigits: 2 })
+            ]);
+            parsedSubtotal = feeVal;
+        }
     }
 
     const blocks: DocumentBlock[] = [
@@ -178,9 +208,9 @@ function compileMockDocument(text: string, companyContext: any): GeneratedDocume
             type: 'cover_page',
             content: {
                 title: docTitle,
-                subtitle: "Strategic Agreement Proposal",
-                companyName: ctx.name || "CRAVEBIZ AI CLIENT",
-                preparedBy: ctx.name || "CraveBiZ AI Transformer",
+                subtitle: `Professional ${docType} Draft`,
+                companyName: ctx.name || "CRAVEBIZ SOLUTIONS",
+                preparedBy: ctx.name || "CRAVEBIZ",
                 preparedFor: clientName,
                 date: today,
                 logoUrl: ctx.logoUrl || ctx.logo_url || ''
@@ -190,7 +220,7 @@ function compileMockDocument(text: string, companyContext: any): GeneratedDocume
             id: 'hdr_' + Math.floor(Math.random() * 100000),
             type: 'header',
             content: {
-                companyName: ctx.name || "CRAVEBIZ AI CLIENT",
+                companyName: ctx.name || "CRAVEBIZ SOLUTIONS",
                 address: ctx.address || "123 Technology Way",
                 email: ctx.email || "billing@cravebiz.com",
                 phone: ctx.phone || "+1 (555) 012-3456",
@@ -204,7 +234,7 @@ function compileMockDocument(text: string, companyContext: any): GeneratedDocume
             content: {
                 documentTitle: docTitle,
                 clientName: clientName,
-                preparedBy: ctx.name || "CraveBiZ AI Transformer",
+                preparedBy: ctx.name || "CRAVEBIZ",
                 date: today,
                 reference: "REF-" + Math.floor(Math.random() * 899999 + 100000)
             }
@@ -212,102 +242,94 @@ function compileMockDocument(text: string, companyContext: any): GeneratedDocume
         {
             id: 'title_1',
             type: 'title',
-            content: { text: "1. RECITALS AND PURPOSE" }
+            content: { text: "1. RECITALS, PURPOSE AND SCOPE" }
         },
         {
             id: 'p_1',
             type: 'paragraph',
-            content: { text: `This document formalizes the custom parameters and guidelines requested for processing under user purpose: "${text}". The operational standard herein represents a legally binding accord between ${ctx.name || "Provider"} ("Provider") and ${clientName} ("Client").` }
+            content: { text: `This document establishes the official parameters, provisions, and guidelines for the ${docType} requested under user specifications: "${text}".` }
+        },
+        {
+            id: 'p_1_details',
+            type: 'paragraph',
+            content: { text: `The parties bound under this covenant—specifically ${ctx.name || "Provider"} ("Provider") and ${clientName} ("Client")—unilaterally covenant to maintain the compliance, specifications, and performance milestones outlined in this draft starting effective ${today}.` }
         }
     ];
 
-    if (docType === "Invoice") {
+    // If the prompt has explicit sentences without pricing, write them as structured clauses so they are represented perfectly!
+    const nonPriceSentences = textSegments.filter(s => {
+        const t = s.trim();
+        return t.length > 15 && !t.match(/\$[0-9,]+/);
+    });
+
+    if (nonPriceSentences.length > 0) {
+        blocks.push({
+            id: 'title_clauses',
+            type: 'title',
+            content: { text: "2. CUSTOM USER-SPECIFIED PROVISIONS" }
+        });
+        
+        for (let idx = 0; idx < nonPriceSentences.length; idx++) {
+            const cleanSentence = nonPriceSentences[idx].trim();
+            const capitalized = cleanSentence.charAt(0).toUpperCase() + cleanSentence.slice(1);
+            blocks.push({
+                id: `p_user_clause_${idx}`,
+                type: 'paragraph',
+                content: { text: `Clause 2.${idx + 1}: ${capitalized}.` }
+            });
+        }
+    }
+
+    // Add table if there is any fee/pricing extracted or if it's a proposal/invoice
+    if (tableRows.length > 0) {
+        const tableId = 'title_table_sect';
         blocks.push(
             {
-                id: 'title_2',
+                id: tableId,
                 type: 'title',
-                content: { text: "2. ITEMIZED INVOICE LINES" }
+                content: { text: docType.toLowerCase().includes('invoice') ? "3. ITEMIZATION OF SERVICES" : "3. FEE SCHEDULE & COST REIMBURSEMENT" }
             },
             {
-                id: 'tbl_1',
+                id: 'tbl_dynamic_1',
                 type: 'table',
                 content: {
-                    headers: ["Line Description", "Quantity", "Rate", "Total"],
-                    rows: [
-                        [`Professional deliverable: ${subjects[0]}`, "1", feeString.replace('$', ''), feeString.replace('$', '')],
-                        ["Standardized Integration & Testing Audit", "1", "0.00", "0.00"]
-                    ]
+                    headers: ["Line Item Description", "Qty", "Unit Price", "Total Price"],
+                    rows: tableRows
                 }
             },
             {
-                id: 'sum_1',
+                id: 'sum_dynamic_1',
                 type: 'summary',
                 content: {
-                    subtotal: numericFee,
+                    subtotal: parsedSubtotal,
                     tax: 0,
-                    total: numericFee,
+                    total: parsedSubtotal,
                     currency: "USD",
-                    notes: `This invoice is compiled under standard Net-30 remittance limits from the dispatch date.`
+                    notes: `This dynamic schedule represents the precise cost items described in user specifications. Balance is payable in Net-30 remittance conditions.`
                 }
-            }
-        );
-    } else if (docType === "Non-Disclosure Agreement") {
-        blocks.push(
-            {
-                id: 'title_2',
-                type: 'title',
-                content: { text: "2. DEFINITION OF COVENANTS & MATERIAL PROTECTION" }
-            },
-            {
-                id: 'p_2',
-                type: 'paragraph',
-                content: { text: `Under the parameters of "${text}", both parties covenant that confidential assets, designs, strategic outlines, structures, algorithms, and pricing formulas shared after ${today} shall remain strictly proprietary.` }
-            },
-            {
-                id: 'title_3',
-                type: 'title',
-                content: { text: "3. VALIDITY TERM AND LEGAL REMEDIES" }
-            },
-            {
-                id: 'p_3',
-                type: 'paragraph',
-                content: { text: "This non-disclosure compliance term is valid for five (5) consecutive years from execution. Unilateral breaches are subject to immediate injunctive blockades and judicial proceedings under applicable territorial laws." }
-            },
-            {
-                id: 'footer_1',
-                type: 'footer',
-                content: { text: `CraveBiZ SmartDraft — Secure digital safeguard protecting mutual proprietary innovations.` }
             }
         );
     } else {
         blocks.push(
             {
-                id: 'title_2',
+                id: 'title_legal',
                 type: 'title',
-                content: { text: "2. STATEMENT OF WORK AND OBJECTIVES" }
+                content: { text: "3. GOVERNING LAW AND RESOLUTION" }
             },
             {
-                id: 'p_2',
+                id: 'p_legal_1',
                 type: 'paragraph',
-                content: { text: `The scope of work encompasses delivering target artifacts for: ${subjects[0]}. All milestones will be evaluated according to standard professional verification processes.` }
-            },
-            {
-                id: 'title_3',
-                type: 'title',
-                content: { text: "3. FINANCIAL CONSIDERATIONS AND SETTLEMENT" }
-            },
-            {
-                id: 'p_3',
-                type: 'paragraph',
-                content: { text: `In strict consideration of successful milestone completion under rules of "${text}", the Client shall pay a total financial amount of ${feeString}. Balance due is to be settled within fourteen (14) days from the formal invoice submittal date.` }
-            },
-            {
-                id: 'footer_1',
-                type: 'footer',
-                content: { text: `CraveBiZ SmartDraft — Formalized under applicable merchant specifications. All terms preserved.` }
+                content: { text: "This Draft Agreement is governed by the prevailing commercial codes and regulations of the specified home jurisdiction. Any disagreements arising under this contract shall be settled via binding arbitration before a designated tribunal." }
             }
         );
     }
+
+    // Footer
+    blocks.push({
+        id: 'footer_dyn',
+        type: 'footer',
+        content: { text: `Generated perfectly based on custom specifications for ${docType} with Client ${clientName}. All rights and covenants preserved.` }
+    });
 
     return {
         documentType: docType,
@@ -571,26 +593,28 @@ ${latePayments > 0 ? `- **Action Required**: Historical invoices show delayed pa
     }
 }
 
-export async function generateDocumentFromPurpose(purpose: string, companyContext: any): Promise<GeneratedDocument | null> {
+export async function generateDocumentFromPurpose(purpose: string, companyContext: any, selectedPreset?: string): Promise<GeneratedDocument | null> {
     const apiKey = getApiKey();
     const ctx = companyContext || {};
     if (!apiKey) {
-        return compileMockDocument(purpose, ctx);
+        return compileMockDocument(purpose, ctx, selectedPreset);
     }
 
     const ai = getGeminiClient();
     const model = 'gemini-3.5-flash';
 
-    const systemInstruction = `You are an expert corporate lawyer and document preparer. Your task is to generate a professional business document (like a Contract, Service Agreement, NDA, Proposal, Quote, or Invoice) based entirely on the user's stated purpose/requirements.
+    const systemInstruction = `You are an expert corporate lawyer and document preparer. Your task is to generate a professional business document based entirely on the user's stated purpose/requirements.
     Your output MUST be a structured business document in JSON format matching the schema.
+    ${selectedPreset ? `The requested document type is exactly: "${selectedPreset}". Make sure the output document corresponds to this type.` : ''}
     - Generate correct blocks: [header, metadata, title, paragraph, table, summary, footer].
     - Automatically create realistic details to make the document whole, e.g. sections/paragraphs with standard legal boilerplate if it is an agreement, realistic table items with prices if it is a proposal/fee breakdown, and clean summary values.
-    - Standard document types like: "Service Agreement", "Non-Disclosure Agreement", "Consulting Proposal", "MOU".
     - Automatically fill company detail fields from the companyContext.
     - Use metadata block with current date and preparedBy.
+    - Ensure that all custom sentences, specific pricing, milestones, and parties mentioned in the user's description are fully represented in the blocks.
     - Return a professional, clean, legally sound document design.`;
 
     const prompt = `Generate a business document based on this purpose: "${purpose}".
+    ${selectedPreset ? `The chosen document type preset is: "${selectedPreset}".` : ''}
     
     Here is the company context that MUST be placed in the header block:
     Company Name: ${ctx.name || "CRAVEBIZ AI CLIENT"}

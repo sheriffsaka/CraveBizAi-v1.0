@@ -1056,8 +1056,8 @@ app.post("/api/ai/client-payment-health-report", verifyTenant, async (req: any, 
 app.post("/api/ai/generate-document-from-purpose", verifyTenant, async (req: any, res) => {
     try {
         await deductAiUnitServerSide(req.tenantId, req.token, req.user?.email, req.headers["x-ai-mode-enabled"] === "true");
-        const { purpose, companyContext } = req.body;
-        const doc = await generateDocumentFromPurpose(purpose, companyContext);
+        const { purpose, companyContext, selectedPreset } = req.body;
+        const doc = await generateDocumentFromPurpose(purpose, companyContext, selectedPreset);
         res.json(doc);
     } catch (err: any) {
         console.error("Express /api/ai/generate-document-from-purpose error:", err);

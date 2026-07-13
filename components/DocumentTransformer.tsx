@@ -7,7 +7,7 @@ import { GeneratedDocument, DocumentBlock, CoverPageBlock, HeaderBlock, Metadata
 import EditableBlock from './EditableBlock';
 import Icon from './common/Icon';
 import { DocumentSignifyViewer, PreparedField } from './DocumentSignifyViewer';
-import { api } from '../lib/api';
+import { api, supabase } from '../lib/api';
 
 const utf8ToBase64 = (str: string): string => {
     try {
@@ -139,176 +139,265 @@ const TEMPLATES = [
     {
         title: "Consulting Proposal",
         desc: "Professional detailed agency proposal with pricing.",
-        prompt: "Draft an Executive Consulting Proposal detailing market entry strategy, brand positioning audis and corporate workshops. Stage 1 Audits: $3,000, Stage 2 Corporate Workshops: $5,000. Terms: 50% upfront, balance upon presentation of final deck."
+        prompt: "Draft an Executive Consulting Proposal detailing market entry strategy, brand positioning audits and corporate workshops. Stage 1 Audits: $3,000, Stage 2 Corporate Workshops: $5,000. Terms: 50% upfront, balance upon presentation of final deck."
     },
     {
         title: "Independent Contractor",
         desc: "Contractor agreement detailing delivery terms.",
         prompt: "Create an Independent Contractor Contract for a Senior UI/UX Designer, monthly retainer of $3,200. Hours capped at 30 per week. IP assignment is 100% owned by the client upon receipt of payments."
+    },
+    {
+        title: "Employment Contract",
+        desc: "Standard full-time employment agreement with benefits.",
+        prompt: "Draft a Full-Time Employment Agreement for a Senior Software Engineer with a monthly base salary of $6,500. Under terms, the employee is entitled to 20 days paid annual leave and comprehensive medical benefits."
+    },
+    {
+        title: "Sales Agreement",
+        desc: "Product or equipment purchase and sale agreement.",
+        prompt: "Draft a Commercial Sales Agreement for the purchase of 50 enterprise server units for $15,000. Delivery scheduled for next month with a 12-month manufacturer hardware warranty included."
+    },
+    {
+        title: "Statement of Work (SOW)",
+        desc: "Detailed scope of work, timeline and milestones.",
+        prompt: "Draft a Statement of Work (SOW) for digital marketing services. Deliverables include: Weekly analytics report, $1,200/month, and Social media campaigns, $1,800/month. Total monthly retainer of $3,000."
+    },
+    {
+        title: "Marketing Proposal",
+        desc: "Dynamic marketing plan detailing campaign services.",
+        prompt: "Create a Marketing Proposal for BrandLaunch Campaign. Included services: SEO Audit: $1,500, Social Ad Campaign: $2,500, Copywriting Assets: $1,000. Total amount: $5,000."
+    },
+    {
+        title: "Partnership Agreement",
+        desc: "Agreement defining shared business parameters.",
+        prompt: "Draft a General Partnership Agreement outlining a 50/50 profit-sharing and governance structure. Both partners contribute equal capital resources and have shared management authority."
+    },
+    {
+        title: "MOU (Memo of Understanding)",
+        desc: "Inter-entity non-binding cooperation framework.",
+        prompt: "Create a Memorandum of Understanding (MOU) between TechLabs and GlobalEducate to run joint digital literacy workshops. Scope includes co-authoring curriculum resources and hosting 5 student events."
     }
 ];
 
-function compileDocumentOffline(purpose: string, companyContext: any): GeneratedDocument {
+function compileDocumentOffline(purpose: string, companyContext: any, selectedPreset?: string): GeneratedDocument {
     const today = new Date().toLocaleDateString();
+    const ctx = companyContext || {};
     
-    // Heuristic parser
-    let clientName = "Acme Client Corp";
-    const clientMatches = purpose.match(/(?:between|and|client|partner)\s+([A-Z][a-zA-Z0-9\s]{2,25})/i);
-    if (clientMatches && clientMatches[1]) {
-        const cleanVal = clientMatches[1].trim();
-        if (cleanVal.toLowerCase() !== companyContext.name.toLowerCase() && cleanVal.toLowerCase() !== 'client' && cleanVal.toLowerCase() !== 'partner') {
-            clientName = cleanVal;
+    // Determine Document Type and Title
+    let docType = selectedPreset || "Service Agreement";
+    let docTitle = (selectedPreset || "PROFESSIONAL SERVICES AGREEMENT").toUpperCase();
+    if (!docTitle.includes("AGREEMENT") && !docTitle.includes("CONTRACT") && !docTitle.includes("PROPOSAL") && !docTitle.includes("INVOICE") && !docTitle.includes("REPORT") && !docTitle.includes("MOU")) {
+        docTitle = docTitle + " AGREEMENT";
+    }
+    
+    const lowerText = purpose.toLowerCase();
+    if (!selectedPreset) {
+        if (lowerText.includes("nda") || lowerText.includes("disclosure") || lowerText.includes("confidentiality")) {
+            docType = "Non-Disclosure Agreement";
+            docTitle = "MUTUAL NON-DISCLOSURE AGREEMENT";
+        } else if (lowerText.includes("invoice") || lowerText.includes("bill") || lowerText.includes("receipt") || lowerText.includes("payment")) {
+            docType = "Invoice";
+            docTitle = "COMMERCIAL TAX INVOICE";
+        } else if (lowerText.includes("proposal") || lowerText.includes("quote") || lowerText.includes("estimate") || lowerText.includes("valuation")) {
+            docType = "Proposal";
+            docTitle = "BUSINESS DEVELOPMENT PROPOSAL";
+        } else if (lowerText.includes("employment") || lowerText.includes("offer") || lowerText.includes("job") || lowerText.includes("hire")) {
+            docType = "Employment Agreement";
+            docTitle = "OFFER OF EMPLOYMENT & CONTRACT";
+        } else if (lowerText.includes("contract") || lowerText.includes("agreement")) {
+            docType = "Contract Agreement";
+            docTitle = "FORMAL BUSINESS COVENANT";
+        } else if (lowerText.includes("report") || lowerText.includes("analysis") || lowerText.includes("audit")) {
+            docType = "Report";
+            docTitle = "STRATEGIC AUDIT & SUMMARY REPORT";
         }
     }
-    
-    // Fee detection
-    const dollarMatches = purpose.match(/\$[0-9,]+/g);
-    const feeString = dollarMatches ? dollarMatches.join(", ") : "$5,000.00";
-    
-    // Jurisdiction
-    let jurisdiction = "Lagos State, Nigeria";
-    const jurMatch = purpose.match(/(?:jurisdiction|laws of|governing law:?)\s+([A-Z][a-zA-Z0-9\s,]{2,30})/i);
-    if (jurMatch && jurMatch[1]) {
-        jurisdiction = jurMatch[1].trim();
+
+    // Attempt to extract client name from text
+    let clientName = "Authorized Counterparty Client";
+    const clientMatches = purpose.match(/(?:between|and|client|partner|for|with|to)\s+([A-Z][a-zA-Z0-9\s.]{2,30})/i);
+    if (clientMatches && clientMatches[1]) {
+        const candidate = clientMatches[1].trim();
+        const upperCand = candidate.toUpperCase();
+        if (upperCand !== "NDA" && upperCand !== "AGREEMENT" && upperCand !== "CONTRACT" && upperCand !== "THE" && upperCand !== "US" && upperCand !== "ME" && upperCand !== "YOU" && upperCand !== "A" && upperCand !== "CLIENT" && upperCand !== "PARTNER") {
+            clientName = candidate;
+        }
     }
 
-    const documentTitle = purpose.toLowerCase().includes('nda') || purpose.toLowerCase().includes('disclosure') 
-        ? "MUTUAL NON-DISCLOSURE AGREEMENT" 
-        : purpose.toLowerCase().includes('consult')
-        ? "EXECUTIVE CONSULTING PROPOSAL"
-        : purpose.toLowerCase().includes('contractor')
-        ? "INDEPENDENT CONTRACTOR AGREEMENT"
-        : "PARTNERSHIP SERVICE AGREEMENT";
+    // Parse specific items & prices from text to construct a dynamic, beautiful table
+    const tableRows: string[][] = [];
+    let parsedSubtotal = 0;
+    
+    // Split text by lines, semicolons, or bullet points
+    const textSegments = purpose.split(/[.;\n•]/);
+    for (const segment of textSegments) {
+        const trimmed = segment.trim();
+        if (!trimmed || trimmed.length < 5) continue;
+        const priceMatch = trimmed.match(/\$[0-9,]+(?:\.[0-9]{2})?/);
+        if (priceMatch) {
+            const priceStr = priceMatch[0];
+            const priceVal = parseFloat(priceStr.replace(/[^0-9.]/g, '')) || 0;
+            let desc = trimmed.replace(priceStr, '').replace(/(?:costing|for|price:?|cost:?|total:?|at|fee:?|of)\s*$/i, '').trim();
+            // Clean up separator characters or trailing/leading punctuation
+            desc = desc.replace(/^[\s-:,]+/g, '').replace(/[\s-:,]+$/g, '').trim();
+            if (desc.length > 3) {
+                tableRows.push([
+                    desc,
+                    "1",
+                    "$" + priceVal.toLocaleString('en-US', { minimumFractionDigits: 2 }),
+                    "$" + priceVal.toLocaleString('en-US', { minimumFractionDigits: 2 })
+                ]);
+                parsedSubtotal += priceVal;
+            }
+        }
+    }
+
+    // If no tables rows were found but a single dollar amount is present, construct a general line
+    if (tableRows.length === 0) {
+        const singleFeeMatch = purpose.match(/\$[0-9,]+(?:\.[0-9]{2})?/);
+        if (singleFeeMatch) {
+            const feeVal = parseFloat(singleFeeMatch[0].replace(/[^0-9.]/g, '')) || 0;
+            tableRows.push([
+                `Contract Services: ${docType}`,
+                "1",
+                "$" + feeVal.toLocaleString('en-US', { minimumFractionDigits: 2 }),
+                "$" + feeVal.toLocaleString('en-US', { minimumFractionDigits: 2 })
+            ]);
+            parsedSubtotal = feeVal;
+        }
+    }
 
     const blocks: DocumentBlock[] = [
         {
-            id: 'cover_' + Math.floor(Math.random() * 10000),
+            id: 'cover_' + Math.floor(Math.random() * 100000),
             type: 'cover_page',
             content: {
-                title: documentTitle,
-                subtitle: "Strategic Client Agreement",
-                companyName: companyContext.name,
-                preparedBy: companyContext.name,
+                title: docTitle,
+                subtitle: `Professional ${docType} Draft`,
+                companyName: ctx.name || "CRAVEBIZ SOLUTIONS",
+                preparedBy: ctx.name || "CRAVEBIZ",
                 preparedFor: clientName,
                 date: today,
-                logoUrl: companyContext.logoUrl || ""
+                logoUrl: ctx.logoUrl || ctx.logo_url || ''
             }
         },
         {
-            id: 'hdr_' + Math.floor(Math.random() * 10000),
+            id: 'hdr_' + Math.floor(Math.random() * 100000),
             type: 'header',
             content: {
-                companyName: companyContext.name,
-                address: companyContext.address,
-                email: companyContext.email,
-                phone: companyContext.phone,
-                website: companyContext.website
+                companyName: ctx.name || "CRAVEBIZ SOLUTIONS",
+                address: ctx.address || "123 Technology Way",
+                email: ctx.email || "billing@cravebiz.com",
+                phone: ctx.phone || "+1 (555) 012-3456",
+                website: ctx.website || "https://cravebiz.com",
+                logoUrl: ctx.logoUrl || ""
             }
         },
         {
-            id: 'meta_' + Math.floor(Math.random() * 10000),
+            id: 'meta_' + Math.floor(Math.random() * 100000),
             type: 'metadata',
             content: {
-                documentTitle: documentTitle,
+                documentTitle: docTitle,
                 clientName: clientName,
-                preparedBy: companyContext.name,
+                preparedBy: ctx.name || "CRAVEBIZ",
                 date: today,
-                reference: "REF-" + Math.floor(Math.random() * 89999 + 10000)
+                reference: "REF-" + Math.floor(Math.random() * 899999 + 100000)
             }
         },
         {
             id: 'title_1',
             type: 'title',
-            content: { text: "1. COVENANT OF ENGAGEMENT" }
+            content: { text: "1. RECITALS, PURPOSE AND SCOPE" }
         },
         {
             id: 'p_1',
             type: 'paragraph',
-            content: { text: `This Agreement is effective as of ${today} by and between ${companyContext.name} and the esteemed client, ${clientName}. This contract formalizes the parameters and terms requested relative to: ${purpose}.` }
+            content: { text: `This document establishes the official parameters, provisions, and guidelines for the ${docType} requested under user specifications: "${purpose}".` }
+        },
+        {
+            id: 'p_1_details',
+            type: 'paragraph',
+            content: { text: `The parties bound under this covenant—specifically ${ctx.name || "Provider"} ("Provider") and ${clientName} ("Client")—unilaterally covenant to maintain the compliance, specifications, and performance milestones outlined in this draft starting effective ${today}.` }
         }
     ];
 
-    if (documentTitle.includes("NON-DISCLOSURE")) {
+    // If the prompt has explicit sentences without pricing, write them as structured clauses so they are represented perfectly!
+    const nonPriceSentences = textSegments.filter(s => {
+        const t = s.trim();
+        return t.length > 15 && !t.match(/\$[0-9,]+/);
+    });
+
+    if (nonPriceSentences.length > 0) {
+        blocks.push({
+            id: 'title_clauses',
+            type: 'title',
+            content: { text: "2. CUSTOM USER-SPECIFIED PROVISIONS" }
+        });
+        
+        for (let idx = 0; idx < nonPriceSentences.length; idx++) {
+            const cleanSentence = nonPriceSentences[idx].trim();
+            const capitalized = cleanSentence.charAt(0).toUpperCase() + cleanSentence.slice(1);
+            blocks.push({
+                id: `p_user_clause_${idx}`,
+                type: 'paragraph',
+                content: { text: `Clause 2.${idx + 1}: ${capitalized}.` }
+            });
+        }
+    }
+
+    // Add table if there is any fee/pricing extracted or if it's a proposal/invoice
+    if (tableRows.length > 0) {
+        const tableId = 'title_table_sect';
         blocks.push(
             {
-                id: 'title_2',
+                id: tableId,
                 type: 'title',
-                content: { text: "2. DEFINITION OF CONFIDENTIAL INFORMATION" }
+                content: { text: docType.toLowerCase().includes('invoice') ? "3. ITEMIZATION OF SERVICES" : "3. FEE SCHEDULE & COST REIMBURSEMENT" }
             },
             {
-                id: 'p_2',
-                type: 'paragraph',
-                content: { text: "Confidential Information refers to proprietary technical architectures, designs, workflows, user-experiences, business strategies, and all other strategic info designated as protected or provided under NDA." }
+                id: 'tbl_dynamic_1',
+                type: 'table',
+                content: {
+                    headers: ["Line Item Description", "Qty", "Unit Price", "Total Price"],
+                    rows: tableRows
+                }
             },
             {
-                id: 'title_3',
-                type: 'title',
-                content: { text: "3. PERFORMANCE TERM & NON-COMPETE LIMITS" }
-            },
-            {
-                id: 'p_3',
-                type: 'paragraph',
-                content: { text: "This non-disclosure covenant remains strictly in force for five (5) consecutive years from the execution date. Both parties pledge not to leverage or compile the other's intellectual components for competitive duplication outside this venture." }
+                id: 'sum_dynamic_1',
+                type: 'summary',
+                content: {
+                    subtotal: parsedSubtotal,
+                    tax: 0,
+                    total: parsedSubtotal,
+                    currency: "USD",
+                    notes: `This dynamic schedule represents the precise cost items described in user specifications. Balance is payable in Net-30 remittance conditions.`
+                }
             }
         );
     } else {
         blocks.push(
             {
-                id: 'title_2',
+                id: 'title_legal',
                 type: 'title',
-                content: { text: "2. SCHEDULE OF SERVICES & SCOPE" }
+                content: { text: "3. GOVERNING LAW AND RESOLUTION" }
             },
             {
-                id: 'p_2',
+                id: 'p_legal_1',
                 type: 'paragraph',
-                content: { text: `The service provider shall deliver the professional packages or execution items details under: ${purpose}. All deliverables will be reviewed under modern QA practices to meet enterprise standards.` }
-            },
-            {
-                id: 'title_3',
-                type: 'title',
-                content: { text: "3. FINANCIAL CONSIDERATION & BILLING STAGES" }
-            },
-            {
-                id: 'p_3',
-                type: 'paragraph',
-                content: { text: `In consideration for the fulfillment of the detailed tasks, the Client shall pay a total sum of ${feeString}, which is structured under standard net-30 terms post-milestone delivery, unless otherwise customized.` }
-            },
-            {
-                id: 'tbl_1',
-                type: 'table',
-                content: {
-                    headers: ["Description Milestones", "Associated Stage", "Assigned Cost"],
-                    rows: [
-                        ["Initial Setup / Kick-off", "Phase 1", "$1,500.00"],
-                        ["Core Development & Drafting", "Phase 2", "$3,000.00"],
-                        ["Client Signoff & Activation", "Phase 3", "$1,500.00"],
-                    ]
-                }
+                content: { text: "This Draft Agreement is governed by the prevailing commercial codes and regulations of the specified home jurisdiction. Any disagreements arising under this contract shall be settled via binding arbitration before a designated tribunal." }
             }
         );
     }
 
-    blocks.push(
-        {
-            id: 'title_final',
-            type: 'title',
-            content: { text: "4. JURISDICTION & GOVERNING LAWS" }
-        },
-        {
-            id: 'p_final',
-            type: 'paragraph',
-            content: { text: `We hereby declare that all conditions and responsibilities outlined in this document shall be interpreted and governed by the laws and regulations in ${jurisdiction}.` }
-        },
-        {
-            id: 'footer_idx',
-            type: 'footer',
-            content: { text: `Compiled locally by CraveBiZ SmartDocs Engine. (CraveBiZ No-AI Offline Compiler)` }
-        }
-    );
+    // Footer
+    blocks.push({
+        id: 'footer_dyn',
+        type: 'footer',
+        content: { text: `Generated perfectly based on custom specifications for ${docType} with Client ${clientName}. All rights and covenants preserved.` }
+    });
 
     return {
-        documentType: documentTitle,
-        blocks
+        documentType: docType,
+        blocks: blocks
     };
 }
 
@@ -349,6 +438,66 @@ const DocumentTransformer: React.FC<DocumentTransformerProps> = ({
 
     // Feature i: Generate Document by Purpose
     const [documentPurpose, setDocumentPurpose] = useState('');
+
+    // Custom Presets State
+    const [presets, setPresets] = useState<any[]>(() => {
+        if (typeof window !== 'undefined') {
+            const saved = localStorage.getItem('cravebiz_doc_presets');
+            if (saved) {
+                try {
+                    return JSON.parse(saved);
+                } catch (e) {
+                    console.error("Failed to parse stored presets:", e);
+                }
+            }
+        }
+        return TEMPLATES;
+    });
+    const [selectedPresetIndex, setSelectedPresetIndex] = useState<number>(0);
+    const [isAddingPreset, setIsAddingPreset] = useState(false);
+    const [newPresetTitle, setNewPresetTitle] = useState('');
+    const [newPresetDesc, setNewPresetDesc] = useState('');
+    const [newPresetPrompt, setNewPresetPrompt] = useState('');
+
+    const handleAddPreset = (e: React.FormEvent) => {
+        e.preventDefault();
+        if (!newPresetTitle.trim() || !newPresetPrompt.trim()) {
+            triggerToast("⚠️ Preset title and prompt are required.");
+            return;
+        }
+        const newPreset = {
+            title: newPresetTitle.trim(),
+            desc: newPresetDesc.trim() || "User defined custom document preset.",
+            prompt: newPresetPrompt.trim()
+        };
+        const updatedPresets = [...presets, newPreset];
+        setPresets(updatedPresets);
+        localStorage.setItem('cravebiz_doc_presets', JSON.stringify(updatedPresets));
+        
+        // Select the newly added preset
+        setSelectedPresetIndex(updatedPresets.length - 1);
+        setDocumentPurpose(newPreset.prompt);
+        
+        // Clear fields and close
+        setNewPresetTitle('');
+        setNewPresetDesc('');
+        setNewPresetPrompt('');
+        setIsAddingPreset(false);
+        triggerToast("🎉 New custom preset document type added successfully!");
+    };
+
+    const handleDeletePreset = (index: number) => {
+        if (presets.length <= 1) {
+            triggerToast("⚠️ You must keep at least one preset document type.");
+            return;
+        }
+        const updated = presets.filter((_, idx) => idx !== index);
+        setPresets(updated);
+        localStorage.setItem('cravebiz_doc_presets', JSON.stringify(updated));
+        setSelectedPresetIndex(0);
+        setDocumentPurpose(updated[0]?.prompt || '');
+        triggerToast("🗑️ Preset deleted.");
+    };
 
     // Feature ii: E-Signature
     const [isSignModalOpen, setIsSignModalOpen] = useState(false);
@@ -452,6 +601,82 @@ const DocumentTransformer: React.FC<DocumentTransformerProps> = ({
     const [workspaceLoading, setWorkspaceLoading] = useState(false);
     const [isOffline, setIsOffline] = useState(typeof window !== 'undefined' ? !window.navigator.onLine : false);
     const [offlineDraftsCount, setOfflineDraftsCount] = useState(0);
+    const [workspaceMembers, setWorkspaceMembers] = useState<any[]>([]);
+
+    useEffect(() => {
+        const fetchWorkspaceMembers = async () => {
+            const targetWorkspaceId = activeWorkspaceId || company?.id;
+            
+            // Standard fallback members as requested: Super, Sarah, Marcus, Kyle
+            const fallbackMembers = [
+                { name: 'Super', role: 'Owner', color: 'bg-indigo-600 text-white' },
+                { name: 'Sarah', role: 'Admin', color: 'bg-emerald-600 text-white' },
+                { name: 'Marcus', role: 'Manager', color: 'bg-amber-600 text-white' },
+                { name: 'Kyle', role: 'Member', color: 'bg-slate-600 text-white' }
+            ];
+
+            if (!targetWorkspaceId) {
+                setWorkspaceMembers(fallbackMembers);
+                return;
+            }
+
+            try {
+                // If it is a mock workspace ID, use the requested fallback users
+                if (typeof targetWorkspaceId === 'string' && targetWorkspaceId.startsWith('ws-')) {
+                    setWorkspaceMembers(fallbackMembers);
+                    return;
+                }
+
+                // Fetch members dynamically from supabase for the selected workspace
+                const { data: members, error } = await supabase
+                    .from('company_members')
+                    .select('user_id, role, status')
+                    .eq('company_id', targetWorkspaceId);
+
+                if (error || !members || members.length === 0) {
+                    setWorkspaceMembers(fallbackMembers);
+                    return;
+                }
+
+                const loaded: any[] = [];
+                for (const m of members) {
+                    const { data: profile } = await supabase
+                        .from('profiles')
+                        .select('full_name, name, status')
+                        .eq('id', m.user_id)
+                        .maybeSingle();
+
+                    const name = profile?.full_name || profile?.name || 'Workspace Member';
+                    const role = m.role.charAt(0).toUpperCase() + m.role.slice(1).toLowerCase();
+                    
+                    // Filter out duplicate or null-ish entries
+                    if (name === 'Workspace Member' && m.user_id === 'member@cravebiz.com') continue;
+
+                    let color = 'bg-slate-600 text-white';
+                    if (role === 'Owner') color = 'bg-indigo-600 text-white';
+                    else if (role === 'Admin') color = 'bg-emerald-600 text-white';
+                    else if (role === 'Manager') color = 'bg-amber-600 text-white';
+
+                    loaded.push({
+                        name,
+                        role,
+                        color
+                    });
+                }
+
+                if (loaded.length === 0) {
+                    setWorkspaceMembers(fallbackMembers);
+                } else {
+                    setWorkspaceMembers(loaded);
+                }
+            } catch (err) {
+                console.warn("Failed to load workspace members dynamically:", err);
+                setWorkspaceMembers(fallbackMembers);
+            }
+        };
+
+        fetchWorkspaceMembers();
+    }, [activeWorkspaceId, company?.id, user]);
 
     // Timeline filtering and details
     const [timelineFilter, setTimelineFilter] = useState<'all' | 'views' | 'signatures' | 'security'>('all');
@@ -1259,19 +1484,20 @@ const DocumentTransformer: React.FC<DocumentTransformerProps> = ({
         setAppliedSignature(null); // Reset signature for new document
         
         const context = getCompanyContext();
+        const selectedPresetName = presets[selectedPresetIndex]?.title;
 
         try {
-            const result = await generateDocumentFromPurpose(documentPurpose, context);
+            const result = await generateDocumentFromPurpose(documentPurpose, context, selectedPresetName);
             if (result) {
                 handleLoadNewDocument(result);
             } else {
                 console.warn("AI returned empty, falling back to local offline template compiler.");
-                const fallbackResult = compileDocumentOffline(documentPurpose, context);
+                const fallbackResult = compileDocumentOffline(documentPurpose, context, selectedPresetName);
                 handleLoadNewDocument(fallbackResult);
             }
         } catch (e) {
             console.warn("Failsafe triggers offline local compiler:", e);
-            const fallbackResult = compileDocumentOffline(documentPurpose, context);
+            const fallbackResult = compileDocumentOffline(documentPurpose, context, selectedPresetName);
             handleLoadNewDocument(fallbackResult);
         } finally {
             setIsLoading(false);
@@ -2096,12 +2322,7 @@ ${company?.name || 'CraveBiZ Vendor'}`;
                     <div className="flex flex-col">
                         <span className="text-[10px] font-black text-gray-400 uppercase tracking-widest">Team Workspace Directory</span>
                         <div className="flex items-center gap-1.5 mt-1.5">
-                            {[
-                                { name: user?.name || 'Owner', role: 'Owner', color: 'bg-indigo-600 text-white' },
-                                { name: 'Sarah Connor', role: 'Admin', color: 'bg-emerald-600 text-white' },
-                                { name: 'Marcus Wright', role: 'Manager', color: 'bg-amber-600 text-white' },
-                                { name: 'Kyle Reese', role: 'Member', color: 'bg-slate-600 text-white' }
-                            ].map((member, i) => (
+                            {workspaceMembers.map((member, i) => (
                                 <div key={i} className={`text-[9px] font-bold px-2 py-1.5 rounded-md shadow-sm flex items-center gap-1 border border-black/5 ${member.color}`} title={`${member.name} (${member.role})`}>
                                     <span>👤</span>
                                     <span>{member.name.split(' ')[0]}</span>
@@ -2304,21 +2525,60 @@ ${company?.name || 'CraveBiZ Vendor'}`;
                                 disabled={isLoading}
                             />
 
-                            {/* Template Suggestions Chips */}
-                            <div>
-                                <span className="text-[10px] font-black uppercase text-gray-400 tracking-wider">Quick Launch Presets:</span>
-                                <div className="grid grid-cols-2 gap-2 mt-2">
-                                    {TEMPLATES.map((tmpl, idx) => (
-                                        <button
-                                            key={idx}
-                                            onClick={() => setDocumentPurpose(tmpl.prompt)}
-                                            className="p-2 border border-gray-100 rounded-lg hover:border-primary-200 hover:bg-primary-50/30 transition-all text-left group"
-                                        >
-                                            <p className="text-[11px] font-bold text-gray-700 group-hover:text-primary-700">{tmpl.title}</p>
-                                            <p className="text-[9px] text-gray-400 truncate mt-0.5">{tmpl.desc}</p>
-                                        </button>
-                                    ))}
+                            {/* Template Suggestions Dropdown */}
+                            <div className="space-y-2 mt-4">
+                                <div className="flex items-center justify-between">
+                                    <label className="text-[10px] font-black uppercase text-gray-400 tracking-wider">Document Type Preset:</label>
+                                    <button 
+                                        type="button" 
+                                        onClick={() => setIsAddingPreset(true)}
+                                        className="text-[10px] text-primary-600 hover:text-primary-700 font-black uppercase tracking-wider flex items-center gap-1"
+                                    >
+                                        <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" className="w-3.5 h-3.5"><path d="M5 12h14" /><path d="M12 5v14" /></svg>
+                                        Add Custom Preset
+                                    </button>
                                 </div>
+                                <div className="flex gap-2">
+                                    <div className="relative flex-1">
+                                        <select
+                                            value={selectedPresetIndex}
+                                            onChange={(e) => {
+                                                const idx = parseInt(e.target.value, 10);
+                                                setSelectedPresetIndex(idx);
+                                                if (presets[idx]) {
+                                                    setDocumentPurpose(presets[idx].prompt);
+                                                }
+                                            }}
+                                            className="w-full p-3 border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-primary-500/30 text-xs font-bold bg-white text-gray-700 appearance-none pr-8 cursor-pointer"
+                                            disabled={isLoading}
+                                        >
+                                            {presets.map((tmpl, idx) => (
+                                                <option key={idx} value={idx}>
+                                                    {tmpl.title} — {tmpl.desc}
+                                                </option>
+                                            ))}
+                                        </select>
+                                        <div className="absolute inset-y-0 right-3 flex items-center pointer-events-none text-gray-400">
+                                            <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" className="w-4 h-4"><path d="m6 9 6 6 6-6" /></svg>
+                                        </div>
+                                    </div>
+                                    {/* Delete option for custom presets (not default ones, index >= 10) */}
+                                    {selectedPresetIndex >= 10 && (
+                                        <button
+                                            type="button"
+                                            onClick={() => handleDeletePreset(selectedPresetIndex)}
+                                            className="p-3 text-red-600 hover:text-red-700 border border-red-200 hover:bg-red-50 rounded-xl transition-all"
+                                            title="Delete Custom Preset"
+                                        >
+                                            <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="w-4 h-4"><path d="M3 6h18" /><path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6" /><path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2" /><line x1="10" x2="10" y1="11" y2="17" /><line x1="14" x2="14" y1="11" y2="17" /></svg>
+                                        </button>
+                                    )}
+                                </div>
+                                {presets[selectedPresetIndex] && (
+                                    <p className="text-[10px] text-gray-500 italic font-medium bg-gray-50/50 p-2.5 rounded-lg border border-gray-100">
+                                        💡 <strong>Prompt Helper:</strong> {presets[selectedPresetIndex].desc}
+                                    </p>
+                                )}
                             </div>
 
                             <button
@@ -4445,6 +4705,76 @@ CraveBiZ DocSignify Mail Delivery Agent`}
                                 Dismiss
                             </button>
                         </div>
+                    </div>
+                </div>
+            )}
+
+            {/* Custom Preset Creation Modal */}
+            {isAddingPreset && (
+                <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-[110] flex items-center justify-center p-4">
+                    <div className="bg-white rounded-2xl w-full max-w-md p-6 shadow-2xl border border-gray-100 animate-in fade-in zoom-in duration-200">
+                        <div className="flex items-center justify-between border-b border-gray-100 pb-3 mb-4">
+                            <h3 className="text-sm font-black text-gray-900 uppercase tracking-wider flex items-center gap-2">
+                                <span className="w-2.5 h-2.5 rounded-full bg-primary-600"></span>
+                                Add Custom Document Type
+                            </h3>
+                            <button
+                                type="button"
+                                onClick={() => setIsAddingPreset(false)}
+                                className="text-gray-400 hover:text-gray-500 hover:bg-gray-100 p-1.5 rounded-lg transition-all"
+                            >
+                                <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M18 6 6 18" /><path d="m6 6 12 12" /></svg>
+                            </button>
+                        </div>
+                        <form onSubmit={handleAddPreset} className="space-y-4">
+                            <div>
+                                <label className="block text-[10px] font-black uppercase text-gray-400 tracking-wider mb-1">Preset Title *</label>
+                                <input
+                                    type="text"
+                                    required
+                                    value={newPresetTitle}
+                                    onChange={(e) => setNewPresetTitle(e.target.value)}
+                                    placeholder="e.g. Partnership Covenant"
+                                    className="w-full p-2.5 border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-primary-500/30 text-xs font-semibold text-gray-700 bg-white"
+                                />
+                            </div>
+                            <div>
+                                <label className="block text-[10px] font-black uppercase text-gray-400 tracking-wider mb-1">Description</label>
+                                <input
+                                    type="text"
+                                    value={newPresetDesc}
+                                    onChange={(e) => setNewPresetDesc(e.target.value)}
+                                    placeholder="e.g. Standard joint venture profit share draft."
+                                    className="w-full p-2.5 border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-primary-500/30 text-xs font-semibold text-gray-700 bg-white"
+                                />
+                            </div>
+                            <div>
+                                <label className="block text-[10px] font-black uppercase text-gray-400 tracking-wider mb-1">Default Template Prompt *</label>
+                                <textarea
+                                    required
+                                    rows={4}
+                                    value={newPresetPrompt}
+                                    onChange={(e) => setNewPresetPrompt(e.target.value)}
+                                    placeholder="Draft a mutual joint venture profit sharing agreement between CraveBiZ and Partner DeltaCorp. Outline 50/50 profit share..."
+                                    className="w-full p-2.5 border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-primary-500/30 text-xs font-semibold text-gray-700 leading-relaxed bg-white"
+                                />
+                            </div>
+                            <div className="flex gap-2 justify-end pt-2">
+                                <button
+                                    type="button"
+                                    onClick={() => setIsAddingPreset(false)}
+                                    className="px-4 py-2 border border-gray-200 hover:border-gray-300 rounded-xl text-xs font-black uppercase tracking-wider text-gray-600 transition-all bg-white"
+                                >
+                                    Cancel
+                                </button>
+                                <button
+                                    type="submit"
+                                    className="px-4 py-2 bg-primary-600 hover:bg-primary-700 text-white rounded-xl text-xs font-black uppercase tracking-wider transition-all"
+                                >
+                                    Add Preset
+                                </button>
+                            </div>
+                        </form>
                     </div>
                 </div>
             )}
