@@ -291,12 +291,20 @@ const Settings: React.FC<SettingsProps> = ({ company, onSaveChanges, onInviteUse
               continue; // Skip this uninvited mock member
             }
 
+            // Determine Invited vs Joined status
+            let memberStatus = m.status || 'Invited';
+            if (profile && (profile as any).status !== 'Invited' && (profile as any).email) {
+              memberStatus = 'Joined';
+            } else if (profile && (profile as any).status === 'Invited') {
+              memberStatus = 'Invited';
+            }
+
             membersList.push({
               id: m.user_id,
               name: name || 'Workspace Member',
               email: email || 'member@cravebiz.com',
               role: m.role.charAt(0).toUpperCase() + m.role.slice(1).toLowerCase(),
-              status: m.status || 'Active'
+              status: memberStatus
             });
           }
 
@@ -308,19 +316,19 @@ const Settings: React.FC<SettingsProps> = ({ company, onSaveChanges, onInviteUse
               name: 'You',
               email: company.email,
               role: userRole || 'Owner',
-              status: 'Active'
+              status: 'Joined'
             });
           }
 
           setTeamMembers(membersList);
         } else {
           setTeamMembers([
-            { id: '1', name: 'You', email: company?.email || 'admin@cravebiz.com', role: userRole, status: 'Active' }
+            { id: '1', name: 'You', email: company?.email || 'admin@cravebiz.com', role: userRole, status: 'Joined' }
           ]);
         }
       } catch {
         setTeamMembers([
-          { id: '1', name: 'You', email: company?.email || 'admin@cravebiz.com', role: userRole, status: 'Active' }
+          { id: '1', name: 'You', email: company?.email || 'admin@cravebiz.com', role: userRole, status: 'Joined' }
         ]);
       }
     };
@@ -329,10 +337,10 @@ const Settings: React.FC<SettingsProps> = ({ company, onSaveChanges, onInviteUse
 
   const handleNonAdminRefill = (packId: 'pack_100' | 'pack_300' | 'pack_1000' | 'pack_5000') => {
     const packMap: Record<string, { amount: number; credits: number; title: string }> = {
-      pack_100: { amount: 1000, credits: 100, title: "Starter Pack" },
-      pack_300: { amount: 2500, credits: 300, title: "Growth Pack" },
-      pack_1000: { amount: 7500, credits: 1000, title: "Pro Pack" },
-      pack_5000: { amount: 30000, credits: 5000, title: "Enterprise Pack" }
+      pack_100: { amount: 1000, credits: 100, title: "100 AI Credits" },
+      pack_300: { amount: 2500, credits: 300, title: "300 AI Credits" },
+      pack_1000: { amount: 7500, credits: 1000, title: "1000 AI Credits" },
+      pack_5000: { amount: 30000, credits: 5000, title: "5000 AI Credits" }
     };
 
     const pack = packMap[packId] || packMap['pack_300'];
@@ -463,21 +471,40 @@ const Settings: React.FC<SettingsProps> = ({ company, onSaveChanges, onInviteUse
     try {
       // Look up profile if they exist in system
       let tempUserId = `user-${Date.now()}`;
+      let isNewInvite = false;
       try {
-        const { data: existingUser, error: lookupErr } = await supabase.from('profiles').select('id').eq('email', inviteEmail.trim()).maybeSingle();
+        const { data: existingUser, error: lookupErr } = await supabase.from('profiles').select('id').eq('email', inviteEmail.trim().toLowerCase()).maybeSingle();
         if (!lookupErr && existingUser) {
           tempUserId = existingUser.id;
+        } else {
+          isNewInvite = true;
+          // Create the placeholder profile first so that company_members foreign key is satisfied!
+          const { error: profileErr } = await supabase.from('profiles').insert({
+            id: tempUserId,
+            full_name: inviteName.trim() || 'Workspace Member',
+            email: inviteEmail.trim().toLowerCase(),
+            status: 'Invited'
+          });
+          if (profileErr) {
+            console.error("Error creating placeholder profile:", profileErr);
+            throw profileErr;
+          }
         }
       } catch (e) {
-        console.warn("Could not lookup user profile by email:", e);
+        console.warn("Could not lookup/create user profile by email:", e);
+        throw e;
       }
       
-      const { error } = await supabase.from('company_members').insert({
+      const { error: memberErr } = await supabase.from('company_members').insert({
         company_id: activeTenantId,
         user_id: tempUserId,
         role: inviteRole.toLowerCase(),
-        status: 'Active'
+        status: isNewInvite ? 'Invited' : 'Joined'
       });
+      if (memberErr) {
+        console.error("Error inserting company_member:", memberErr);
+        throw memberErr;
+      }
       
       // Save invited user's AI Token permission to local storage
       localStorage.setItem(`cravebiz_member_ai_allowed_${activeTenantId}_${inviteEmail.trim().toLowerCase()}`, inviteAiAllowed.toString());
@@ -503,12 +530,12 @@ const Settings: React.FC<SettingsProps> = ({ company, onSaveChanges, onInviteUse
       
       const updatedMembers = [
         ...teamMembers,
-        { id: tempUserId, name: inviteName || 'Workspace Member', email: inviteEmail, role: inviteRole, status: 'Active' }
+        { id: tempUserId, name: inviteName || 'Workspace Member', email: inviteEmail.trim().toLowerCase(), role: inviteRole, status: isNewInvite ? 'Invited' : 'Joined' }
       ];
       setTeamMembers(updatedMembers);
-    } catch (err) {
-      alert("Successfully registered new workspace invite!");
-      setIsInviteOpen(false);
+    } catch (err: any) {
+      console.error("Workspace invitation process failed:", err);
+      alert(`Failed to register workspace invitation: ${err.message || err}`);
     }
   };
 
@@ -802,10 +829,10 @@ const Settings: React.FC<SettingsProps> = ({ company, onSaveChanges, onInviteUse
 
             <div className="space-y-3 mb-6">
               {[
-                { id: 'pack_100', credits: 100, price: 1000, title: "Starter Pack" },
-                { id: 'pack_300', credits: 300, price: 2500, title: "Growth Pack" },
-                { id: 'pack_1000', credits: 1000, price: 7500, title: "Pro Pack" },
-                { id: 'pack_5000', credits: 5000, price: 30000, title: "Enterprise Pack" }
+                { id: 'pack_100', credits: 100, price: 1000, title: "100 AI Credits" },
+                { id: 'pack_300', credits: 300, price: 2500, title: "300 AI Credits" },
+                { id: 'pack_1000', credits: 1000, price: 7500, title: "1,000 AI Credits" },
+                { id: 'pack_5000', credits: 5000, price: 30000, title: "5,000 AI Credits" }
               ].map((p) => (
                 <label
                   key={p.id}
@@ -822,7 +849,6 @@ const Settings: React.FC<SettingsProps> = ({ company, onSaveChanges, onInviteUse
                     />
                     <div>
                       <p className="font-bold text-xs text-gray-950 uppercase tracking-wider">{p.title}</p>
-                      <p className="text-[10px] text-gray-400 font-bold">+{p.credits} AI Credits</p>
                     </div>
                   </div>
                   <span className="font-black text-xs text-gray-950">₦{p.price.toLocaleString()}</span>
@@ -862,6 +888,7 @@ const Settings: React.FC<SettingsProps> = ({ company, onSaveChanges, onInviteUse
             {teamMembers.map(user => {
               const emailLower = user.email.toLowerCase();
               const isUserAiAllowed = localStorage.getItem(`cravebiz_member_ai_allowed_${activeTenantId}_${emailLower}`) !== 'false';
+              const isInvited = user.status === 'Invited';
               return (
                 <div key={user.id} className="flex justify-between items-center p-4 bg-gray-50 rounded-2xl border border-gray-100">
                     <div>
@@ -870,7 +897,11 @@ const Settings: React.FC<SettingsProps> = ({ company, onSaveChanges, onInviteUse
                     </div>
                     <div className="flex items-center gap-3">
                       <span className="text-[10px] font-black text-primary-600 uppercase tracking-widest bg-primary-50 px-3 py-1 rounded-full border border-primary-100">{user.role}</span>
-                      <span className="text-[10px] font-black text-green-600 uppercase tracking-widest bg-green-50 px-3 py-1 rounded-full border border-green-100">{user.status}</span>
+                      <span className={`text-[10px] font-black uppercase tracking-widest px-3 py-1 rounded-full border ${
+                        isInvited 
+                          ? 'text-amber-600 bg-amber-50 border-amber-100' 
+                          : 'text-emerald-600 bg-emerald-50 border-emerald-100'
+                      }`}>{user.status}</span>
                       
                       {!isReadOnly && user.id !== '1' && (
                         <button

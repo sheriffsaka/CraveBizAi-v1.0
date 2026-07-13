@@ -32,11 +32,45 @@ class CraveBizApi {
     return CraveBizApi.instance;
   }
 
-  async ensureProfile(userId: string, name?: string): Promise<boolean> {
+  async ensureProfile(userId: string, name?: string, email?: string): Promise<boolean> {
     try {
-      await supabase.from('profiles').upsert({ id: userId, full_name: name || 'User', status: 'Active' });
+      if (email) {
+        const cleanEmail = email.trim().toLowerCase();
+        // Look up the placeholder profile by email (excluding the logged-in userId itself)
+        const { data: placeholders } = await supabase
+          .from('profiles')
+          .select('id')
+          .eq('email', cleanEmail)
+          .neq('id', userId);
+
+        if (placeholders && placeholders.length > 0) {
+          for (const ph of placeholders) {
+            const oldTempId = ph.id;
+            console.log(`Linking old placeholder profile ${oldTempId} for ${cleanEmail} to real userId ${userId}`);
+
+            // Update company_members to point to the new real userId and set status as Active (or Joined)
+            await supabase
+              .from('company_members')
+              .update({ user_id: userId, status: 'Active' })
+              .eq('user_id', oldTempId);
+
+            // Clean up the old placeholder profile
+            await supabase.from('profiles').delete().eq('id', oldTempId);
+          }
+        }
+      }
+
+      await supabase.from('profiles').upsert({ 
+        id: userId, 
+        full_name: name || 'User', 
+        status: 'Active',
+        ...(email ? { email: email.trim().toLowerCase() } : {})
+      });
       return true;
-    } catch { return false; }
+    } catch (e) {
+      console.error("ensureProfile Error:", e);
+      return false;
+    }
   }
 
   async getProfile(userId: string): Promise<User | null> {

@@ -514,7 +514,10 @@ export async function secureRefillCreditsOnDb(
  * Otherwise, routes to the real Flutterwave secure system.
  */
 export function safeFlutterwaveCheckout(config: any): void {
-  const isPlaceholderKey = !config.public_key || config.public_key === "FLWPUBK_TEST-e5e54eb86bc8c9bc88a8d11d7c3ee7c0-X";
+  const isPlaceholderKey = !config.public_key || 
+                           config.public_key === "FLWPUBK_TEST-e5e54eb86bc8c9bc88a8d11d7c3ee7c0-X" || 
+                           config.public_key.includes("3bbbacb04eb5bb45a95d1bbb426180fb") || 
+                           config.public_key === "FLWPUBK-3bbbacb04eb5bb45a95d1bbb426180fb-X";
 
   if (!isPlaceholderKey) {
     if ((window as any).FlutterwaveCheckout) {

@@ -225,7 +225,7 @@ export default function App() {
     if (isInitialLoad) setIsLoading(true);
     
     try {
-        await api.ensureProfile(user.id, user.user_metadata?.full_name);
+        await api.ensureProfile(user.id, user.user_metadata?.full_name, user.email);
         let profile = await api.getProfile(user.id);
         if (!profile && user.email?.toLowerCase() === 'cravebiz@cloudcraves.com') {
             profile = { id: user.id, name: 'Super Admin', email: user.email, tenantIds: [], isAdmin: true, status: 'Active' };
