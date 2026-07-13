@@ -3437,15 +3437,14 @@ ${company?.name || 'CraveBiZ Vendor'}`;
                                         </div>
 
                                         {/* Styled Zoom Wrapper */}
-                                        <div className="w-full flex justify-center overflow-auto max-h-[85vh] p-4">
+                                        <div className={`w-full flex justify-center overflow-auto p-4 ${isFullscreen ? 'max-h-[calc(100vh-150px)]' : 'max-h-[85vh]'}`}>
                                             <div 
                                                 className="w-full max-w-2xl bg-white rounded-xl shadow-lg border border-gray-200/80 overflow-hidden relative"
                                                 style={{ 
-                                                    transform: `scale(${zoomScale})`, 
-                                                    transformOrigin: 'top center',
+                                                    zoom: zoomScale,
                                                     width: '100%',
                                                     minWidth: '550px',
-                                                    transition: 'transform 0.15s cubic-bezier(0.4, 0, 0.2, 1)'
+                                                    transition: 'zoom 0.15s cubic-bezier(0.4, 0, 0.2, 1)'
                                                 }}
                                             >
                                                 <DocumentSignifyViewer

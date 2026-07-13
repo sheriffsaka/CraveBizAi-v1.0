@@ -90,27 +90,31 @@ export default function PublicSigningPortal({ docId, token, prefilledRecipient, 
                         setDbSignatures(data.signatures || []);
                         
                         // Map old legacy structures to make sure we don't break legacy page layouts
-                        const legacySigs = data.signatories.map(s => ({
-                            id: s.id,
-                            name: s.name,
-                            email: s.email,
-                            title: s.role.replace('_', ' ').toUpperCase(),
-                            signatoryType: (s.role === 'main_signatory' ? 'Main' : 'Witness') as 'Main' | 'Witness',
-                            isSigned: s.status === 'signed',
-                            value: '',
-                            type: 'draw' as const,
-                            date: s.signed_at || ''
-                        }));
+                        const legacySigs = (data.signatories || [])
+                            .filter(s => s !== null && s !== undefined)
+                            .map(s => ({
+                                id: s.id || '',
+                                name: s.name || '',
+                                email: s.email || '',
+                                title: (s.role || '').replace('_', ' ').toUpperCase(),
+                                signatoryType: (s.role === 'main_signatory' ? 'Main' : 'Witness') as 'Main' | 'Witness',
+                                isSigned: s.status === 'signed',
+                                value: '',
+                                type: 'draw' as const,
+                                date: s.signed_at || ''
+                            }));
                         setSignatories(legacySigs);
                         
                         // Match index
-                        const activeIndex = data.signatories.findIndex(s => s.id === data.signatory.id);
+                        const activeIndex = (data.signatory && data.signatories)
+                            ? data.signatories.findIndex(s => s && data.signatory && s.id === data.signatory.id)
+                            : -1;
                         if (activeIndex > -1) {
                             setActiveSigIndex(activeIndex);
                         }
 
                         // Check if already completed signing
-                        if (data.signatory.status === 'signed') {
+                        if (data.signatory && data.signatory.status === 'signed') {
                             setAlreadySigned(true);
                         }
                     } else {
@@ -121,30 +125,32 @@ export default function PublicSigningPortal({ docId, token, prefilledRecipient, 
                     const fetched = await api.getDocSignifyDocument(docId);
                     if (fetched && fetched.document) {
                         setDbDoc(fetched.document);
-                        setDbSignatories(fetched.signatories);
+                        setDbSignatories(fetched.signatories || []);
                         setDbSignatures(fetched.signatures || []);
                         
-                        const legacySigs = fetched.signatories.map(s => ({
-                            id: s.id,
-                            name: s.name,
-                            email: s.email,
-                            title: s.role.replace('_', ' ').toUpperCase(),
-                            signatoryType: (s.role === 'main_signatory' ? 'Main' : 'Witness') as 'Main' | 'Witness',
-                            isSigned: s.status === 'signed',
-                            value: '',
-                            type: 'draw' as const,
-                            date: s.signed_at || ''
-                        }));
+                        const legacySigs = (fetched.signatories || [])
+                            .filter(s => s !== null && s !== undefined)
+                            .map(s => ({
+                                id: s.id || '',
+                                name: s.name || '',
+                                email: s.email || '',
+                                title: (s.role || '').replace('_', ' ').toUpperCase(),
+                                signatoryType: (s.role === 'main_signatory' ? 'Main' : 'Witness') as 'Main' | 'Witness',
+                                isSigned: s.status === 'signed',
+                                value: '',
+                                type: 'draw' as const,
+                                date: s.signed_at || ''
+                            }));
                         setSignatories(legacySigs);
 
                         if (prefilledRecipient) {
-                            const activeIndex = fetched.signatories.findIndex(
-                                s => s.email.trim().toLowerCase() === prefilledRecipient.trim().toLowerCase()
+                            const activeIndex = (fetched.signatories || []).findIndex(
+                                s => s && s.email && s.email.trim().toLowerCase() === prefilledRecipient.trim().toLowerCase()
                             );
-                            if (activeIndex > -1) {
+                            if (activeIndex > -1 && fetched.signatories) {
                                 setActiveSigIndex(activeIndex);
                                 setDbSignatory(fetched.signatories[activeIndex]);
-                                if (fetched.signatories[activeIndex].status === 'signed') {
+                                if (fetched.signatories[activeIndex] && fetched.signatories[activeIndex].status === 'signed') {
                                     setAlreadySigned(true);
                                 }
                             }

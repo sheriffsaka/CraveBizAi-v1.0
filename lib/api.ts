@@ -93,6 +93,18 @@ class CraveBizApi {
     }
   }
 
+  async fetchAiLedger(): Promise<any[]> {
+    try {
+      const response = await fetch('/api/admin/ai-ledger');
+      if (!response.ok) throw new Error('Failed to fetch AI ledger');
+      const data = await response.json();
+      return data.entries || [];
+    } catch (e) {
+      console.error("Error in fetchAiLedger:", e);
+      return [];
+    }
+  }
+
   async getAllInvoices(): Promise<Invoice[]> {
     const { data, error } = await supabase.from('invoices').select('*, invoice_items(*)').order('created_at', { ascending: false });
     if (error) throw error;

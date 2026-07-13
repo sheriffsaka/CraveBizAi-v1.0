@@ -211,6 +211,34 @@ export class SignifyService {
   }
 
   /**
+   * Sync a document and its signatories/signatures from Supabase to local memory store.
+   */
+  static syncToMemory(document: DbDocument, signatory: DbDocumentSignatory, signatories: DbDocumentSignatory[], signatures: DbDocumentSignature[]): void {
+    const store = loadStore();
+    
+    // Save document
+    store.documents[document.id] = document;
+    
+    // Save active signatory
+    store.signatories[signatory.id] = signatory;
+    
+    // Save all signatories
+    for (const sig of signatories) {
+      store.signatories[sig.id] = sig;
+    }
+    
+    // Merge signatures
+    const existingSigIds = new Set(store.signatures.map(s => s.id));
+    for (const sig of signatures) {
+      if (!existingSigIds.has(sig.id)) {
+        store.signatures.push(sig);
+      }
+    }
+    
+    saveStore(store);
+  }
+
+  /**
    * Place signature details.
    */
   static addSignature(signatureInput: Omit<DbDocumentSignature, 'id' | 'created_at'>): DbDocumentSignature {
