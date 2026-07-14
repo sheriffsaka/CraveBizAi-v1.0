@@ -514,25 +514,17 @@ export async function secureRefillCreditsOnDb(
  * Otherwise, routes to the real Flutterwave secure system.
  */
 export function safeFlutterwaveCheckout(config: any): void {
-  const isPlaceholderKey = !config.public_key || 
-                           config.public_key.includes("TEST") || 
-                           config.public_key.includes("test") ||
-                           config.public_key.includes("e5e54eb") ||
-                           config.public_key.includes("3bbbacb04eb5bb45a95d1bbb426180fb") ||
-                           config.public_key.startsWith("FLWPUBK_TEST") ||
-                           config.public_key === "FLWPUBK-3bbbacb04eb5bb45a95d1bbb426180fb-X" ||
-                           !config.public_key.startsWith("FLWPUBK-");
-
-  if (!isPlaceholderKey) {
-    if ((window as any).FlutterwaveCheckout) {
+  // If the real FlutterwaveCheckout SDK is loaded, always prioritize the authentic gateway!
+  if ((window as any).FlutterwaveCheckout) {
+    try {
       (window as any).FlutterwaveCheckout(config);
-    } else {
-      alert("Flutterwave secure system is currently loading. Please try again in a few seconds.");
+      return;
+    } catch (err: any) {
+      console.warn("Real Flutterwave checkout initiation failed, falling back to sandbox simulator:", err);
     }
-    return;
   }
 
-  // Create the simulation modal overlay
+  // Fallback sandbox simulator (only if script failed to load)
   const overlay = document.createElement('div');
   overlay.id = 'flutterwave-simulator-overlay';
   overlay.style.position = 'fixed';
