@@ -26,7 +26,7 @@ import PublicSigningPortal from './components/PublicSigningPortal';
 import ProjectManagement from './components/ProjectManagement';
 import { api, supabase } from './lib/api';
 import { generateRenewalInvoiceSuggestion } from './services/aiGenerationService';
-import { getSubscriptionInfo, setSubscriptionInfo, SubscriptionTier, TIER_LIMITS, syncGlobalPlanSettings, syncSubscriptionInfoFromDb, secureRefillCreditsOnDb, safeFlutterwaveCheckout, getFlutterwavePublicKey } from './services/subscriptionService';
+import { getSubscriptionInfo, setSubscriptionInfo, SubscriptionTier, TIER_LIMITS, syncGlobalPlanSettings, syncSubscriptionInfoFromDb, secureRefillCreditsOnDb, safeFlutterwaveCheckout, getFlutterwavePublicKey, saveSubscriptionInfoToDb } from './services/subscriptionService';
 import { Invoice, Client, Service, Company, User, TenantData, InvoiceStatus, AllTenantsData, GeneratedDocument, DbDocumentSignatory, Project, WorkspaceRole, AuditLog } from './types';
 import Icon from './components/common/Icon';
 
@@ -544,62 +544,188 @@ export default function App() {
 
   const renderContent = () => {
     if (companies.length === 0 && !isDataSyncing && !syncError) {
+        const isPaidPlan = selectedProvisionTier !== 'Free';
+        const planPrice = TIER_LIMITS[selectedProvisionTier]?.price || "₦0.00";
+        const monthlyVal = TIER_LIMITS[selectedProvisionTier]?.monthlyPriceVal || 0;
+
+        const handleProvisionCheckout = () => {
+            const flutterwaveKey = getFlutterwavePublicKey();
+            
+            safeFlutterwaveCheckout({
+                public_key: flutterwaveKey,
+                tx_ref: `cravebiz-provision-${Date.now()}-${currentUser?.id}`,
+                amount: monthlyVal,
+                currency: "NGN",
+                payment_options: "card, banktransfer, ussd",
+                customer: {
+                    email: currentUser?.email || "customer@cravebiz.ai",
+                    name: currentUser?.name || "CraveBiZ Client",
+                },
+                customizations: {
+                    title: `Activate CraveBiZ ${selectedProvisionTier}`,
+                    description: `Payment for CraveBiZ ${selectedProvisionTier} Plan Subscription - ₦${monthlyVal.toLocaleString()}`,
+                    logo: "https://checkout.flutterwave.com/assets/img/flutterwave-logo.svg",
+                },
+                callback: async function (data: any) {
+                    console.log("Provision checkout response:", data);
+                    if (data.status === "successful" || data.status === "completed") {
+                        try {
+                            setIsDataSyncing(true);
+                            const nc = await api.createCompany({ name: `${currentUser?.name || 'My'}'s Workspace` });
+                            setSubscriptionInfo(nc.id, selectedProvisionTier);
+                            await saveSubscriptionInfoToDb(nc.id);
+                            setCompanies([nc]);
+                            setActiveTenantId(nc.id);
+                            localStorage.setItem('cravebiz_tenant', nc.id);
+                            await forceSyncData(nc.id);
+                            alert(`Congratulations! Your workspace has been successfully activated on the ${selectedProvisionTier} plan.`);
+                        } catch(e) {
+                            setSyncError(stringifyError(e));
+                        } finally {
+                            if (isMounted.current) setIsDataSyncing(false);
+                        }
+                    } else {
+                        alert(`Payment was not successful (Status: ${data.status}). Please try again to activate your plan.`);
+                    }
+                },
+                onclose: function () {
+                    console.log("Checkout closed by user.");
+                }
+            });
+        };
+
+        const handleProvisionFree = async () => {
+            try {
+                setIsDataSyncing(true);
+                const nc = await api.createCompany({ name: `${currentUser?.name || 'My'}'s Workspace` });
+                setSubscriptionInfo(nc.id, 'Free');
+                await saveSubscriptionInfoToDb(nc.id);
+                setCompanies([nc]);
+                setActiveTenantId(nc.id);
+                localStorage.setItem('cravebiz_tenant', nc.id);
+                await forceSyncData(nc.id);
+                alert("Your free workspace is ready! Enjoy 10 free AI credits every month.");
+            } catch(e) {
+                setSyncError(stringifyError(e));
+            } finally {
+                if (isMounted.current) setIsDataSyncing(false);
+            }
+        };
+
         return (
-            <div className="flex flex-col items-center justify-center min-h-[60vh] text-center p-6">
-                <div className="bg-white p-8 lg:p-10 rounded-[2.5rem] shadow-2xl border border-gray-100 max-w-lg w-full animate-in fade-in zoom-in-95 duration-300">
-                    <div className="bg-primary-50 w-20 h-20 rounded-3xl flex items-center justify-center mx-auto mb-6"><Icon name="dashboard" className="w-10 h-10 text-primary-600" /></div>
-                    <h2 className="text-3xl font-black text-gray-800 tracking-tighter mb-2 text-center">Vault Ready</h2>
-                    <p className="text-gray-500 mb-6 text-sm leading-relaxed text-center">Confirm your plan to securely provision your SME workspace.</p>
+            <div className="flex flex-col items-center justify-center min-h-[80vh] text-center p-4 bg-gray-50/50">
+                <div className="bg-white p-8 lg:p-10 rounded-[2.5rem] shadow-2xl border border-gray-100 max-w-xl w-full animate-in fade-in zoom-in-95 duration-300">
+                    <div className="bg-primary-50 w-20 h-20 rounded-3xl flex items-center justify-center mx-auto mb-6 border border-primary-100">
+                        <Icon name="dashboard" className="w-10 h-10 text-primary-600" />
+                    </div>
                     
-                    <div className="grid grid-cols-3 gap-2 mb-8">
-                        <button
-                            type="button"
-                            onClick={() => setSelectedProvisionTier('Starter')}
-                            className={`p-3 rounded-2xl border text-left transition-all flex flex-col justify-between h-28 outline-none ${selectedProvisionTier === 'Starter' ? 'border-primary-600 bg-primary-50/40 ring-2 ring-primary-500/20 font-semibold' : 'border-gray-200 hover:bg-gray-50'}`}
-                        >
-                            <div>
-                                <p className="font-bold text-xs text-gray-900">Starter</p>
-                                <p className="text-[10px] text-gray-500 mt-1">100 Invoices/mo</p>
-                            </div>
-                            <span className="text-[9px] text-primary-700 font-bold bg-primary-50 px-1.5 py-0.5 rounded self-start">Starter limits</span>
-                        </button>
+                    <h2 className="text-3xl font-black text-gray-800 tracking-tighter mb-2 text-center">Activate Your Workspace</h2>
+                    <p className="text-gray-500 mb-8 text-sm leading-relaxed text-center">
+                        Select a plan below to provision your workspace. Paid plans will be redirected to pay using our secure gateway.
+                    </p>
+                    
+                    {/* Step 1: Plan Selection */}
+                    <div className="mb-8 text-left">
+                        <span className="text-xs font-bold uppercase text-gray-400 tracking-wider block mb-3">Step 1: Choose Subscription Tier</span>
+                        <div className="grid grid-cols-2 gap-3">
+                            <button
+                                type="button"
+                                onClick={() => setSelectedProvisionTier('Free')}
+                                className={`p-4 rounded-2xl border text-left transition-all flex flex-col justify-between h-32 outline-none ${selectedProvisionTier === 'Free' ? 'border-primary-600 bg-primary-50/40 ring-2 ring-primary-500/20 font-semibold shadow-sm' : 'border-gray-200 hover:bg-gray-50 bg-white'}`}
+                            >
+                                <div>
+                                    <p className="font-bold text-sm text-gray-900">Free</p>
+                                    <p className="text-[11px] text-gray-500 mt-1 leading-snug">10 Invoices/mo</p>
+                                </div>
+                                <div className="mt-2">
+                                    <span className="text-[10px] text-primary-700 font-bold bg-primary-50 px-2 py-0.5 rounded block w-max mb-1">10 AI Credits</span>
+                                    <span className="text-sm font-bold text-gray-900">₦0.00</span>
+                                </div>
+                            </button>
 
-                        <button
-                            type="button"
-                            onClick={() => setSelectedProvisionTier('Growth')}
-                            className={`p-3 rounded-2xl border text-left transition-all flex flex-col justify-between h-28 outline-none ${selectedProvisionTier === 'Growth' ? 'border-primary-600 bg-primary-50/40 ring-2 ring-primary-500/20 font-semibold' : 'border-gray-200 hover:bg-gray-50'}`}
-                        >
-                            <div>
-                                <p className="font-bold text-xs text-gray-900">Growth</p>
-                                <p className="text-[10px] text-gray-500 mt-1">Unlimited Invoices</p>
-                            </div>
-                            <span className="text-[9px] text-emerald-700 font-bold bg-emerald-50 px-1.5 py-0.5 rounded self-start">Flagship Plan</span>
-                        </button>
+                            <button
+                                type="button"
+                                onClick={() => setSelectedProvisionTier('Starter')}
+                                className={`p-4 rounded-2xl border text-left transition-all flex flex-col justify-between h-32 outline-none ${selectedProvisionTier === 'Starter' ? 'border-primary-600 bg-primary-50/40 ring-2 ring-primary-500/20 font-semibold shadow-sm' : 'border-gray-200 hover:bg-gray-50 bg-white'}`}
+                            >
+                                <div>
+                                    <p className="font-bold text-sm text-gray-900">Starter</p>
+                                    <p className="text-[11px] text-gray-500 mt-1 leading-snug">100 Invoices/mo</p>
+                                </div>
+                                <div className="mt-2">
+                                    <span className="text-[10px] text-primary-700 font-bold bg-primary-50 px-2 py-0.5 rounded block w-max mb-1">100 AI Credits</span>
+                                    <span className="text-sm font-bold text-primary-700">₦4,500</span>
+                                </div>
+                            </button>
 
-                        <button
-                            type="button"
-                            onClick={() => setSelectedProvisionTier('Enterprise')}
-                            className={`p-3 rounded-2xl border text-left transition-all flex flex-col justify-between h-28 outline-none ${selectedProvisionTier === 'Enterprise' ? 'border-primary-600 bg-primary-50/40 ring-2 ring-primary-500/20 font-semibold' : 'border-gray-200 hover:bg-gray-50'}`}
-                        >
-                            <div>
-                                <p className="font-bold text-xs text-gray-900">Enterprise</p>
-                                <p className="text-[10px] text-gray-500 mt-1">200 Invoices/mo</p>
-                            </div>
-                            <span className="text-[9px] text-amber-700 font-bold bg-amber-50 px-1.5 py-0.5 rounded self-start font-bold">Unlimited</span>
-                        </button>
+                            <button
+                                type="button"
+                                onClick={() => setSelectedProvisionTier('Growth')}
+                                className={`p-4 rounded-2xl border text-left transition-all flex flex-col justify-between h-32 outline-none ${selectedProvisionTier === 'Growth' ? 'border-primary-600 bg-primary-50/40 ring-2 ring-primary-500/20 font-semibold shadow-sm' : 'border-gray-200 hover:bg-gray-50 bg-white'}`}
+                            >
+                                <div>
+                                    <p className="font-bold text-sm text-gray-900">Growth</p>
+                                    <p className="text-[11px] text-gray-500 mt-1 leading-snug">Unlimited Invoices</p>
+                                </div>
+                                <div className="mt-2">
+                                    <span className="text-[10px] text-emerald-700 font-bold bg-emerald-50 px-2 py-0.5 rounded block w-max mb-1">300 AI Credits</span>
+                                    <span className="text-sm font-bold text-emerald-700">₦9,500</span>
+                                </div>
+                            </button>
+
+                            <button
+                                type="button"
+                                onClick={() => setSelectedProvisionTier('Enterprise')}
+                                className={`p-4 rounded-2xl border text-left transition-all flex flex-col justify-between h-32 outline-none ${selectedProvisionTier === 'Enterprise' ? 'border-primary-600 bg-primary-50/40 ring-2 ring-primary-500/20 font-semibold shadow-sm' : 'border-gray-200 hover:bg-gray-50 bg-white'}`}
+                            >
+                                <div>
+                                    <p className="font-bold text-sm text-gray-900">Enterprise</p>
+                                    <p className="text-[11px] text-gray-500 mt-1 leading-snug">Unlimited Invoices</p>
+                                </div>
+                                <div className="mt-2">
+                                    <span className="text-[10px] text-amber-700 font-bold bg-amber-50 px-2 py-0.5 rounded block w-max mb-1">2,500 AI Credits</span>
+                                    <span className="text-sm font-bold text-amber-700">₦49,500</span>
+                                </div>
+                            </button>
+                        </div>
                     </div>
 
-                    <button onClick={async () => { 
-                        try { 
-                            setIsDataSyncing(true); 
-                            const nc = await api.createCompany({ name: 'My Workspace' }); 
-                            setSubscriptionInfo(nc.id, selectedProvisionTier);
-                            setCompanies([nc]); setActiveTenantId(nc.id); 
-                            localStorage.setItem('cravebiz_tenant', nc.id); 
-                            await forceSyncData(nc.id); 
-                        } catch(e) { setSyncError(stringifyError(e)); } 
-                        finally { if (isMounted.current) setIsDataSyncing(false); } 
-                    }} className="w-full py-5 bg-primary-600 text-white rounded-2xl font-black uppercase tracking-widest shadow-2xl hover:bg-primary-700 transition-all">Provision Workspace</button>
+                    {/* Step 2: Payment Gateway or Free Access */}
+                    <div className="bg-gray-50 p-5 rounded-2xl border border-gray-100 text-left mb-8">
+                        <span className="text-xs font-bold uppercase text-gray-400 tracking-wider block mb-2">Step 2: Verification & Checkout</span>
+                        <div className="flex items-start space-x-3">
+                            <div className="bg-primary-100 p-2 rounded-xl mt-0.5">
+                                <Icon name="reports" className="w-5 h-5 text-primary-700" />
+                            </div>
+                            <div>
+                                <h4 className="font-bold text-sm text-gray-800">
+                                    {isPaidPlan ? `${selectedProvisionTier} Plan Subscription` : 'Free Plan Subscription'}
+                                </h4>
+                                <p className="text-xs text-gray-500 mt-1">
+                                    {isPaidPlan 
+                                        ? `Requires secure checkout. Clicking below will open Flutterwave gateway to authorize the ₦${monthlyVal.toLocaleString()} payment.`
+                                        : "Free tier selected. Instant workspace provisioning. No payment details required."}
+                                </p>
+                            </div>
+                        </div>
+                    </div>
+
+                    {isPaidPlan ? (
+                        <button 
+                            onClick={handleProvisionCheckout} 
+                            className="w-full py-5 bg-primary-600 text-white rounded-2xl font-black uppercase tracking-widest shadow-lg shadow-primary-100 hover:bg-primary-700 transition-all flex items-center justify-center space-x-2 group active:scale-95"
+                        >
+                            <span>Pay {planPrice} & Activate</span>
+                            <svg className="w-5 h-5 transform group-hover:translate-x-1 transition-transform" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M14 5l7 7m0 0l-7 7m7-7H3"></path></svg>
+                        </button>
+                    ) : (
+                        <button 
+                            onClick={handleProvisionFree} 
+                            className="w-full py-5 bg-primary-600 text-white rounded-2xl font-black uppercase tracking-widest shadow-lg shadow-primary-100 hover:bg-primary-700 transition-all flex items-center justify-center space-x-2 active:scale-95"
+                        >
+                            <span>Activate Free Workspace</span>
+                        </button>
+                    )}
                 </div>
             </div>
         );

@@ -3,9 +3,11 @@ import React, { useState } from 'react';
 import Icon from './common/Icon';
 import { User } from '../types';
 
+export type AuthPageSubscriptionTier = 'Free' | 'Starter' | 'Growth' | 'Enterprise';
+
 interface AuthPageProps {
   onLogin: (email: string, pass: string, rememberMe: boolean) => Promise<string | true> | string | true;
-  onSignup: (name: string, email: string, pass: string, companyName: string, phone: string, subscriptionTier: 'Basic' | 'Standard' | 'Enterprise') => Promise<string | true>;
+  onSignup: (name: string, email: string, pass: string, companyName: string, phone: string, subscriptionTier: AuthPageSubscriptionTier) => Promise<string | true>;
   onOpenForgotPassword: () => void;
   users: User[];
   onOpenEmailVerification: (email?: string) => boolean;
@@ -29,7 +31,7 @@ const AuthPage: React.FC<AuthPageProps> = ({ onLogin, onSignup, onOpenForgotPass
   const [signupPassword, setSignupPassword] = useState('');
   const [signupCompanyName, setSignupCompanyName] = useState('');
   const [signupPhone, setSignupPhone] = useState('');
-  const [signupTier, setSignupTier] = useState<'Basic' | 'Standard' | 'Enterprise'>('Standard');
+  const [signupTier, setSignupTier] = useState<AuthPageSubscriptionTier>('Growth');
   const [showSignupPassword, setShowSignupPassword] = useState(false);
 
   const [showVerifyEmailInput, setShowVerifyEmailInput] = useState(false);
@@ -266,43 +268,65 @@ const AuthPage: React.FC<AuthPageProps> = ({ onLogin, onSignup, onOpenForgotPass
                         </div>
                         <div>
                             <label className="block text-xs font-bold text-gray-500 uppercase tracking-wider mb-2">Subscription Plan</label>
-                            <div className="grid grid-cols-3 gap-2">
+                            <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
                                 <button
                                     type="button"
-                                    onClick={() => setSignupTier('Basic')}
-                                    className={`p-2.5 rounded-xl border text-left transition-all flex flex-col justify-between h-28 outline-none ${signupTier === 'Basic' ? 'border-primary-600 bg-primary-50/40 ring-2 ring-primary-500/20' : 'border-gray-200 bg-gray-50 hover:bg-gray-100'}`}
+                                    onClick={() => setSignupTier('Free')}
+                                    className={`p-2 rounded-xl border text-left transition-all flex flex-col justify-between h-28 outline-none ${signupTier === 'Free' ? 'border-primary-600 bg-primary-50/40 ring-2 ring-primary-500/20' : 'border-gray-200 bg-gray-50 hover:bg-gray-100'}`}
                                 >
                                     <div>
-                                        <p className="font-bold text-xs text-gray-900">Basic</p>
-                                        <p className="text-[10px] text-gray-500 leading-tight mt-1">5 Invoices/mo</p>
+                                        <p className="font-bold text-xs text-gray-900">Free</p>
+                                        <p className="text-[9px] text-gray-500 leading-tight mt-1">10 Invoices & Receipts/mo</p>
                                     </div>
-                                    <p className="text-[9px] text-red-600 font-bold bg-red-50 px-1 py-0.5 rounded self-start">No AI</p>
+                                    <div className="flex flex-col gap-1">
+                                        <p className="text-[8px] text-primary-700 font-bold bg-primary-50 px-1 py-0.5 rounded self-start">10 AI Credits</p>
+                                        <p className="text-[9px] font-bold text-gray-700">₦0.00</p>
+                                    </div>
                                 </button>
 
                                 <button
                                     type="button"
-                                    onClick={() => setSignupTier('Standard')}
-                                    className={`p-2.5 rounded-xl border text-left transition-all flex flex-col justify-between h-28 outline-none ${signupTier === 'Standard' ? 'border-primary-600 bg-primary-50/40 ring-2 ring-primary-500/20' : 'border-gray-200 bg-gray-50 hover:bg-gray-100'}`}
+                                    onClick={() => setSignupTier('Starter')}
+                                    className={`p-2 rounded-xl border text-left transition-all flex flex-col justify-between h-28 outline-none ${signupTier === 'Starter' ? 'border-primary-600 bg-primary-50/40 ring-2 ring-primary-500/20' : 'border-gray-200 bg-gray-50 hover:bg-gray-100'}`}
                                 >
                                     <div>
-                                        <div className="flex justify-between items-baseline">
-                                            <p className="font-bold text-xs text-gray-900">Standard</p>
-                                        </div>
-                                        <p className="text-[10px] text-gray-500 leading-tight mt-1">20 Invoices/mo</p>
+                                        <p className="font-bold text-xs text-gray-900">Starter</p>
+                                        <p className="text-[9px] text-gray-500 leading-tight mt-1">100 Invoices & Receipts/mo</p>
                                     </div>
-                                    <p className="text-[9px] text-primary-700 font-bold bg-primary-50 px-1 py-0.5 rounded self-start">Invoice AI</p>
+                                    <div className="flex flex-col gap-1">
+                                        <p className="text-[8px] text-primary-700 font-bold bg-primary-50 px-1 py-0.5 rounded self-start">100 AI Credits</p>
+                                        <p className="text-[9px] font-bold text-primary-700">₦4,500/mo</p>
+                                    </div>
+                                </button>
+
+                                <button
+                                    type="button"
+                                    onClick={() => setSignupTier('Growth')}
+                                    className={`p-2 rounded-xl border text-left transition-all flex flex-col justify-between h-28 outline-none ${signupTier === 'Growth' ? 'border-primary-600 bg-primary-50/40 ring-2 ring-primary-500/20' : 'border-gray-200 bg-gray-50 hover:bg-gray-100'}`}
+                                >
+                                    <div>
+                                        <p className="font-bold text-xs text-gray-900">Growth</p>
+                                        <p className="text-[9px] text-gray-500 leading-tight mt-1">Unlimited Invoices</p>
+                                    </div>
+                                    <div className="flex flex-col gap-1">
+                                        <p className="text-[8px] text-emerald-700 font-bold bg-emerald-50 px-1 py-0.5 rounded self-start">300 AI Credits</p>
+                                        <p className="text-[9px] font-bold text-emerald-700">₦9,500/mo</p>
+                                    </div>
                                 </button>
 
                                 <button
                                     type="button"
                                     onClick={() => setSignupTier('Enterprise')}
-                                    className={`p-2.5 rounded-xl border text-left transition-all flex flex-col justify-between h-28 outline-none ${signupTier === 'Enterprise' ? 'border-primary-600 bg-primary-50/40 ring-2 ring-primary-500/20' : 'border-gray-200 bg-gray-50 hover:bg-gray-100'}`}
+                                    className={`p-2 rounded-xl border text-left transition-all flex flex-col justify-between h-28 outline-none ${signupTier === 'Enterprise' ? 'border-primary-600 bg-primary-50/40 ring-2 ring-primary-500/20' : 'border-gray-200 bg-gray-50 hover:bg-gray-100'}`}
                                 >
                                     <div>
                                         <p className="font-bold text-xs text-gray-900">Enterprise</p>
-                                        <p className="text-[10px] text-gray-500 leading-tight mt-1">200 Invoices/mo</p>
+                                        <p className="text-[9px] text-gray-500 leading-tight mt-1">Unlimited Invoices</p>
                                     </div>
-                                    <p className="text-[9px] text-amber-700 font-bold bg-amber-50 px-1 py-0.5 rounded self-start">Unlimited</p>
+                                    <div className="flex flex-col gap-1">
+                                        <p className="text-[8px] text-amber-700 font-bold bg-amber-50 px-1 py-0.5 rounded self-start">2500 AI Credits</p>
+                                        <p className="text-[9px] font-bold text-amber-700">₦49,500/mo</p>
+                                    </div>
                                 </button>
                             </div>
                         </div>
