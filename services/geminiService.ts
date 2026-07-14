@@ -1,6 +1,13 @@
 import { api } from "../lib/api.ts";
 import { syncSubscriptionInfoFromDb } from "./subscriptionService.ts";
 
+function handleAiResponseUnits(companyId: string, data: any) {
+    if (companyId && data && typeof data.newAiUnits === "number") {
+        localStorage.setItem(`cravebiz_units_${companyId}`, data.newAiUnits.toString());
+        window.dispatchEvent(new Event('cravebiz_subscription_change'));
+    }
+}
+
 export async function generateInvoiceInsight(prompt: string, complex: boolean = false): Promise<string> {
     try {
         const companyId = localStorage.getItem('cravebiz_tenant') || '';
@@ -16,6 +23,7 @@ export async function generateInvoiceInsight(prompt: string, complex: boolean = 
         }
         const data = await response.json();
         if (companyId) {
+            handleAiResponseUnits(companyId, data);
             syncSubscriptionInfoFromDb(companyId).catch(err => console.warn("Sync err:", err));
         }
         return data.text || "I'm sorry, I couldn't generate an insight for this invoice at the moment.";

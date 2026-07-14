@@ -24,6 +24,11 @@ const safeRandomUUID = (): string => {
 
 const generateId = () => safeRandomUUID();
 
+const cleanCompanyId = (id: string): string => {
+  if (!id) return id;
+  return id.replace(/^ws-(personal|legal|sales)-/, '');
+};
+
 class CraveBizApi {
   private static instance: CraveBizApi;
   private constructor() {}
@@ -236,7 +241,7 @@ class CraveBizApi {
   }
 
   async fetchInvoices(companyId: string): Promise<Invoice[]> {
-    const { data, error } = await supabase.from('invoices').select('*, invoice_items(*)').eq('company_id', companyId).order('created_at', { ascending: false });
+    const { data, error } = await supabase.from('invoices').select('*, invoice_items(*)').eq('company_id', cleanCompanyId(companyId)).order('created_at', { ascending: false });
     if (error) throw error;
     
     return (data || []).map(inv => ({
@@ -267,7 +272,7 @@ class CraveBizApi {
     
     let payload: any = {
         id: invId,
-        company_id: companyId,
+        company_id: cleanCompanyId(companyId),
         invoice_number: invNum,
         client_id: invoice.clientId,
         project_id: invoice.projectId || null,
@@ -432,7 +437,7 @@ class CraveBizApi {
   }
 
   async fetchClients(companyId: string): Promise<Client[]> {
-    const { data, error } = await supabase.from('clients').select('*').eq('company_id', companyId);
+    const { data, error } = await supabase.from('clients').select('*').eq('company_id', cleanCompanyId(companyId));
     if (error) throw error;
     return (data || []).map(c => ({ id: c.id, companyId: c.company_id, name: c.name, email: c.email, companyName: c.company_name }));
   }
@@ -440,7 +445,7 @@ class CraveBizApi {
   async createClient(client: Omit<Client, 'id'>): Promise<Client> {
     const { data, error } = await supabase.from('clients').insert({
         id: generateId(),
-        company_id: client.companyId,
+        company_id: cleanCompanyId(client.companyId),
         name: client.name,
         email: client.email,
         company_name: client.companyName
@@ -460,7 +465,7 @@ class CraveBizApi {
 
   async fetchProjects(companyId: string): Promise<Project[]> {
     try {
-      const { data, error } = await supabase.from('projects').select('*').eq('company_id', companyId);
+      const { data, error } = await supabase.from('projects').select('*').eq('company_id', cleanCompanyId(companyId));
       if (error) throw error;
       return (data || []).map(p => ({
         id: p.id,
@@ -497,7 +502,7 @@ class CraveBizApi {
     try {
       const { error } = await supabase.from('projects').insert({
         id,
-        company_id: project.companyId,
+        company_id: cleanCompanyId(project.companyId),
         client_id: project.clientId,
         name: project.name,
         description: project.description,
@@ -554,7 +559,7 @@ class CraveBizApi {
   }
 
   async fetchServices(companyId: string): Promise<Service[]> {
-    const { data, error } = await supabase.from('services').select('*').eq('company_id', companyId);
+    const { data, error } = await supabase.from('services').select('*').eq('company_id', cleanCompanyId(companyId));
     if (error) throw error;
     return (data || []).map(s => ({ id: s.id, companyId: s.company_id, name: s.name, category: s.category, description: s.description, price: Number(s.price) }));
   }
@@ -562,7 +567,7 @@ class CraveBizApi {
   async createService(service: Omit<Service, 'id'>): Promise<Service> {
     const { data, error } = await supabase.from('services').insert({
         id: generateId(),
-        company_id: service.companyId,
+        company_id: cleanCompanyId(service.companyId),
         name: service.name,
         category: service.category,
         description: service.description,
@@ -624,7 +629,7 @@ class CraveBizApi {
     try {
       await supabase.from('generated_documents').upsert({
         id: docId,
-        company_id: companyId,
+        company_id: cleanCompanyId(companyId),
         document_type: doc.documentType,
         content: contentPayload
       });
@@ -636,7 +641,7 @@ class CraveBizApi {
     try {
       await supabase.from('documents').upsert({
         id: docId,
-        company_id: companyId,
+        company_id: cleanCompanyId(companyId),
         document_type: doc.documentType,
         document_title: doc.documentType,
         title: doc.documentType,
@@ -699,7 +704,7 @@ class CraveBizApi {
     try {
       const { data, error } = await supabase.from('generated_documents')
         .select('*')
-        .eq('company_id', companyId)
+        .eq('company_id', cleanCompanyId(companyId))
         .order('created_at', { ascending: false });
         
       if (!error && data) {
@@ -1816,7 +1821,7 @@ class CraveBizApi {
     try {
       const { error } = await supabase.from('audit_logs').insert({
         id,
-        company_id: log.companyId,
+        company_id: cleanCompanyId(log.companyId),
         user_id: log.userId,
         user_name: log.userName,
         action: log.action,
@@ -1850,7 +1855,7 @@ class CraveBizApi {
     try {
       const { data, error } = await supabase.from('audit_logs')
         .select('*')
-        .eq('company_id', companyId)
+        .eq('company_id', cleanCompanyId(companyId))
         .order('created_at', { ascending: false });
       if (!error && data) {
         return data.map((d: any) => ({

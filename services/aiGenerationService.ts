@@ -2,6 +2,13 @@ import { GeneratedDocument, Invoice, InvoiceItem, DocumentReviewResult } from ".
 import { api } from "../lib/api.ts";
 import { syncSubscriptionInfoFromDb } from "./subscriptionService.ts";
 
+function handleAiResponseUnits(companyId: string, data: any) {
+    if (companyId && data && typeof data.newAiUnits === "number") {
+        localStorage.setItem(`cravebiz_units_${companyId}`, data.newAiUnits.toString());
+        window.dispatchEvent(new Event('cravebiz_subscription_change'));
+    }
+}
+
 export async function generateTextResponse(
     prompt: string,
     model: string,
@@ -21,6 +28,7 @@ export async function generateTextResponse(
         }
         const data = await response.json();
         if (companyId) {
+            handleAiResponseUnits(companyId, data);
             syncSubscriptionInfoFromDb(companyId).catch(err => console.warn("Sync err:", err));
         }
         return data.text || "Sorry, I encountered an error while processing your request.";
@@ -46,10 +54,12 @@ export async function transformDocument(
             const errData = await response.json().catch(() => ({}));
             throw new Error(errData.error || `HTTP error! status: ${response.status}`);
         }
+        const data = await response.json();
         if (companyId) {
+            handleAiResponseUnits(companyId, data);
             syncSubscriptionInfoFromDb(companyId).catch(err => console.warn("Sync err:", err));
         }
-        return await response.json();
+        return data;
     } catch (error: any) {
         console.error("Client Error calling transformDocument API:", error);
         throw error;
@@ -72,10 +82,12 @@ export async function generateRenewalInvoiceSuggestion(
             const errData = await response.json().catch(() => ({}));
             throw new Error(errData.error || `HTTP error! status: ${response.status}`);
         }
+        const data = await response.json();
         if (companyId) {
+            handleAiResponseUnits(companyId, data);
             syncSubscriptionInfoFromDb(companyId).catch(err => console.warn("Sync err:", err));
         }
-        return await response.json();
+        return data;
     } catch (error) {
         console.error("Client Error calling renewal suggestion API:", error);
         return null;
@@ -100,6 +112,7 @@ export async function generateClientPaymentHealthReport(
         }
         const data = await response.json();
         if (companyId) {
+            handleAiResponseUnits(companyId, data);
             syncSubscriptionInfoFromDb(companyId).catch(err => console.warn("Sync err:", err));
         }
         return data.text || "Failed to generate health report.";
@@ -126,10 +139,12 @@ export async function generateDocumentFromPurpose(
             const errData = await response.json().catch(() => ({}));
             throw new Error(errData.error || `HTTP error! status: ${response.status}`);
         }
+        const data = await response.json();
         if (companyId) {
+            handleAiResponseUnits(companyId, data);
             syncSubscriptionInfoFromDb(companyId).catch(err => console.warn("Sync err:", err));
         }
-        return await response.json();
+        return data;
     } catch (error: any) {
         console.error("Client Error calling generateDocumentFromPurpose API:", error);
         throw error;
@@ -151,10 +166,12 @@ export async function reviewDocumentContent(
             const errData = await response.json().catch(() => ({}));
             throw new Error(errData.error || `HTTP error! status: ${response.status}`);
         }
+        const data = await response.json();
         if (companyId) {
+            handleAiResponseUnits(companyId, data);
             syncSubscriptionInfoFromDb(companyId).catch(err => console.warn("Sync err:", err));
         }
-        return await response.json();
+        return data;
     } catch (error: any) {
         console.error("Client Error calling reviewDocumentContent API:", error);
         throw error;

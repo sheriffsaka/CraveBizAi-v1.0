@@ -127,6 +127,9 @@ async function verifyTenant(req: any, res: any, next: any) {
         }
         
         let tenantId = req.headers["x-tenant-id"] || req.params.tenantId;
+        if (tenantId && typeof tenantId === "string") {
+            tenantId = tenantId.replace(/^ws-(personal|legal|sales)-/, "");
+        }
         if (!tenantId) {
             // High-resiliency fallback: look up first workspace associated with this user
             try {
@@ -293,6 +296,27 @@ async function recordAiUsageLedgerEntry(
             console.warn("[AI Ledger] Exception when writing to ai_credit_logs table (using fallback):", tableErr.message || tableErr);
         }
 
+        // 1.1 Try to record to SQL table 'ai_usage_logs' if it exists in Supabase
+        try {
+            const { error: dbUsageError } = await supabaseClient
+                .from("ai_usage_logs")
+                .insert({
+                    user_id: userEmail,
+                    task_performed: taskName,
+                    tokens_used: tokensUsed,
+                    credits_used: creditsUsed,
+                    timestamp: timestamp,
+                    company_id: dbCompanyId
+                });
+            if (dbUsageError) {
+                console.warn("[AI Ledger] Could not write to ai_usage_logs table:", dbUsageError.message);
+            } else {
+                console.log("[AI Ledger] Recorded usage in ai_usage_logs table successfully.");
+            }
+        } catch (tableErr: any) {
+            console.warn("[AI Ledger] Exception when writing to ai_usage_logs table:", tableErr.message || tableErr);
+        }
+
         // 2. Also write to 'generated_documents' under cravebiz_ai_ledger_entry as a resilient fallback
         await supabaseClient.from("generated_documents").insert({
             id: entryId,
@@ -321,7 +345,7 @@ async function deductAiUnitServerSide(
     userName?: string,
     taskName?: string,
     tokensUsed?: number
-): Promise<void> {
+): Promise<number> {
     if (!tenantId) {
         throw new Error("Tenant ID/Workspace context is required to use AI features.");
     }
@@ -535,6 +559,7 @@ async function deductAiUnitServerSide(
         const finalTokens = tokensUsed || 120;
         await recordAiUsageLedgerEntry(tenantId, finalEmail, finalName, finalTask, finalTokens, 1);
     }
+    return newUnits;
 }
 
 // Audit Logs, Signatures and Documents Storage Configuration
@@ -699,28 +724,100 @@ app.post("/api/public/documents", verifyTenant, (req, res) => {
 });
 
 // Audit Logs Controller Routes
-app.post("/api/audit-logs", verifyTenant, (req: any, res) => {
+app.post("/api/audit-logs", verifyTenant, async (req: any, res) => {
     try {
         const { log } = req.body;
         if (!log) {
             return res.status(400).json({ error: "Log content is required" });
         }
+
+        // Clean company ID to ensure strictly valid UUID
+        let dbCompanyId = req.tenantId;
+        if (dbCompanyId === "cravebiz-inc") {
+            dbCompanyId = "00000000-0000-0000-0000-000000000000";
+        } else if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(dbCompanyId)) {
+            dbCompanyId = "11111111-1111-1111-1111-111111111111";
+        }
+
+        const logId = log.id || `audit-${Date.now()}-${Math.random().toString(36).substring(2, 11)}`;
+        const timestamp = log.createdAt || new Date().toISOString();
+
+        // 1. Try to record to SQL table 'audit_logs' in Supabase
+        try {
+            const { error: dbError } = await supabaseClient
+                .from("audit_logs")
+                .insert({
+                    id: logId,
+                    company_id: dbCompanyId,
+                    user_id: log.userId || req.user?.id || "00000000-0000-0000-0000-000000000000",
+                    user_name: log.userName || req.user?.name || "Workspace Member",
+                    action: log.action || "UNKNOWN_ACTION",
+                    resource: log.resource || "SYSTEM",
+                    details: log.details || "",
+                    created_at: timestamp
+                });
+            if (dbError) {
+                console.warn("[Audit Log Server] Could not write to audit_logs table:", dbError.message);
+            } else {
+                console.log("[Audit Log Server] Recorded audit log in audit_logs table successfully.");
+            }
+        } catch (dbErr: any) {
+            console.warn("[Audit Log Server] Exception writing to audit_logs table:", dbErr.message || dbErr);
+        }
+
+        // 2. Also write to local json file as fallback/cache
         const currentLogs = getAuditLogs();
         currentLogs.unshift(log);
         saveAuditLogs(currentLogs.slice(0, 1000));
         res.json({ success: true, log });
     } catch (e) {
+        console.error("POST /api/audit-logs error:", e);
         res.status(500).json({ error: "Failed to store audit log" });
     }
 });
 
-app.get("/api/audit-logs", verifyTenant, (req: any, res) => {
+app.get("/api/audit-logs", verifyTenant, async (req: any, res) => {
     try {
         const tenantId = req.tenantId;
+        let dbCompanyId = tenantId;
+        if (dbCompanyId === "cravebiz-inc") {
+            dbCompanyId = "00000000-0000-0000-0000-000000000000";
+        } else if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(dbCompanyId)) {
+            dbCompanyId = "11111111-1111-1111-1111-111111111111";
+        }
+
+        // Try to fetch from Supabase audit_logs table
+        try {
+            const { data, error } = await supabaseClient
+                .from("audit_logs")
+                .select("*")
+                .eq("company_id", dbCompanyId)
+                .order("created_at", { ascending: false })
+                .limit(100);
+            
+            if (!error && data && data.length > 0) {
+                const formatted = data.map((d: any) => ({
+                    id: d.id,
+                    companyId: tenantId,
+                    userId: d.user_id,
+                    userName: d.user_name,
+                    action: d.action,
+                    resource: d.resource,
+                    details: d.details,
+                    createdAt: d.created_at
+                }));
+                return res.json(formatted);
+            }
+        } catch (dbErr) {
+            console.warn("Could not fetch from audit_logs table, using json fallback:", dbErr);
+        }
+
+        // Fallback to local json file
         const currentLogs = getAuditLogs();
         const filtered = currentLogs.filter((l: any) => l.companyId === tenantId);
         res.json(filtered);
     } catch (e) {
+        console.error("GET /api/audit-logs error:", e);
         res.status(500).json({ error: "Failed to fetch audit logs" });
     }
 });
@@ -1174,8 +1271,8 @@ app.post("/api/ai/text-response", verifyTenant, async (req: any, res) => {
         const { prompt, model, systemInstruction } = req.body;
         const text = await generateTextResponse(prompt, model, systemInstruction);
         const tokens = Math.max(25, Math.ceil((JSON.stringify(req.body).length + (text || "").length) * 0.26));
-        await deductAiUnitServerSide(req.tenantId, req.token, req.user?.email, req.headers["x-ai-mode-enabled"] === "true", req.user?.name, "General AI Assistant Interaction", tokens);
-        res.json({ text });
+        const newUnits = await deductAiUnitServerSide(req.tenantId, req.token, req.user?.email, req.headers["x-ai-mode-enabled"] === "true", req.user?.name, "General AI Assistant Interaction", tokens);
+        res.json({ text, newAiUnits: newUnits });
     } catch (err: any) {
         console.error("Express /api/ai/text-response error:", err);
         res.status(500).json({ error: err.message || "Internal server error" });
@@ -1187,8 +1284,8 @@ app.post("/api/ai/transform-document", verifyTenant, async (req: any, res) => {
         const { rawContent, companyContext } = req.body;
         const doc = await transformDocument(rawContent, companyContext);
         const tokens = Math.max(25, Math.ceil((JSON.stringify(req.body).length + JSON.stringify(doc).length) * 0.26));
-        await deductAiUnitServerSide(req.tenantId, req.token, req.user?.email, req.headers["x-ai-mode-enabled"] === "true", req.user?.name, "AI Document Transformation", tokens);
-        res.json(doc);
+        const newUnits = await deductAiUnitServerSide(req.tenantId, req.token, req.user?.email, req.headers["x-ai-mode-enabled"] === "true", req.user?.name, "AI Document Transformation", tokens);
+        res.json({ ...doc, newAiUnits: newUnits });
     } catch (err: any) {
         console.error("Express /api/ai/transform-document error:", err);
         res.status(500).json({ error: err.message || "Internal server error" });
@@ -1200,8 +1297,8 @@ app.post("/api/ai/renewal-suggestion", verifyTenant, async (req: any, res) => {
         const { clientId, expiringItems } = req.body;
         const suggestion = await generateRenewalInvoiceSuggestion(clientId, expiringItems);
         const tokens = Math.max(25, Math.ceil((JSON.stringify(req.body).length + JSON.stringify(suggestion).length) * 0.26));
-        await deductAiUnitServerSide(req.tenantId, req.token, req.user?.email, req.headers["x-ai-mode-enabled"] === "true", req.user?.name, "AI Invoice Renewal Suggestion", tokens);
-        res.json(suggestion);
+        const newUnits = await deductAiUnitServerSide(req.tenantId, req.token, req.user?.email, req.headers["x-ai-mode-enabled"] === "true", req.user?.name, "AI Invoice Renewal Suggestion", tokens);
+        res.json({ ...suggestion, newAiUnits: newUnits });
     } catch (err: any) {
         console.error("Express /api/ai/renewal-suggestion error:", err);
         res.status(500).json({ error: err.message || "Internal server error" });
@@ -1213,8 +1310,8 @@ app.post("/api/ai/client-payment-health-report", verifyTenant, async (req: any, 
         const { clientId, paymentHistory } = req.body;
         const text = await generateClientPaymentHealthReport(clientId, paymentHistory);
         const tokens = Math.max(25, Math.ceil((JSON.stringify(req.body).length + (text || "").length) * 0.26));
-        await deductAiUnitServerSide(req.tenantId, req.token, req.user?.email, req.headers["x-ai-mode-enabled"] === "true", req.user?.name, "AI Client Payment Health Analysis", tokens);
-        res.json({ text });
+        const newUnits = await deductAiUnitServerSide(req.tenantId, req.token, req.user?.email, req.headers["x-ai-mode-enabled"] === "true", req.user?.name, "AI Client Payment Health Analysis", tokens);
+        res.json({ text, newAiUnits: newUnits });
     } catch (err: any) {
         console.error("Express /api/ai/client-payment-health-report error:", err);
         res.status(500).json({ error: err.message || "Internal server error" });
@@ -1226,8 +1323,8 @@ app.post("/api/ai/generate-document-from-purpose", verifyTenant, async (req: any
         const { purpose, companyContext, selectedPreset } = req.body;
         const doc = await generateDocumentFromPurpose(purpose, companyContext, selectedPreset);
         const tokens = Math.max(25, Math.ceil((JSON.stringify(req.body).length + JSON.stringify(doc).length) * 0.26));
-        await deductAiUnitServerSide(req.tenantId, req.token, req.user?.email, req.headers["x-ai-mode-enabled"] === "true", req.user?.name, "AI Document Generation", tokens);
-        res.json(doc);
+        const newUnits = await deductAiUnitServerSide(req.tenantId, req.token, req.user?.email, req.headers["x-ai-mode-enabled"] === "true", req.user?.name, "AI Document Generation", tokens);
+        res.json({ ...doc, newAiUnits: newUnits });
     } catch (err: any) {
         console.error("Express /api/ai/generate-document-from-purpose error:", err);
         res.status(500).json({ error: err.message || "Internal server error" });
@@ -1239,8 +1336,8 @@ app.post("/api/ai/review-document-content", verifyTenant, async (req: any, res) 
         const { documentText } = req.body;
         const report = await reviewDocumentContent(documentText);
         const tokens = Math.max(25, Math.ceil((JSON.stringify(req.body).length + JSON.stringify(report).length) * 0.26));
-        await deductAiUnitServerSide(req.tenantId, req.token, req.user?.email, req.headers["x-ai-mode-enabled"] === "true", req.user?.name, "AI Document Compliance Review", tokens);
-        res.json(report);
+        const newUnits = await deductAiUnitServerSide(req.tenantId, req.token, req.user?.email, req.headers["x-ai-mode-enabled"] === "true", req.user?.name, "AI Document Compliance Review", tokens);
+        res.json({ ...report, newAiUnits: newUnits });
     } catch (err: any) {
         console.error("Express /api/ai/review-document-content error:", err);
         res.status(500).json({ error: err.message || "Internal server error" });
@@ -1252,8 +1349,8 @@ app.post("/api/ai/invoice-insight", verifyTenant, async (req: any, res) => {
         const { prompt, complex } = req.body;
         const text = await generateInvoiceInsight(prompt, complex);
         const tokens = Math.max(25, Math.ceil((JSON.stringify(req.body).length + (text || "").length) * 0.26));
-        await deductAiUnitServerSide(req.tenantId, req.token, req.user?.email, req.headers["x-ai-mode-enabled"] === "true", req.user?.name, "AI Financial Insights", tokens);
-        res.json({ text });
+        const newUnits = await deductAiUnitServerSide(req.tenantId, req.token, req.user?.email, req.headers["x-ai-mode-enabled"] === "true", req.user?.name, "AI Financial Insights", tokens);
+        res.json({ text, newAiUnits: newUnits });
     } catch (err: any) {
         console.error("Express /api/ai/invoice-insight error:", err);
         res.status(500).json({ error: err.message || "Internal server error" });
