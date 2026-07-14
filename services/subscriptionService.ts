@@ -132,7 +132,7 @@ export async function saveSubscriptionInfoToDb(companyId: string): Promise<void>
   }
 
   try {
-    const { error } = await supabase.from('generated_documents').upsert({
+    let { error } = await supabase.from('generated_documents').upsert({
       id: docId,
       company_id: docId,
       document_type: 'cravebiz_workspace_settings',
@@ -144,6 +144,22 @@ export async function saveSubscriptionInfoToDb(companyId: string): Promise<void>
         invitedMembers
       }
     });
+    if (error) {
+      console.warn("Standard client-side subscription upsert failed, trying with company_id: null fallback...", error);
+      const fallbackUpsert = await supabase.from('generated_documents').upsert({
+        id: docId,
+        company_id: null,
+        document_type: 'cravebiz_workspace_settings',
+        content: {
+          tier: sub.tier,
+          aiUnits: sub.aiUnits,
+          aiModeEnabled: sub.aiModeEnabled,
+          memberPermissions,
+          invitedMembers
+        }
+      });
+      error = fallbackUpsert.error;
+    }
     if (error) {
       console.warn("Supabase upsert subscription error:", error);
     }

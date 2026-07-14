@@ -363,6 +363,18 @@ export default function App() {
     const inv = tenantData.invoices.find(i => i.id === invoiceId);
     if (!inv) return;
 
+    // Check receipt limits if the receipt hasn't been sent yet
+    if (!inv.isReceiptSent) {
+        const sub = getSubscriptionInfo(activeTenantId || '');
+        const currentReceiptCount = tenantData.invoices.filter(i => i.isReceiptSent).length;
+        if (currentReceiptCount >= sub.maxReceipts) {
+            const msg = `You have reached the monthly receipt limit of your ${sub.tier} Plan (${currentReceiptCount}/${sub.maxReceipts} receipts issued). Please upgrade your subscription tier in Workspace Settings.`;
+            window.dispatchEvent(new CustomEvent('cravebiz_subscription_error', { detail: { message: msg } }));
+            alert(msg);
+            return;
+        }
+    }
+
     const updatedInvoice: Invoice = { ...inv, isReceiptSent: true };
 
     setTenantData(prev => ({
@@ -915,6 +927,7 @@ export default function App() {
           userRole={userRole}
           auditLogs={auditLogs}
           onTriggerAuditLog={triggerAuditLog}
+          invoices={invoices}
       />;
       case 'clients': return <ClientList companyId={activeTenantId!} clients={clients} invoices={invoices} onAddClient={async (c) => { 
           try {

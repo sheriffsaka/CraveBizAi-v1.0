@@ -460,9 +460,30 @@ async function deductAiUnitServerSide(
             }
         });
 
-    // Resiliency fallback: try server-level client if authenticated client fails to write
+    // Fallback 1: Try authenticated client with company_id: null (safely bypasses foreign keys for personal/virtual workspaces)
     if (upsertError) {
-        console.warn(`[AI Deduct] Authenticated upsert failed for ${docId}. Trying server-level client fallback...`);
+        console.warn(`[AI Deduct] Authenticated upsert with company_id failed for ${docId}. Trying with company_id: null...`);
+        const nullCompanyUpsert = await client
+            .from("generated_documents")
+            .upsert({
+                id: docId,
+                company_id: null,
+                document_type: "cravebiz_workspace_settings",
+                content: {
+                    tier,
+                    aiUnits: newUnits,
+                    aiModeEnabled,
+                    memberPermissions,
+                    invitedMembers: data?.content?.invitedMembers || {},
+                    memberDetails: data?.content?.memberDetails || {}
+                }
+            });
+        upsertError = nullCompanyUpsert.error;
+    }
+
+    // Fallback 2: Try server-level client with original dbCompanyId if authenticated client fails to write
+    if (upsertError) {
+        console.warn(`[AI Deduct] Authenticated upsert fallbacks failed for ${docId}. Trying server-level client fallback...`);
         const fallbackUpsert = await supabaseClient
             .from("generated_documents")
             .upsert({
@@ -479,6 +500,27 @@ async function deductAiUnitServerSide(
                 }
             });
         upsertError = fallbackUpsert.error;
+    }
+
+    // Fallback 3: Try server-level client with company_id: null
+    if (upsertError) {
+        console.warn(`[AI Deduct] Server-level fallback with company_id failed for ${docId}. Trying with company_id: null...`);
+        const finalFallbackUpsert = await supabaseClient
+            .from("generated_documents")
+            .upsert({
+                id: docId,
+                company_id: null,
+                document_type: "cravebiz_workspace_settings",
+                content: {
+                    tier,
+                    aiUnits: newUnits,
+                    aiModeEnabled,
+                    memberPermissions,
+                    invitedMembers: data?.content?.invitedMembers || {},
+                    memberDetails: data?.content?.memberDetails || {}
+                }
+            });
+        upsertError = finalFallbackUpsert.error;
     }
 
     if (upsertError) {
@@ -1368,6 +1410,26 @@ app.post("/api/subscription/upgrade", verifyTenant, async (req: any, res) => {
                 }
             });
 
+        // Fallback 1: Try authenticated client with company_id: null (bypasses foreign key constraints for personal workspaces)
+        if (upsertError) {
+            console.warn("[Upgrade Upsert] Authenticated upsert with company_id failed. Trying with company_id: null fallback...");
+            const nullCompanyUpsert = await client
+                .from("generated_documents")
+                .upsert({
+                    id: docId,
+                    company_id: null,
+                    document_type: "cravebiz_workspace_settings",
+                    content: {
+                        tier,
+                        aiUnits: newUnits,
+                        aiModeEnabled: true,
+                        memberPermissions
+                    }
+                });
+            upsertError = nullCompanyUpsert.error;
+        }
+
+        // Fallback 2: Try server-level client with original dbCompanyId
         if (upsertError) {
             console.warn("[Upgrade Upsert] Authenticated upsert failed. Trying system-level client fallback...");
             const fallbackResult = await supabaseClient
@@ -1384,6 +1446,25 @@ app.post("/api/subscription/upgrade", verifyTenant, async (req: any, res) => {
                     }
                 });
             upsertError = fallbackResult.error;
+        }
+
+        // Fallback 3: Try server-level client with company_id: null
+        if (upsertError) {
+            console.warn("[Upgrade Upsert] Server-level fallback with company_id failed. Trying with company_id: null fallback...");
+            const finalFallbackResult = await supabaseClient
+                .from("generated_documents")
+                .upsert({
+                    id: docId,
+                    company_id: null,
+                    document_type: "cravebiz_workspace_settings",
+                    content: {
+                        tier,
+                        aiUnits: newUnits,
+                        aiModeEnabled: true,
+                        memberPermissions
+                    }
+                });
+            upsertError = finalFallbackResult.error;
         }
 
         if (upsertError) {
@@ -1531,6 +1612,26 @@ app.post("/api/subscription/refill", verifyTenant, async (req: any, res) => {
                 }
             });
 
+        // Fallback 1: Try authenticated client with company_id: null (bypasses foreign key constraints for personal workspaces)
+        if (upsertError) {
+            console.warn("[Refill Upsert] Authenticated upsert with company_id failed. Trying with company_id: null fallback...");
+            const nullCompanyUpsert = await client
+                .from("generated_documents")
+                .upsert({
+                    id: docId,
+                    company_id: null,
+                    document_type: "cravebiz_workspace_settings",
+                    content: {
+                        tier,
+                        aiUnits: newUnits,
+                        aiModeEnabled: true,
+                        memberPermissions
+                    }
+                });
+            upsertError = nullCompanyUpsert.error;
+        }
+
+        // Fallback 2: Try server-level client with original dbCompanyId
         if (upsertError) {
             console.warn("[Refill Upsert] Authenticated upsert failed. Trying system-level client fallback...");
             const fallbackResult = await supabaseClient
@@ -1547,6 +1648,25 @@ app.post("/api/subscription/refill", verifyTenant, async (req: any, res) => {
                     }
                 });
             upsertError = fallbackResult.error;
+        }
+
+        // Fallback 3: Try server-level client with company_id: null
+        if (upsertError) {
+            console.warn("[Refill Upsert] Server-level fallback with company_id failed. Trying with company_id: null fallback...");
+            const finalFallbackResult = await supabaseClient
+                .from("generated_documents")
+                .upsert({
+                    id: docId,
+                    company_id: null,
+                    document_type: "cravebiz_workspace_settings",
+                    content: {
+                        tier,
+                        aiUnits: newUnits,
+                        aiModeEnabled: true,
+                        memberPermissions
+                    }
+                });
+            upsertError = finalFallbackResult.error;
         }
 
         if (upsertError) {

@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { Company, BankAccount, User, WorkspaceRole, AuditLog } from '../types';
+import { Company, BankAccount, User, WorkspaceRole, AuditLog, Invoice } from '../types';
 import { supabase } from '../lib/api';
 import ImageCropperModal from './ImageCropperModal';
 import Icon from './common/Icon';
@@ -33,6 +33,7 @@ interface SettingsProps {
   userRole?: WorkspaceRole;
   auditLogs?: AuditLog[];
   onTriggerAuditLog?: (action: string, resource: string, details: string) => void;
+  invoices?: Invoice[];
 }
 
 interface BankAccountsManagerProps {
@@ -134,7 +135,7 @@ const BankAccountsManager: React.FC<BankAccountsManagerProps> = ({ companyId, ba
   );
 };
 
-const Settings: React.FC<SettingsProps> = ({ company, onSaveChanges, onInviteUser, users, activeTenantId, onUpdateUserStatus, onResendInvite, userRole = 'Owner', auditLogs = [], onTriggerAuditLog }) => {
+const Settings: React.FC<SettingsProps> = ({ company, onSaveChanges, onInviteUser, users, activeTenantId, onUpdateUserStatus, onResendInvite, userRole = 'Owner', auditLogs = [], onTriggerAuditLog, invoices = [] }) => {
   const isReadOnly = userRole === 'Member' || userRole === 'Manager';
   const [formData, setFormData] = useState<Company>(company || { id: '', name: '', address: '', email: '', bankAccounts: [] });
   const [showSuccess, setShowSuccess] = useState(false);
@@ -142,6 +143,10 @@ const Settings: React.FC<SettingsProps> = ({ company, onSaveChanges, onInviteUse
   const [isCropperModalOpen, setIsCropperModalOpen] = useState(false);
   const [imageToCrop, setImageToCrop] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
+
+  // Calculate current counts
+  const invoiceCount = invoices.length;
+  const receiptCount = invoices.filter(i => i.isReceiptSent).length;
 
   // Subscription state
   const [subInfo, setSubInfo] = useState(() => getSubscriptionInfo(activeTenantId));
@@ -771,11 +776,15 @@ const Settings: React.FC<SettingsProps> = ({ company, onSaveChanges, onInviteUse
             <div className="space-y-2">
               <div className="flex justify-between text-xs">
                 <span className="font-bold text-gray-500">Invoice limit:</span>
-                <span className="font-mono font-bold text-gray-800">{subInfo.maxInvoices === 999999 ? 'Unlimited' : `${subInfo.maxInvoices} invoices max`}</span>
+                <span className="font-mono font-bold text-gray-800">
+                  {subInfo.maxInvoices === 999999 ? 'Unlimited' : `${Math.max(0, subInfo.maxInvoices - invoiceCount)}/${subInfo.maxInvoices} remaining`}
+                </span>
               </div>
               <div className="flex justify-between text-xs">
                 <span className="font-bold text-gray-500">Receipt limit:</span>
-                <span className="font-mono font-bold text-gray-800">{subInfo.maxReceipts === 999999 ? 'Unlimited' : `${subInfo.maxReceipts} receipts max`}</span>
+                <span className="font-mono font-bold text-gray-800">
+                  {subInfo.maxReceipts === 999999 ? 'Unlimited' : `${Math.max(0, subInfo.maxReceipts - receiptCount)}/${subInfo.maxReceipts} remaining`}
+                </span>
               </div>
               <div className="flex justify-between text-xs">
                 <span className="font-bold text-gray-500">Team user limit:</span>
