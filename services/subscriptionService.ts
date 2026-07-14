@@ -509,22 +509,46 @@ export async function secureRefillCreditsOnDb(
 }
 
 /**
+ * Safely retrieves the Flutterwave Public Key from the environment variables,
+ * falling back to the default demo key if not present.
+ */
+export function getFlutterwavePublicKey(): string {
+  const metaEnv = (import.meta as any).env?.VITE_FLUTTERWAVE_PUBLIC_KEY;
+  const procEnv = typeof process !== 'undefined' ? process.env?.VITE_FLUTTERWAVE_PUBLIC_KEY : undefined;
+  return metaEnv || procEnv || "FLWPUBK_TEST-e5e54eb86bc8c9bc88a8d11d7c3ee7c0-X";
+}
+
+/**
  * Intercepts FlutterwaveCheckout calls. If using the default placeholder public key,
  * triggers a polished simulation modal overlay so that users can complete payments and upgrades.
  * Otherwise, routes to the real Flutterwave secure system.
  */
 export function safeFlutterwaveCheckout(config: any): void {
-  // If the real FlutterwaveCheckout SDK is loaded, always prioritize the authentic gateway!
-  if ((window as any).FlutterwaveCheckout) {
-    try {
-      (window as any).FlutterwaveCheckout(config);
+  // Determine if the key is one of our default placeholder keys or invalid/empty
+  const key = config.public_key || "";
+  const isPlaceholderKey = !key || 
+                           key === "FLWPUBK_TEST-e5e54eb86bc8c9bc88a8d11d7c3ee7c0-X" || 
+                           key.includes("e5e54eb") ||
+                           key.includes("3bbbacb") ||
+                           !key.startsWith("FLWPUBK");
+
+  // If a custom/valid public key is supplied, attempt real checkout
+  if (!isPlaceholderKey) {
+    if ((window as any).FlutterwaveCheckout) {
+      try {
+        (window as any).FlutterwaveCheckout(config);
+        return;
+      } catch (err: any) {
+        console.error("Real Flutterwave checkout initiation failed:", err);
+        alert("Real Flutterwave checkout initiation failed. Falling back to payment simulator.");
+      }
+    } else {
+      alert("Flutterwave secure library is currently loading. Please wait 2 seconds and try again.");
       return;
-    } catch (err: any) {
-      console.warn("Real Flutterwave checkout initiation failed, falling back to sandbox simulator:", err);
     }
   }
 
-  // Fallback sandbox simulator (only if script failed to load)
+  // Fallback sandbox simulator (only if script failed to load or placeholder key is used)
   const overlay = document.createElement('div');
   overlay.id = 'flutterwave-simulator-overlay';
   overlay.style.position = 'fixed';

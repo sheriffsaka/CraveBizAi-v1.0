@@ -26,7 +26,7 @@ import PublicSigningPortal from './components/PublicSigningPortal';
 import ProjectManagement from './components/ProjectManagement';
 import { api, supabase } from './lib/api';
 import { generateRenewalInvoiceSuggestion } from './services/aiGenerationService';
-import { getSubscriptionInfo, setSubscriptionInfo, SubscriptionTier, TIER_LIMITS, syncGlobalPlanSettings, syncSubscriptionInfoFromDb, secureRefillCreditsOnDb, safeFlutterwaveCheckout } from './services/subscriptionService';
+import { getSubscriptionInfo, setSubscriptionInfo, SubscriptionTier, TIER_LIMITS, syncGlobalPlanSettings, syncSubscriptionInfoFromDb, secureRefillCreditsOnDb, safeFlutterwaveCheckout, getFlutterwavePublicKey } from './services/subscriptionService';
 import { Invoice, Client, Service, Company, User, TenantData, InvoiceStatus, AllTenantsData, GeneratedDocument, DbDocumentSignatory, Project, WorkspaceRole, AuditLog } from './types';
 import Icon from './components/common/Icon';
 
@@ -991,7 +991,7 @@ export default function App() {
                     onClick={() => {
                       // Trigger secure Flutterwave payment on the spot!
                       const companyId = activeTenantId || 'default-tenant';
-                      const flutterwaveKey = (import.meta as any).env?.VITE_FLUTTERWAVE_PUBLIC_KEY || "FLWPUBK_TEST-e5e54eb86bc8c9bc88a8d11d7c3ee7c0-X";
+                      const flutterwaveKey = getFlutterwavePublicKey();
                       let isSuccess = false;
 
                       safeFlutterwaveCheckout({

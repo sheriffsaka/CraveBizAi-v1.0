@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import Modal from './Modal';
 import { Invoice, Client } from '../types';
-import { safeFlutterwaveCheckout } from '../services/subscriptionService';
+import { safeFlutterwaveCheckout, getFlutterwavePublicKey } from '../services/subscriptionService';
 
 interface PaymentModalProps {
   isOpen: boolean;
@@ -60,7 +60,7 @@ const PaymentModal: React.FC<PaymentModalProps> = ({ isOpen, onClose, invoice, o
       return;
     }
 
-    const flutterwaveKey = (import.meta as any).env?.VITE_FLUTTERWAVE_PUBLIC_KEY || "FLWPUBK_TEST-e5e54eb86bc8c9bc88a8d11d7c3ee7c0-X";
+    const flutterwaveKey = getFlutterwavePublicKey();
 
     safeFlutterwaveCheckout({
       public_key: flutterwaveKey,

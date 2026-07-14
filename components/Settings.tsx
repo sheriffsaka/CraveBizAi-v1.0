@@ -3,7 +3,7 @@ import { Company, BankAccount, User, WorkspaceRole, AuditLog } from '../types';
 import { supabase } from '../lib/api';
 import ImageCropperModal from './ImageCropperModal';
 import Icon from './common/Icon';
-import { getSubscriptionInfo, setSubscriptionInfo, SubscriptionTier, TIER_LIMITS, saveSubscriptionInfoToDb, secureUpgradeSubscriptionOnDb, secureRefillCreditsOnDb, safeFlutterwaveCheckout } from '../services/subscriptionService';
+import { getSubscriptionInfo, setSubscriptionInfo, SubscriptionTier, TIER_LIMITS, saveSubscriptionInfoToDb, secureUpgradeSubscriptionOnDb, secureRefillCreditsOnDb, safeFlutterwaveCheckout, getFlutterwavePublicKey } from '../services/subscriptionService';
 
 const getPlanActionLabel = (targetTier: string, currentTier: string): string => {
   const TIER_RANKS: Record<string, number> = {
@@ -197,7 +197,7 @@ const Settings: React.FC<SettingsProps> = ({ company, onSaveChanges, onInviteUse
       else if (tier === 'Enterprise') checkoutAmount = 49500;
     }
 
-    const flutterwaveKey = (import.meta as any).env?.VITE_FLUTTERWAVE_PUBLIC_KEY || "FLWPUBK_TEST-e5e54eb86bc8c9bc88a8d11d7c3ee7c0-X";
+    const flutterwaveKey = getFlutterwavePublicKey();
     let isSuccess = false;
 
     safeFlutterwaveCheckout({
@@ -371,7 +371,7 @@ const Settings: React.FC<SettingsProps> = ({ company, onSaveChanges, onInviteUse
     const checkoutAmount = pack.amount;
     const addedCredits = pack.credits;
 
-    const flutterwaveKey = (import.meta as any).env?.VITE_FLUTTERWAVE_PUBLIC_KEY || "FLWPUBK_TEST-e5e54eb86bc8c9bc88a8d11d7c3ee7c0-X";
+    const flutterwaveKey = getFlutterwavePublicKey();
     let isSuccess = false;
 
     safeFlutterwaveCheckout({
