@@ -26,7 +26,7 @@ import PublicSigningPortal from './components/PublicSigningPortal';
 import ProjectManagement from './components/ProjectManagement';
 import { api, supabase } from './lib/api';
 import { generateRenewalInvoiceSuggestion } from './services/aiGenerationService';
-import { getSubscriptionInfo, setSubscriptionInfo, SubscriptionTier, TIER_LIMITS, syncGlobalPlanSettings, syncSubscriptionInfoFromDb, secureRefillCreditsOnDb, safeFlutterwaveCheckout, getFlutterwavePublicKey, saveSubscriptionInfoToDb } from './services/subscriptionService';
+import { getSubscriptionInfo, setSubscriptionInfo, SubscriptionTier, TIER_LIMITS, syncGlobalPlanSettings, syncSubscriptionInfoFromDb, secureRefillCreditsOnDb, safeFlutterwaveCheckout, getFlutterwavePublicKey, saveSubscriptionInfoToDb, fetchAndCacheFlutterwavePublicKey } from './services/subscriptionService';
 import { Invoice, Client, Service, Company, User, TenantData, InvoiceStatus, AllTenantsData, GeneratedDocument, DbDocumentSignatory, Project, WorkspaceRole, AuditLog } from './types';
 import Icon from './components/common/Icon';
 
@@ -279,6 +279,9 @@ export default function App() {
     isMounted.current = true;
     const initAuth = async () => {
         try {
+            // Fetch and cache the live Flutterwave Public Key dynamically from backend
+            fetchAndCacheFlutterwavePublicKey().catch(e => console.warn(e));
+
             const hash = window.location.hash;
             if (hash && (hash.includes('type=recovery') || hash.includes('access_token='))) {
                 setIsResetPasswordOpen(true);

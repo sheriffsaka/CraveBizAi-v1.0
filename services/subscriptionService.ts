@@ -78,10 +78,18 @@ export const getSettingsDocId = (companyId: string): string => {
   if (companyId === 'cravebiz-inc' || !companyId) {
     return '00000000-0000-0000-0000-000000000000';
   }
-  if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(companyId)) {
+  let baseId = companyId;
+  if (companyId.startsWith("ws-personal-")) {
+    baseId = companyId.replace("ws-personal-", "");
+  } else if (companyId.startsWith("ws-legal-")) {
+    baseId = companyId.replace("ws-legal-", "");
+  } else if (companyId.startsWith("ws-sales-")) {
+    baseId = companyId.replace("ws-sales-", "");
+  }
+  if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(baseId)) {
     return '11111111-1111-1111-1111-111111111111';
   }
-  return companyId;
+  return baseId;
 };
 
 /**
@@ -126,7 +134,7 @@ export async function saveSubscriptionInfoToDb(companyId: string): Promise<void>
   try {
     const { error } = await supabase.from('generated_documents').upsert({
       id: docId,
-      company_id: companyId,
+      company_id: docId,
       document_type: 'cravebiz_workspace_settings',
       content: {
         tier: sub.tier,
@@ -171,12 +179,9 @@ export async function syncSubscriptionInfoFromDb(companyId: string): Promise<voi
       if (content.aiUnits !== undefined) {
         localStorage.setItem(`cravebiz_units_${companyId}`, content.aiUnits.toString());
       }
-      // DO NOT overwrite cravebiz_aimode from database sync on app load to ensure AI Mode defaults to OFF on app loads
-      /*
       if (content.aiModeEnabled !== undefined) {
         localStorage.setItem(`cravebiz_aimode_${companyId}`, content.aiModeEnabled.toString());
       }
-      */
       if (content.memberPermissions) {
         Object.entries(content.memberPermissions).forEach(([email, allowed]) => {
           localStorage.setItem(`cravebiz_member_ai_allowed_${companyId}_${email}`, String(allowed));
@@ -513,9 +518,30 @@ export async function secureRefillCreditsOnDb(
  * falling back to the default demo key if not present.
  */
 export function getFlutterwavePublicKey(): string {
+  const cached = localStorage.getItem('cravebiz_flw_public_key');
+  if (cached) return cached;
   const metaEnv = (import.meta as any).env?.VITE_FLUTTERWAVE_PUBLIC_KEY;
   const procEnv = typeof process !== 'undefined' ? process.env?.VITE_FLUTTERWAVE_PUBLIC_KEY : undefined;
   return metaEnv || procEnv || "FLWPUBK_TEST-e5e54eb86bc8c9bc88a8d11d7c3ee7c0-X";
+}
+
+/**
+ * Dynamically fetches the Flutterwave public key from the backend and caches it
+ */
+export async function fetchAndCacheFlutterwavePublicKey(): Promise<string> {
+  try {
+    const response = await fetch("/api/subscription/public-key");
+    if (response.ok) {
+      const data = await response.json();
+      if (data.publicKey) {
+        localStorage.setItem('cravebiz_flw_public_key', data.publicKey);
+        return data.publicKey;
+      }
+    }
+  } catch (err) {
+    console.warn("Failed to fetch dynamic Flutterwave public key:", err);
+  }
+  return getFlutterwavePublicKey();
 }
 
 /**
