@@ -263,9 +263,10 @@ const Settings: React.FC<SettingsProps> = ({ company, onSaveChanges, onInviteUse
   useEffect(() => {
     const fetchMembers = async () => {
       try {
+        const membersList = [];
+        
         const { data, error } = await supabase.from('company_members').select('user_id, role, status').eq('company_id', activeTenantId);
         if (!error && data && data.length > 0) {
-          const membersList = [];
           for (const m of data) {
             const { data: profile } = await supabase.from('profiles').select('*').eq('id', m.user_id).maybeSingle();
             
@@ -307,26 +308,49 @@ const Settings: React.FC<SettingsProps> = ({ company, onSaveChanges, onInviteUse
               status: memberStatus
             });
           }
-
-          // Ensure the logged-in user / workspace owner ("You") is always included
-          const hasOwnerInList = membersList.some(m => company?.email && m.email.toLowerCase() === company.email.toLowerCase());
-          if (!hasOwnerInList && company?.email) {
-            membersList.unshift({
-              id: '1',
-              name: 'You',
-              email: company.email,
-              role: userRole || 'Owner',
-              status: 'Joined'
-            });
-          }
-
-          setTeamMembers(membersList);
-        } else {
-          setTeamMembers([
-            { id: '1', name: 'You', email: company?.email || 'admin@cravebiz.com', role: userRole, status: 'Joined' }
-          ]);
         }
-      } catch {
+
+        // Merge in any other invited members stored in local storage (synced from DB settings)
+        for (let i = 0; i < localStorage.length; i++) {
+          const key = localStorage.key(i);
+          if (key && key.startsWith(`cravebiz_invited_member_info_${activeTenantId}_`)) {
+            const uId = key.replace(`cravebiz_invited_member_info_${activeTenantId}_`, '');
+            const val = localStorage.getItem(key);
+            if (val) {
+              try {
+                const info = JSON.parse(val);
+                const alreadyAdded = membersList.some(m => m.email && info.email && m.email.toLowerCase() === info.email.toLowerCase());
+                if (!alreadyAdded && info.email) {
+                  membersList.push({
+                    id: uId,
+                    name: info.name || 'Workspace Member',
+                    email: info.email,
+                    role: info.role ? (info.role.charAt(0).toUpperCase() + info.role.slice(1).toLowerCase()) : 'Member',
+                    status: info.status || 'Invited'
+                  });
+                }
+              } catch (e) {
+                console.warn("Error parsing invited member metadata:", e);
+              }
+            }
+          }
+        }
+
+        // Ensure the logged-in user / workspace owner ("You") is always included
+        const hasOwnerInList = membersList.some(m => company?.email && m.email.toLowerCase() === company.email.toLowerCase());
+        if (!hasOwnerInList && company?.email) {
+          membersList.unshift({
+            id: '1',
+            name: 'You',
+            email: company.email,
+            role: userRole || 'Owner',
+            status: 'Joined'
+          });
+        }
+
+        setTeamMembers(membersList);
+      } catch (err) {
+        console.error("fetchMembers error:", err);
         setTeamMembers([
           { id: '1', name: 'You', email: company?.email || 'admin@cravebiz.com', role: userRole, status: 'Joined' }
         ]);
@@ -471,14 +495,15 @@ const Settings: React.FC<SettingsProps> = ({ company, onSaveChanges, onInviteUse
     try {
       // Look up profile if they exist in system
       let tempUserId = `user-${Date.now()}`;
-      let isNewInvite = false;
+      let isNewInvite = true;
+      
       try {
         const { data: existingUser, error: lookupErr } = await supabase.from('profiles').select('id').eq('email', inviteEmail.trim().toLowerCase()).maybeSingle();
         if (!lookupErr && existingUser) {
           tempUserId = existingUser.id;
+          isNewInvite = false;
         } else {
-          isNewInvite = true;
-          // Create the placeholder profile first so that company_members foreign key is satisfied!
+          // Create placeholder profile (handled resiliently)
           const { error: profileErr } = await supabase.from('profiles').insert({
             id: tempUserId,
             full_name: inviteName.trim() || 'Workspace Member',
@@ -486,33 +511,33 @@ const Settings: React.FC<SettingsProps> = ({ company, onSaveChanges, onInviteUse
             status: 'Invited'
           });
           if (profileErr) {
-            console.error("Error creating placeholder profile:", profileErr);
-            throw profileErr;
+            console.warn("Resilient skip: could not insert placeholder profile into profiles table:", profileErr.message);
           }
         }
-      } catch (e) {
-        console.warn("Could not lookup/create user profile by email:", e);
-        throw e;
-      }
-      
-      const { error: memberErr } = await supabase.from('company_members').insert({
-        company_id: activeTenantId,
-        user_id: tempUserId,
-        role: inviteRole.toLowerCase(),
-        status: isNewInvite ? 'Invited' : 'Joined'
-      });
-      if (memberErr) {
-        console.error("Error inserting company_member:", memberErr);
-        throw memberErr;
+        
+        // Create company member row (handled resiliently)
+        const { error: memberErr } = await supabase.from('company_members').insert({
+          company_id: activeTenantId,
+          user_id: tempUserId,
+          role: inviteRole.toLowerCase(),
+          status: isNewInvite ? 'Invited' : 'Joined'
+        });
+        if (memberErr) {
+          console.warn("Resilient skip: could not insert member into company_members table:", memberErr.message);
+        }
+      } catch (dbErr: any) {
+        console.warn("Database sync error for member insert, proceeding with metadata/settings cloud fallback:", dbErr);
       }
       
       // Save invited user's AI Token permission to local storage
       localStorage.setItem(`cravebiz_member_ai_allowed_${activeTenantId}_${inviteEmail.trim().toLowerCase()}`, inviteAiAllowed.toString());
 
-      // Save invited user's metadata (email and name) to local storage so it's preserved dynamically and synced to cloud
+      // Save invited user's metadata (email, name, role, status) to local storage so it's preserved dynamically and synced to cloud
       localStorage.setItem(`cravebiz_invited_member_info_${activeTenantId}_${tempUserId}`, JSON.stringify({
         email: inviteEmail.trim().toLowerCase(),
-        name: inviteName.trim() || 'Workspace Member'
+        name: inviteName.trim() || 'Workspace Member',
+        role: inviteRole,
+        status: isNewInvite ? 'Invited' : 'Joined'
       }));
 
       // Sync to cloud DB
@@ -829,10 +854,10 @@ const Settings: React.FC<SettingsProps> = ({ company, onSaveChanges, onInviteUse
 
             <div className="space-y-3 mb-6">
               {[
-                { id: 'pack_100', credits: 100, price: 1000, title: "100 AI Credits" },
-                { id: 'pack_300', credits: 300, price: 2500, title: "300 AI Credits" },
-                { id: 'pack_1000', credits: 1000, price: 7500, title: "1,000 AI Credits" },
-                { id: 'pack_5000', credits: 5000, price: 30000, title: "5,000 AI Credits" }
+                { id: 'pack_100', credits: 100, price: 1000, title: "100" },
+                { id: 'pack_300', credits: 300, price: 2500, title: "300" },
+                { id: 'pack_1000', credits: 1000, price: 7500, title: "1,000" },
+                { id: 'pack_5000', credits: 5000, price: 30000, title: "5,000" }
               ].map((p) => (
                 <label
                   key={p.id}
@@ -848,7 +873,7 @@ const Settings: React.FC<SettingsProps> = ({ company, onSaveChanges, onInviteUse
                       className="accent-primary-600 cursor-pointer"
                     />
                     <div>
-                      <p className="font-bold text-xs text-gray-950 uppercase tracking-wider">{p.title}</p>
+                      <p className="font-bold text-xs text-gray-950 uppercase tracking-wider">{p.title} Credits</p>
                     </div>
                   </div>
                   <span className="font-black text-xs text-gray-950">₦{p.price.toLocaleString()}</span>

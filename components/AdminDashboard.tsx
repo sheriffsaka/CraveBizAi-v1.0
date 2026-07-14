@@ -138,12 +138,33 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ allTenantData, companie
   const [activeTab, setActiveTab] = useState<'overview' | 'companies' | 'users' | 'reports' | 'security' | 'ai_usage'>('overview');
   const [aiUsageSearch, setAiUsageSearch] = useState('');
   const [aiUsageList, setAiUsageList] = useState<any[]>([]);
+  const [aiLedgerEntries, setAiLedgerEntries] = useState<any[]>([]);
+  const [isFetchingLedger, setIsFetchingLedger] = useState<boolean>(false);
+  const [ledgerSearch, setLedgerSearch] = useState('');
 
   const [editableLimits, setEditableLimits] = useState<typeof TIER_LIMITS>(() => ({ ...TIER_LIMITS }));
   const [savePricingSuccess, setSavePricingSuccess] = useState(false);
 
   useEffect(() => {
     setEditableLimits({ ...TIER_LIMITS });
+  }, [activeTab]);
+
+  // Load AI Credit logs ledger when entering AI Usage tab
+  useEffect(() => {
+    if (activeTab === 'ai_usage') {
+      const loadLedger = async () => {
+        setIsFetchingLedger(true);
+        try {
+          const logs = await api.fetchAiLedger();
+          setAiLedgerEntries(logs || []);
+        } catch (e) {
+          console.error("Failed to load AI ledger entries:", e);
+        } finally {
+          setIsFetchingLedger(false);
+        }
+      };
+      loadLedger();
+    }
   }, [activeTab]);
 
   const handleSavePricingLimits = async (e: React.FormEvent) => {
@@ -185,6 +206,9 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ allTenantData, companie
       };
     });
     setAiUsageList(data);
+
+    // Also update ledger
+    api.fetchAiLedger().then(logs => setAiLedgerEntries(logs || [])).catch(console.error);
   };
 
   useEffect(() => {
@@ -821,6 +845,146 @@ Admin Query: ${activePrompt}
               </button>
             </div>
           </form>
+        </div>
+
+        {/* Super-Admin AI Credit Ledger Logs & Billing Calculator */}
+        <div className="bg-white p-8 rounded-[3rem] shadow-2xl border border-gray-100 mt-8">
+          <div className="flex flex-col lg:flex-row justify-between items-start lg:items-center gap-6 mb-8">
+            <div>
+              <span className="text-[9px] font-black text-primary-600 uppercase tracking-widest bg-primary-50 px-2.5 py-1 rounded-md inline-block mb-2">
+                Ledger Logs & Billing Ledger
+              </span>
+              <h3 className="text-xl font-black text-gray-900 uppercase tracking-tight">AI Credits Usage Registry</h3>
+              <p className="text-xs text-gray-400 font-medium mt-1">
+                Audits real-time tokens & credits consumed by SMEs utilizing Gemini intelligence. Useful for key credit cost allocation.
+              </p>
+            </div>
+
+            <div className="flex flex-col sm:flex-row gap-3 w-full lg:w-auto">
+              <input
+                type="text"
+                placeholder="Search by User or Task..."
+                value={ledgerSearch}
+                onChange={e => setLedgerSearch(e.target.value)}
+                className="px-4 py-2.5 bg-gray-50 border border-gray-200 rounded-xl text-xs font-bold text-gray-700 outline-none focus:ring-2 focus:ring-primary-500 transition-all w-full sm:w-64"
+              />
+              <button
+                type="button"
+                onClick={() => {
+                  setIsFetchingLedger(true);
+                  api.fetchAiLedger()
+                    .then(logs => setAiLedgerEntries(logs || []))
+                    .catch(console.error)
+                    .finally(() => setIsFetchingLedger(false));
+                }}
+                className="px-4 py-2.5 bg-gray-100 hover:bg-gray-200 text-gray-700 text-xs font-black uppercase tracking-widest rounded-xl transition-all"
+              >
+                Refresh
+              </button>
+            </div>
+          </div>
+
+          {/* Billing / Cost allocation summary cards */}
+          {(() => {
+            const filteredLedger = aiLedgerEntries.filter(entry => 
+              (entry.userEmail || '').toLowerCase().includes(ledgerSearch.toLowerCase()) ||
+              (entry.task || '').toLowerCase().includes(ledgerSearch.toLowerCase()) ||
+              (entry.companyId || '').toLowerCase().includes(ledgerSearch.toLowerCase())
+            );
+
+            const totalTokens = filteredLedger.reduce((sum, e) => sum + (e.tokensUsed || 0), 0);
+            const totalCredits = filteredLedger.reduce((sum, e) => sum + (e.creditsUsed || 0), 0);
+            // Assuming cost is $0.075 per 1,000 credits for platform margin
+            const estimatedCostNgn = totalCredits * 50; 
+
+            return (
+              <div className="space-y-6">
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                  <div className="bg-slate-50 border border-gray-100 p-5 rounded-2xl">
+                    <p className="text-4xs font-black text-gray-400 uppercase tracking-widest">Aggregate Tokens Spent</p>
+                    <p className="text-lg font-black text-slate-800 mt-1">{totalTokens.toLocaleString()} tokens</p>
+                    <p className="text-4xs text-gray-400 mt-0.5">Calculated from prompt & response lengths</p>
+                  </div>
+                  <div className="bg-slate-50 border border-gray-100 p-5 rounded-2xl">
+                    <p className="text-4xs font-black text-gray-400 uppercase tracking-widest">AI Credits Discharged</p>
+                    <p className="text-lg font-black text-emerald-600 mt-1">{totalCredits.toLocaleString()} credits</p>
+                    <p className="text-4xs text-gray-400 mt-0.5">Direct units deducted from SME quotas</p>
+                  </div>
+                  <div className="bg-slate-50 border border-gray-100 p-5 rounded-2xl">
+                    <p className="text-4xs font-black text-gray-400 uppercase tracking-widest">Key Consumption Index</p>
+                    <p className="text-lg font-black text-primary-600 mt-1">₦{estimatedCostNgn.toLocaleString()}</p>
+                    <p className="text-4xs text-gray-400 mt-0.5">Approximate cash weight of key operations</p>
+                  </div>
+                </div>
+
+                {isFetchingLedger ? (
+                  <div className="py-12 text-center text-xs text-gray-400 font-bold">
+                    Querying secure compliance log vault...
+                  </div>
+                ) : filteredLedger.length > 0 ? (
+                  <div className="overflow-x-auto border border-gray-100 rounded-2xl">
+                    <table className="w-full text-left border-collapse">
+                      <thead>
+                        <tr className="border-b border-gray-100 text-[10px] font-black text-gray-400 uppercase tracking-widest bg-gray-50/50">
+                          <th className="py-3 px-4">User Identity</th>
+                          <th className="py-3 px-4">SME node identity</th>
+                          <th className="py-3 px-4">Task(s) Performed</th>
+                          <th className="py-3 px-4">Tokens Used</th>
+                          <th className="py-3 px-4">Credits Spent</th>
+                          <th className="py-3 px-4 text-right">Time Registered</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-gray-50 text-xs font-medium text-gray-700">
+                        {filteredLedger.map((entry) => {
+                          const formattedDate = new Date(entry.timestamp).toLocaleString(undefined, {
+                            month: 'short',
+                            day: 'numeric',
+                            hour: '2-digit',
+                            minute: '2-digit'
+                          });
+
+                          return (
+                            <tr key={entry.id} className="hover:bg-gray-50/30 transition-colors">
+                              <td className="py-4 px-4">
+                                <p className="font-extrabold text-gray-900">{entry.userName || 'Unknown User'}</p>
+                                <span className="text-[10px] text-gray-400 select-all">{entry.userEmail}</span>
+                              </td>
+                              <td className="py-4 px-4">
+                                <p className="font-bold text-gray-800">
+                                  {companies.find(c => c.id === entry.companyId)?.name || 'Central Workspace'}
+                                </p>
+                                <span className="text-[9px] text-gray-400 font-mono select-all">{entry.companyId}</span>
+                              </td>
+                              <td className="py-4 px-4">
+                                <span className="px-2 py-1 bg-amber-50 text-amber-700 border border-amber-100 rounded-md font-bold text-[10px] uppercase tracking-wide">
+                                  {entry.task || 'AI Task'}
+                                </span>
+                              </td>
+                              <td className="py-4 px-4">
+                                <span className="font-mono text-gray-900 font-bold">{entry.tokensUsed?.toLocaleString() || 0}</span>
+                              </td>
+                              <td className="py-4 px-4">
+                                <span className="px-2 py-0.5 bg-emerald-50 text-emerald-800 rounded font-black text-[11px]">
+                                  {entry.creditsUsed || 0}
+                                </span>
+                              </td>
+                              <td className="py-4 px-4 text-right font-mono text-gray-400 select-none">
+                                {formattedDate}
+                              </td>
+                            </tr>
+                          );
+                        })}
+                      </tbody>
+                    </table>
+                  </div>
+                ) : (
+                  <div className="py-12 text-center border border-dashed border-gray-100 rounded-3xl bg-gray-50/20">
+                    <p className="text-sm font-bold text-gray-400 italic">No ledger entries match your filter rules.</p>
+                  </div>
+                )}
+              </div>
+            );
+          })()}
         </div>
       </div>
     );

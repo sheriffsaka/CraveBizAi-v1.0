@@ -515,9 +515,13 @@ export async function secureRefillCreditsOnDb(
  */
 export function safeFlutterwaveCheckout(config: any): void {
   const isPlaceholderKey = !config.public_key || 
-                           config.public_key === "FLWPUBK_TEST-e5e54eb86bc8c9bc88a8d11d7c3ee7c0-X" || 
-                           config.public_key.includes("3bbbacb04eb5bb45a95d1bbb426180fb") || 
-                           config.public_key === "FLWPUBK-3bbbacb04eb5bb45a95d1bbb426180fb-X";
+                           config.public_key.includes("TEST") || 
+                           config.public_key.includes("test") ||
+                           config.public_key.includes("e5e54eb") ||
+                           config.public_key.includes("3bbbacb04eb5bb45a95d1bbb426180fb") ||
+                           config.public_key.startsWith("FLWPUBK_TEST") ||
+                           config.public_key === "FLWPUBK-3bbbacb04eb5bb45a95d1bbb426180fb-X" ||
+                           !config.public_key.startsWith("FLWPUBK-");
 
   if (!isPlaceholderKey) {
     if ((window as any).FlutterwaveCheckout) {

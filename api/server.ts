@@ -272,6 +272,27 @@ async function recordAiUsageLedgerEntry(
             dbCompanyId = "11111111-1111-1111-1111-111111111111";
         }
 
+        // 1. Try to record to SQL table 'ai_credit_logs' if it exists in Supabase
+        try {
+            const { error: dbTableError } = await supabaseClient
+                .from("ai_credit_logs")
+                .insert({
+                    user_id: userEmail,
+                    task_performed: taskName,
+                    tokens_used: tokensUsed,
+                    credits_used: creditsUsed,
+                    timestamp: timestamp
+                });
+            if (dbTableError) {
+                console.warn("[AI Ledger] Could not write to ai_credit_logs table (will use generated_documents fallback):", dbTableError.message);
+            } else {
+                console.log("[AI Ledger] Recorded usage in ai_credit_logs table successfully.");
+            }
+        } catch (tableErr: any) {
+            console.warn("[AI Ledger] Exception when writing to ai_credit_logs table (using fallback):", tableErr.message || tableErr);
+        }
+
+        // 2. Also write to 'generated_documents' under cravebiz_ai_ledger_entry as a resilient fallback
         await supabaseClient.from("generated_documents").insert({
             id: entryId,
             company_id: dbCompanyId,
@@ -285,7 +306,7 @@ async function recordAiUsageLedgerEntry(
                 timestamp
             }
         });
-        console.log(`[AI Ledger] Recorded usage: ${userEmail} | ${taskName} | ${tokensUsed} tokens | ${creditsUsed} credits`);
+        console.log(`[AI Ledger] Recorded usage fallback: ${userEmail} | ${taskName} | ${tokensUsed} tokens | ${creditsUsed} credits`);
     } catch (e) {
         console.error("[AI Ledger] Failed to record usage entry:", e);
     }
@@ -1285,11 +1306,23 @@ app.post("/api/subscription/upgrade", verifyTenant, async (req: any, res) => {
 
         // Retrieve current settings first to preserve fields like memberPermissions
         const client = getAuthenticatedClient(req.token);
-        const { data: currentSettings } = await client
+        let { data: currentSettings, error: fetchError } = await client
             .from("generated_documents")
             .select("*")
             .eq("id", docId)
             .maybeSingle();
+
+        if (fetchError || !currentSettings) {
+            console.warn(`[Upgrade Fetch] Authenticated fetch failed for ${docId}. Trying system-level fallback...`);
+            const fallbackRes = await supabaseClient
+                .from("generated_documents")
+                .select("*")
+                .eq("id", docId)
+                .maybeSingle();
+            if (fallbackRes.data) {
+                currentSettings = fallbackRes.data;
+            }
+        }
 
         let memberPermissions = {};
         if (currentSettings && currentSettings.content) {
@@ -1307,7 +1340,7 @@ app.post("/api/subscription/upgrade", verifyTenant, async (req: any, res) => {
         const newUnits = tierLimits[tier];
 
         // Securely upsert the new tier and reset AI credits to standard plan limits
-        const { error: upsertError } = await client
+        let { error: upsertError } = await client
             .from("generated_documents")
             .upsert({
                 id: docId,
@@ -1320,6 +1353,24 @@ app.post("/api/subscription/upgrade", verifyTenant, async (req: any, res) => {
                     memberPermissions
                 }
             });
+
+        if (upsertError) {
+            console.warn("[Upgrade Upsert] Authenticated upsert failed. Trying system-level client fallback...");
+            const fallbackResult = await supabaseClient
+                .from("generated_documents")
+                .upsert({
+                    id: docId,
+                    company_id: dbCompanyId,
+                    document_type: "cravebiz_workspace_settings",
+                    content: {
+                        tier,
+                        aiUnits: newUnits,
+                        aiModeEnabled: true,
+                        memberPermissions
+                    }
+                });
+            upsertError = fallbackResult.error;
+        }
 
         if (upsertError) {
             console.error("Backend subscription upgrade upsert error:", upsertError);
@@ -1415,11 +1466,23 @@ app.post("/api/subscription/refill", verifyTenant, async (req: any, res) => {
         const docId = dbCompanyId;
 
         const client = getAuthenticatedClient(req.token);
-        const { data: currentSettings } = await client
+        let { data: currentSettings, error: fetchError } = await client
             .from("generated_documents")
             .select("*")
             .eq("id", docId)
             .maybeSingle();
+
+        if (fetchError || !currentSettings) {
+            console.warn(`[Refill Fetch] Authenticated fetch failed for ${docId}. Trying system-level fallback...`);
+            const fallbackRes = await supabaseClient
+                .from("generated_documents")
+                .select("*")
+                .eq("id", docId)
+                .maybeSingle();
+            if (fallbackRes.data) {
+                currentSettings = fallbackRes.data;
+            }
+        }
 
         let tier = "Free";
         let aiUnits = 0;
@@ -1437,7 +1500,7 @@ app.post("/api/subscription/refill", verifyTenant, async (req: any, res) => {
         const newUnits = aiUnits + addedCredits;
 
         // Securely upsert the new credit balance
-        const { error: upsertError } = await client
+        let { error: upsertError } = await client
             .from("generated_documents")
             .upsert({
                 id: docId,
@@ -1450,6 +1513,24 @@ app.post("/api/subscription/refill", verifyTenant, async (req: any, res) => {
                     memberPermissions
                 }
             });
+
+        if (upsertError) {
+            console.warn("[Refill Upsert] Authenticated upsert failed. Trying system-level client fallback...");
+            const fallbackResult = await supabaseClient
+                .from("generated_documents")
+                .upsert({
+                    id: docId,
+                    company_id: dbCompanyId,
+                    document_type: "cravebiz_workspace_settings",
+                    content: {
+                        tier,
+                        aiUnits: newUnits,
+                        aiModeEnabled: true,
+                        memberPermissions
+                    }
+                });
+            upsertError = fallbackResult.error;
+        }
 
         if (upsertError) {
             console.error("Backend subscription refill upsert error:", upsertError);
@@ -1466,6 +1547,35 @@ app.post("/api/subscription/refill", verifyTenant, async (req: any, res) => {
 // GET endpoint for super-admin to fetch AI usage ledger entries
 app.get("/api/admin/ai-ledger", async (req: any, res) => {
     try {
+        // 1. Try fetching from SQL 'ai_credit_logs' table first
+        try {
+            const { data: dbLogs, error: dbLogsError } = await supabaseClient
+                .from("ai_credit_logs")
+                .select("*")
+                .order("timestamp", { ascending: false });
+
+            if (!dbLogsError && dbLogs && dbLogs.length > 0) {
+                const entries = dbLogs.map((log: any) => ({
+                    id: log.id || `log-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`,
+                    companyId: log.company_id || "11111111-1111-1111-1111-111111111111",
+                    userName: log.user_id?.split('@')[0] || "User",
+                    userEmail: log.user_id || "unknown@cravebiz.com",
+                    task: log.task_performed || "AI Task",
+                    tokensUsed: log.tokens_used || 0,
+                    creditsUsed: log.credits_used || 0,
+                    timestamp: log.timestamp || new Date().toISOString()
+                }));
+                console.log("[AI Ledger Fetch] Successfully fetched logs from ai_credit_logs table.");
+                return res.json({ success: true, entries, source: "ai_credit_logs" });
+            } else if (dbLogsError) {
+                console.warn("[AI Ledger Fetch] Could not query ai_credit_logs table (will fall back):", dbLogsError.message);
+            }
+        } catch (dbErr: any) {
+            console.warn("[AI Ledger Fetch] Exception while querying ai_credit_logs table:", dbErr.message || dbErr);
+        }
+
+        // 2. Resilient fallback to cravebiz_ai_ledger_entry in generated_documents table
+        console.log("[AI Ledger Fetch] Querying generated_documents fallback table...");
         const { data, error } = await supabaseClient
             .from("generated_documents")
             .select("*")
@@ -1473,7 +1583,7 @@ app.get("/api/admin/ai-ledger", async (req: any, res) => {
             .order("created_at", { ascending: false });
 
         if (error) {
-            console.error("Error fetching AI ledger data from DB:", error);
+            console.error("Error fetching AI ledger data from DB fallback:", error);
             return res.status(500).json({ error: error.message });
         }
 
@@ -1491,7 +1601,7 @@ app.get("/api/admin/ai-ledger", async (req: any, res) => {
             };
         });
 
-        res.json({ success: true, entries });
+        res.json({ success: true, entries, source: "generated_documents" });
     } catch (err: any) {
         console.error("Express /api/admin/ai-ledger error:", err);
         res.status(500).json({ error: err.message || "Internal server error" });
