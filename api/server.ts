@@ -297,6 +297,18 @@ function saveLocalGlobalPricingSettings(limits: any) {
     }
 }
 
+function getGlobalPricingWithFallback(): any {
+    const cached = getLocalGlobalPricingSettings();
+    if (cached) return cached;
+    return {
+        Free: { maxAiUnits: 5 },
+        Starter: { maxAiUnits: 100 },
+        Growth: { maxAiUnits: 300 },
+        Business: { maxAiUnits: 800 },
+        Enterprise: { maxAiUnits: 2500 }
+    };
+}
+
 function getLocalGlobalRefillPacks(): any {
     try {
         if (fs.existsSync(GLOBAL_REFILL_PACKS_FILE)) {
@@ -523,7 +535,10 @@ async function deductAiUnitServerSide(
     }
 
     let tier = isCravebizInc ? "Enterprise" : "Free";
-    let aiUnits = isCravebizInc ? 1000 : 5;
+    const pricing = getGlobalPricingWithFallback();
+    const defaultFreeUnits = (pricing && pricing.Free && pricing.Free.maxAiUnits !== undefined) ? parseInt(String(pricing.Free.maxAiUnits), 10) : 5;
+    const defaultEnterpriseUnits = (pricing && pricing.Enterprise && pricing.Enterprise.maxAiUnits !== undefined) ? parseInt(String(pricing.Enterprise.maxAiUnits), 10) : 2500;
+    let aiUnits = isCravebizInc ? defaultEnterpriseUnits : defaultFreeUnits;
     let aiModeEnabled = false;
     let memberPermissions: Record<string, boolean> = {};
 
@@ -1555,12 +1570,13 @@ app.post("/api/subscription/upgrade", verifyTenant, async (req: any, res) => {
             memberPermissions = (currentSettings.content as any).memberPermissions || {};
         }
 
+        const pricing = getGlobalPricingWithFallback();
         const tierLimits: Record<string, number> = {
-            Free: 5,
-            Starter: 100,
-            Growth: 300,
-            Business: 800,
-            Enterprise: 2500
+            Free: (pricing && pricing.Free && pricing.Free.maxAiUnits !== undefined) ? parseInt(String(pricing.Free.maxAiUnits), 10) : 5,
+            Starter: (pricing && pricing.Starter && pricing.Starter.maxAiUnits !== undefined) ? parseInt(String(pricing.Starter.maxAiUnits), 10) : 100,
+            Growth: (pricing && pricing.Growth && pricing.Growth.maxAiUnits !== undefined) ? parseInt(String(pricing.Growth.maxAiUnits), 10) : 300,
+            Business: (pricing && pricing.Business && pricing.Business.maxAiUnits !== undefined) ? parseInt(String(pricing.Business.maxAiUnits), 10) : 800,
+            Enterprise: (pricing && pricing.Enterprise && pricing.Enterprise.maxAiUnits !== undefined) ? parseInt(String(pricing.Enterprise.maxAiUnits), 10) : 2500
         };
 
         const newUnits = tierLimits[tier];
@@ -1911,7 +1927,7 @@ app.get("/api/admin/ai-ledger", async (req: any, res) => {
 });
 
 // GET endpoint to fetch global plan settings
-app.get("/api/admin/global-pricing-settings", async (req, res) => {
+app.get("/api/admin/global-pricing-settings", verifyTenant, async (req: any, res) => {
     try {
         // 1. Try local cache file first
         const local = getLocalGlobalPricingSettings();
@@ -1922,7 +1938,8 @@ app.get("/api/admin/global-pricing-settings", async (req, res) => {
 
         // 2. Fall back to Supabase
         console.log("[Global Pricing] Fetching global pricing from Supabase...");
-        const { data, error } = await supabaseClient
+        const client = getAuthenticatedClient(req.token);
+        const { data, error } = await client
             .from("generated_documents")
             .select("content")
             .eq("id", "99999999-9999-9999-9999-999999999999")
@@ -1967,7 +1984,8 @@ app.post("/api/admin/global-pricing-settings", verifyTenant, async (req: any, re
         // Async write back to Supabase with company_id: null to prevent foreign key errors
         (async () => {
             try {
-                const { error: dbErr } = await supabaseClient
+                const client = getAuthenticatedClient(req.token);
+                const { error: dbErr } = await client
                     .from("generated_documents")
                     .upsert({
                         id: '99999999-9999-9999-9999-999999999999',
@@ -1993,7 +2011,7 @@ app.post("/api/admin/global-pricing-settings", verifyTenant, async (req: any, re
 });
 
 // GET endpoint to fetch global refill packs settings
-app.get("/api/admin/global-refill-packs", async (req, res) => {
+app.get("/api/admin/global-refill-packs", verifyTenant, async (req: any, res) => {
     try {
         // 1. Try local cache file first
         const local = getLocalGlobalRefillPacks();
@@ -2004,7 +2022,8 @@ app.get("/api/admin/global-refill-packs", async (req, res) => {
 
         // 2. Fall back to Supabase
         console.log("[Global Refill Packs] Fetching global refill packs from Supabase...");
-        const { data, error } = await supabaseClient
+        const client = getAuthenticatedClient(req.token);
+        const { data, error } = await client
             .from("generated_documents")
             .select("content")
             .eq("id", "88888888-8888-8888-8888-888888888888")
@@ -2055,7 +2074,8 @@ app.post("/api/admin/global-refill-packs", verifyTenant, async (req: any, res) =
         // Async write back to Supabase with company_id: null to prevent foreign key errors
         (async () => {
             try {
-                const { error: dbErr } = await supabaseClient
+                const client = getAuthenticatedClient(req.token);
+                const { error: dbErr } = await client
                     .from("generated_documents")
                     .upsert({
                         id: '88888888-8888-8888-8888-888888888888',
@@ -2110,11 +2130,25 @@ app.get("/api/subscription/settings", verifyTenant, async (req: any, res) => {
         }
 
         // Fall back to database fetch
-        const { data, error } = await supabaseClient
+        const client = getAuthenticatedClient(req.token);
+        let { data, error } = await client
             .from("generated_documents")
             .select("*")
             .eq("id", docId)
             .maybeSingle();
+
+        if (error || !data) {
+            // System-level fallback
+            const fallbackRes = await supabaseClient
+                .from("generated_documents")
+                .select("*")
+                .eq("id", docId)
+                .maybeSingle();
+            if (fallbackRes.data) {
+                data = fallbackRes.data;
+                error = null;
+            }
+        }
 
         if (error) {
             return res.status(500).json({ error: error.message });
@@ -2166,7 +2200,8 @@ app.post("/api/subscription/settings", verifyTenant, async (req: any, res) => {
         // Async sync with Supabase
         (async () => {
             try {
-                let { error: upsertError } = await supabaseClient
+                const client = getAuthenticatedClient(req.token);
+                let { error: upsertError } = await client
                     .from("generated_documents")
                     .upsert({
                         id: docId,
@@ -2174,6 +2209,18 @@ app.post("/api/subscription/settings", verifyTenant, async (req: any, res) => {
                         document_type: "cravebiz_workspace_settings",
                         content: content
                     });
+
+                if (upsertError) {
+                    let nullCompanyUpsert = await client
+                        .from("generated_documents")
+                        .upsert({
+                            id: docId,
+                            company_id: null,
+                            document_type: "cravebiz_workspace_settings",
+                            content: content
+                        });
+                    upsertError = nullCompanyUpsert.error;
+                }
 
                 if (upsertError) {
                     await supabaseClient

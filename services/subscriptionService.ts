@@ -293,7 +293,11 @@ export async function saveGlobalPlanSettings(limits: typeof TIER_LIMITS): Promis
  */
 export async function syncGlobalPlanSettings(): Promise<void> {
   try {
-    const response = await fetch('/api/admin/global-pricing-settings');
+    const companyId = localStorage.getItem('cravebiz_tenant') || 'cravebiz-inc';
+    const headers = await api.getAuthHeaders(companyId);
+    const response = await fetch('/api/admin/global-pricing-settings', {
+      headers
+    });
     if (!response.ok) {
       throw new Error(`HTTP ${response.status}`);
     }
@@ -832,7 +836,11 @@ export async function saveGlobalRefillPacks(packs: typeof REFILL_PACKS): Promise
  */
 export async function syncGlobalRefillPacks(): Promise<void> {
   try {
-    const response = await fetch('/api/admin/global-refill-packs');
+    const companyId = localStorage.getItem('cravebiz_tenant') || 'cravebiz-inc';
+    const headers = await api.getAuthHeaders(companyId);
+    const response = await fetch('/api/admin/global-refill-packs', {
+      headers
+    });
     if (!response.ok) {
       throw new Error(`HTTP ${response.status}`);
     }
