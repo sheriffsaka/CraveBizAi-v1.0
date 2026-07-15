@@ -29,7 +29,6 @@ export async function generateTextResponse(
         const data = await response.json();
         if (companyId) {
             handleAiResponseUnits(companyId, data);
-            syncSubscriptionInfoFromDb(companyId).catch(err => console.warn("Sync err:", err));
         }
         return data.text || "Sorry, I encountered an error while processing your request.";
     } catch (error: any) {
@@ -57,7 +56,6 @@ export async function transformDocument(
         const data = await response.json();
         if (companyId) {
             handleAiResponseUnits(companyId, data);
-            syncSubscriptionInfoFromDb(companyId).catch(err => console.warn("Sync err:", err));
         }
         return data;
     } catch (error: any) {
@@ -85,7 +83,6 @@ export async function generateRenewalInvoiceSuggestion(
         const data = await response.json();
         if (companyId) {
             handleAiResponseUnits(companyId, data);
-            syncSubscriptionInfoFromDb(companyId).catch(err => console.warn("Sync err:", err));
         }
         return data;
     } catch (error) {
@@ -113,7 +110,6 @@ export async function generateClientPaymentHealthReport(
         const data = await response.json();
         if (companyId) {
             handleAiResponseUnits(companyId, data);
-            syncSubscriptionInfoFromDb(companyId).catch(err => console.warn("Sync err:", err));
         }
         return data.text || "Failed to generate health report.";
     } catch (error: any) {
@@ -142,7 +138,6 @@ export async function generateDocumentFromPurpose(
         const data = await response.json();
         if (companyId) {
             handleAiResponseUnits(companyId, data);
-            syncSubscriptionInfoFromDb(companyId).catch(err => console.warn("Sync err:", err));
         }
         return data;
     } catch (error: any) {
@@ -169,7 +164,6 @@ export async function reviewDocumentContent(
         const data = await response.json();
         if (companyId) {
             handleAiResponseUnits(companyId, data);
-            syncSubscriptionInfoFromDb(companyId).catch(err => console.warn("Sync err:", err));
         }
         return data;
     } catch (error: any) {

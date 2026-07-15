@@ -24,7 +24,6 @@ export async function generateInvoiceInsight(prompt: string, complex: boolean = 
         const data = await response.json();
         if (companyId) {
             handleAiResponseUnits(companyId, data);
-            syncSubscriptionInfoFromDb(companyId).catch(err => console.warn("Sync err:", err));
         }
         return data.text || "I'm sorry, I couldn't generate an insight for this invoice at the moment.";
     } catch (error: any) {

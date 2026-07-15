@@ -246,13 +246,63 @@ function getAuthenticatedClient(token?: string) {
 }
 
 // Server-side secure subscription validation and AI unit deduction
+let WORKSPACE_SETTINGS_FILE = path.join(process.cwd(), "cravebiz_workspace_settings.json");
+let GLOBAL_PRICING_FILE = path.join(process.cwd(), "cravebiz_global_pricing_settings.json");
+if (isProductionDir) {
+    WORKSPACE_SETTINGS_FILE = path.join("/tmp", "cravebiz_workspace_settings.json");
+    GLOBAL_PRICING_FILE = path.join("/tmp", "cravebiz_global_pricing_settings.json");
+}
+
+function getLocalWorkspaceSettings(): Record<string, any> {
+    try {
+        if (fs.existsSync(WORKSPACE_SETTINGS_FILE)) {
+            return JSON.parse(fs.readFileSync(WORKSPACE_SETTINGS_FILE, "utf-8"));
+        }
+    } catch (e) {
+        console.warn("Failed to read local workspace settings:", e);
+    }
+    return {};
+}
+
+function saveLocalWorkspaceSettings(docId: string, content: any) {
+    try {
+        const settings = getLocalWorkspaceSettings();
+        settings[docId] = content;
+        fs.writeFileSync(WORKSPACE_SETTINGS_FILE, JSON.stringify(settings, null, 2), "utf-8");
+        console.log(`[AI Settings] Saved workspace settings locally for ${docId}`);
+    } catch (e) {
+        console.warn("Failed to write local workspace settings:", e);
+    }
+}
+
+function getLocalGlobalPricingSettings(): any {
+    try {
+        if (fs.existsSync(GLOBAL_PRICING_FILE)) {
+            return JSON.parse(fs.readFileSync(GLOBAL_PRICING_FILE, "utf-8"));
+        }
+    } catch (e) {
+        console.warn("Failed to read local global pricing settings:", e);
+    }
+    return null;
+}
+
+function saveLocalGlobalPricingSettings(limits: any) {
+    try {
+        fs.writeFileSync(GLOBAL_PRICING_FILE, JSON.stringify(limits, null, 2), "utf-8");
+        console.log("[AI Settings] Saved global pricing settings locally.");
+    } catch (e) {
+        console.warn("Failed to write local global pricing settings:", e);
+    }
+}
+
 async function recordAiUsageLedgerEntry(
     tenantId: string,
     userEmail: string,
     userName: string,
     taskName: string,
     tokensUsed: number,
-    creditsUsed: number
+    creditsUsed: number,
+    token?: string
 ) {
     try {
         const entryId = `ledger-${Date.now()}-${Math.random().toString(36).substring(2, 11)}`;
@@ -275,9 +325,12 @@ async function recordAiUsageLedgerEntry(
             dbCompanyId = "11111111-1111-1111-1111-111111111111";
         }
 
+        const client = getAuthenticatedClient(token);
+
         // 1. Try to record to SQL table 'ai_credit_logs' if it exists in Supabase
+        let successLogs = false;
         try {
-            const { error: dbTableError } = await supabaseClient
+            const { error: dbTableError } = await client
                 .from("ai_credit_logs")
                 .insert({
                     user_id: userEmail,
@@ -288,17 +341,34 @@ async function recordAiUsageLedgerEntry(
                     company_id: dbCompanyId
                 });
             if (dbTableError) {
-                console.warn("[AI Ledger] Could not write to ai_credit_logs table (will use generated_documents fallback):", dbTableError.message);
+                console.warn("[AI Ledger] Authenticated write to ai_credit_logs failed (trying unauthenticated):", dbTableError.message);
+                
+                // Fallback to unauthenticated supabaseClient
+                const { error: anonError } = await supabaseClient
+                    .from("ai_credit_logs")
+                    .insert({
+                        user_id: userEmail,
+                        task_performed: taskName,
+                        tokens_used: tokensUsed,
+                        credits_used: creditsUsed,
+                        timestamp: timestamp,
+                        company_id: dbCompanyId
+                    });
+                if (!anonError) {
+                    console.log("[AI Ledger] Recorded usage in ai_credit_logs using unauthenticated client successfully.");
+                    successLogs = true;
+                }
             } else {
                 console.log("[AI Ledger] Recorded usage in ai_credit_logs table successfully.");
+                successLogs = true;
             }
         } catch (tableErr: any) {
-            console.warn("[AI Ledger] Exception when writing to ai_credit_logs table (using fallback):", tableErr.message || tableErr);
+            console.warn("[AI Ledger] Exception when writing to ai_credit_logs table:", tableErr.message || tableErr);
         }
 
-        // 1.1 Try to record to SQL table 'ai_usage_logs' if it exists in Supabase
+        // 1.1 Try to record to SQL table 'ai_usage_logs'
         try {
-            const { error: dbUsageError } = await supabaseClient
+            await supabaseClient
                 .from("ai_usage_logs")
                 .insert({
                     user_id: userEmail,
@@ -308,30 +378,45 @@ async function recordAiUsageLedgerEntry(
                     timestamp: timestamp,
                     company_id: dbCompanyId
                 });
-            if (dbUsageError) {
-                console.warn("[AI Ledger] Could not write to ai_usage_logs table:", dbUsageError.message);
-            } else {
-                console.log("[AI Ledger] Recorded usage in ai_usage_logs table successfully.");
-            }
         } catch (tableErr: any) {
-            console.warn("[AI Ledger] Exception when writing to ai_usage_logs table:", tableErr.message || tableErr);
+            // Silently ignore or warn
         }
 
-        // 2. Also write to 'generated_documents' under cravebiz_ai_ledger_entry as a resilient fallback
-        await supabaseClient.from("generated_documents").insert({
-            id: entryId,
-            company_id: dbCompanyId,
-            document_type: "cravebiz_ai_ledger_entry",
-            content: {
-                userEmail,
-                userName,
-                task: taskName,
-                tokensUsed,
-                creditsUsed,
-                timestamp
+        // 2. Write to 'generated_documents' under cravebiz_ai_ledger_entry as a resilient fallback
+        try {
+            const { error: docError } = await client.from("generated_documents").insert({
+                id: entryId,
+                company_id: isCravebizInc ? null : dbCompanyId,
+                document_type: "cravebiz_ai_ledger_entry",
+                content: {
+                    userEmail,
+                    userName,
+                    task: taskName,
+                    tokensUsed,
+                    creditsUsed,
+                    timestamp
+                }
+            });
+            if (docError) {
+                // Try unauthenticated
+                await supabaseClient.from("generated_documents").insert({
+                    id: entryId,
+                    company_id: null,
+                    document_type: "cravebiz_ai_ledger_entry",
+                    content: {
+                        userEmail,
+                        userName,
+                        task: taskName,
+                        tokensUsed,
+                        creditsUsed,
+                        timestamp
+                    }
+                });
             }
-        });
-        console.log(`[AI Ledger] Recorded usage fallback: ${userEmail} | ${taskName} | ${tokensUsed} tokens | ${creditsUsed} credits`);
+        } catch (e) {
+            console.warn("[AI Ledger] Exception writing to generated_documents fallback:", e);
+        }
+        console.log(`[AI Ledger] Completed logging sequence for: ${userEmail} | ${taskName} | ${tokensUsed} tokens`);
     } catch (e) {
         console.error("[AI Ledger] Failed to record usage entry:", e);
     }
@@ -372,33 +457,36 @@ async function deductAiUnitServerSide(
 
     const docId = dbCompanyId;
 
-    // Fetch workspace settings from DB using the request-specific authenticated client
-    const client = getAuthenticatedClient(token);
-    let fetchRes = await client
-        .from("generated_documents")
-        .select("*")
-        .eq("id", docId)
-        .maybeSingle();
+    // Check high-resiliency local cache file first
+    const localSettings = getLocalWorkspaceSettings();
+    let data = localSettings[docId] ? { content: localSettings[docId] } : null;
 
-    let data = fetchRes.data;
-    let error = fetchRes.error;
+    if (!data) {
+        // Fetch workspace settings from DB using the request-specific authenticated client
+        const client = getAuthenticatedClient(token);
+        try {
+            const fetchRes = await client
+                .from("generated_documents")
+                .select("*")
+                .eq("id", docId)
+                .maybeSingle();
 
-    // Resiliency fallback: try unauthenticated server-level client if authenticated fails or returns null
-    if (error || !data) {
-        console.warn(`[AI Deduct] Authenticated fetch failed or returned null for ${docId}. Trying server-level client fallback...`);
-        const fallbackRes = await supabaseClient
-            .from("generated_documents")
-            .select("*")
-            .eq("id", docId)
-            .maybeSingle();
-        if (fallbackRes.data) {
-            data = fallbackRes.data;
-            error = null;
+            if (fetchRes.data) {
+                data = fetchRes.data;
+            } else {
+                // Resiliency fallback: try unauthenticated server-level client
+                const fallbackRes = await supabaseClient
+                    .from("generated_documents")
+                    .select("*")
+                    .eq("id", docId)
+                    .maybeSingle();
+                if (fallbackRes.data) {
+                    data = fallbackRes.data;
+                }
+            }
+        } catch (fetchErr) {
+            console.warn("[AI Deduct] Database fetch failed, relying on defaults:", fetchErr);
         }
-    }
-
-    if (error) {
-        console.warn("Server-side subscription fetch error:", error);
     }
 
     let tier = isCravebizInc ? "Enterprise" : "Free";
@@ -417,26 +505,6 @@ async function deductAiUnitServerSide(
         }
         aiModeEnabled = content.aiModeEnabled !== undefined ? (content.aiModeEnabled === true || content.aiModeEnabled === "true") : aiModeEnabled;
         memberPermissions = content.memberPermissions || {};
-    } else {
-        // Fallback or initialization inside DB if not found
-        // If it is 'cravebiz-inc' we automatically create and initialize it in the DB to avoid any first-time issues
-        if (isCravebizInc) {
-            try {
-                await supabaseClient.from("generated_documents").upsert({
-                    id: docId,
-                    company_id: dbCompanyId,
-                    document_type: "cravebiz_workspace_settings",
-                    content: {
-                        tier,
-                        aiUnits,
-                        aiModeEnabled,
-                        memberPermissions
-                    }
-                });
-            } catch (initErr) {
-                console.warn("Could not auto-initialize cravebiz-inc settings:", initErr);
-            }
-        }
     }
 
     // Allow client header to override or verify if AI Mode is enabled
@@ -467,98 +535,70 @@ async function deductAiUnitServerSide(
     // Deduct 1 unit
     const newUnits = aiUnits - 1;
 
-    // Upsert the updated balance back to DB (uses dbCompanyId directly to satisfy RLS and prevent foreign-key/coercion UUID type errors)
-    let { error: upsertError } = await client
-        .from("generated_documents")
-        .upsert({
-            id: docId,
-            company_id: dbCompanyId,
-            document_type: "cravebiz_workspace_settings",
-            content: {
-                tier,
-                aiUnits: newUnits,
-                aiModeEnabled,
-                memberPermissions,
-                invitedMembers: data?.content?.invitedMembers || {},
-                memberDetails: data?.content?.memberDetails || {}
+    // Save to the high-resiliency local cache file first (guarantees persistence inside the single container)
+    const updatedContent = {
+        tier,
+        aiUnits: newUnits,
+        aiModeEnabled,
+        memberPermissions,
+        invitedMembers: data?.content?.invitedMembers || {},
+        memberDetails: data?.content?.memberDetails || {}
+    };
+    saveLocalWorkspaceSettings(docId, updatedContent);
+
+    // Sync back to Supabase database asynchronously (never blocks the request)
+    (async () => {
+        try {
+            const client = getAuthenticatedClient(token);
+            let { error: upsertError } = await client
+                .from("generated_documents")
+                .upsert({
+                    id: docId,
+                    company_id: isCravebizInc ? null : dbCompanyId,
+                    document_type: "cravebiz_workspace_settings",
+                    content: updatedContent
+                });
+
+            if (upsertError) {
+                // Fallback with company_id: null
+                const nullCompanyUpsert = await client
+                    .from("generated_documents")
+                    .upsert({
+                        id: docId,
+                        company_id: null,
+                        document_type: "cravebiz_workspace_settings",
+                        content: updatedContent
+                    });
+                upsertError = nullCompanyUpsert.error;
             }
-        });
 
-    // Fallback 1: Try authenticated client with company_id: null (safely bypasses foreign keys for personal/virtual workspaces)
-    if (upsertError) {
-        console.warn(`[AI Deduct] Authenticated upsert with company_id failed for ${docId}. Trying with company_id: null...`);
-        const nullCompanyUpsert = await client
-            .from("generated_documents")
-            .upsert({
-                id: docId,
-                company_id: null,
-                document_type: "cravebiz_workspace_settings",
-                content: {
-                    tier,
-                    aiUnits: newUnits,
-                    aiModeEnabled,
-                    memberPermissions,
-                    invitedMembers: data?.content?.invitedMembers || {},
-                    memberDetails: data?.content?.memberDetails || {}
-                }
-            });
-        upsertError = nullCompanyUpsert.error;
-    }
+            if (upsertError) {
+                // Fallback unauthenticated
+                await supabaseClient
+                    .from("generated_documents")
+                    .upsert({
+                        id: docId,
+                        company_id: null,
+                        document_type: "cravebiz_workspace_settings",
+                        content: updatedContent
+                    });
+            }
+        } catch (syncErr) {
+            console.warn("[AI Deduct Sync] Failed to sync workspace settings to Supabase:", syncErr);
+        }
+    })();
 
-    // Fallback 2: Try server-level client with original dbCompanyId if authenticated client fails to write
-    if (upsertError) {
-        console.warn(`[AI Deduct] Authenticated upsert fallbacks failed for ${docId}. Trying server-level client fallback...`);
-        const fallbackUpsert = await supabaseClient
-            .from("generated_documents")
-            .upsert({
-                id: docId,
-                company_id: dbCompanyId,
-                document_type: "cravebiz_workspace_settings",
-                content: {
-                    tier,
-                    aiUnits: newUnits,
-                    aiModeEnabled,
-                    memberPermissions,
-                    invitedMembers: data?.content?.invitedMembers || {},
-                    memberDetails: data?.content?.memberDetails || {}
-                }
-            });
-        upsertError = fallbackUpsert.error;
-    }
+    // SUCCESSFUL DECOUPLED LOGGING: Always record usage ledger entry
+    const finalEmail = userEmail || "unknown@cravebiz.com";
+    const finalName = userName || "Workspace Member";
+    const finalTask = taskName || "SME Financial Routing AI Analysis";
+    const finalTokens = tokensUsed || 120;
+    
+    // Fire and forget logging
+    recordAiUsageLedgerEntry(tenantId, finalEmail, finalName, finalTask, finalTokens, 1, token).catch(logErr => {
+        console.error("[AI Deduct Logging] recordAiUsageLedgerEntry failed:", logErr);
+    });
 
-    // Fallback 3: Try server-level client with company_id: null
-    if (upsertError) {
-        console.warn(`[AI Deduct] Server-level fallback with company_id failed for ${docId}. Trying with company_id: null...`);
-        const finalFallbackUpsert = await supabaseClient
-            .from("generated_documents")
-            .upsert({
-                id: docId,
-                company_id: null,
-                document_type: "cravebiz_workspace_settings",
-                content: {
-                    tier,
-                    aiUnits: newUnits,
-                    aiModeEnabled,
-                    memberPermissions,
-                    invitedMembers: data?.content?.invitedMembers || {},
-                    memberDetails: data?.content?.memberDetails || {}
-                }
-            });
-        upsertError = finalFallbackUpsert.error;
-    }
-
-    if (upsertError) {
-        console.error("Server-side AI unit deduction upsert error:", upsertError);
-        // Resiliency: instead of crashing the user experience on a database sync failure, we log it and allow the request to proceed.
-        console.warn("[AI Deduct] Database write failed. Proceeding with in-memory balance reduction fallback to prevent blocking the user.");
-    } else {
-        // Successful deduction: record AI ledger entry
-        const finalEmail = userEmail || "unknown@cravebiz.com";
-        const finalName = userName || "Workspace Member";
-        const finalTask = taskName || "SME Financial Routing AI Analysis";
-        const finalTokens = tokensUsed || 120;
-        await recordAiUsageLedgerEntry(tenantId, finalEmail, finalName, finalTask, finalTokens, 1);
-    }
     return newUnits;
 }
 
@@ -1838,6 +1878,205 @@ app.get("/api/admin/ai-ledger", async (req: any, res) => {
         res.json({ success: true, entries, source: "generated_documents" });
     } catch (err: any) {
         console.error("Express /api/admin/ai-ledger error:", err);
+        res.status(500).json({ error: err.message || "Internal server error" });
+    }
+});
+
+// GET endpoint to fetch global plan settings
+app.get("/api/admin/global-pricing-settings", async (req, res) => {
+    try {
+        // 1. Try local cache file first
+        const local = getLocalGlobalPricingSettings();
+        if (local) {
+            console.log("[Global Pricing] Successfully loaded global pricing from local file.");
+            return res.json(local);
+        }
+
+        // 2. Fall back to Supabase
+        console.log("[Global Pricing] Fetching global pricing from Supabase...");
+        const { data, error } = await supabaseClient
+            .from("generated_documents")
+            .select("content")
+            .eq("id", "99999999-9999-9999-9999-999999999999")
+            .maybeSingle();
+
+        if (data && data.content) {
+            saveLocalGlobalPricingSettings(data.content);
+            return res.json(data.content);
+        }
+
+        // 3. Fall back to returning null so client uses default TIER_LIMITS
+        return res.json(null);
+    } catch (err: any) {
+        console.error("Express GET /api/admin/global-pricing-settings error:", err);
+        res.status(500).json({ error: err.message || "Internal server error" });
+    }
+});
+
+// POST endpoint to update global plan settings
+app.post("/api/admin/global-pricing-settings", verifyTenant, async (req: any, res) => {
+    try {
+        // Double-check admin privileges
+        const userEmail = req.user?.email || "";
+        const isAdmin = [
+            'cravebiz@cloudcraves.com',
+            'super@admin.com',
+            'sheriffdeenalade@gmail.com'
+        ].includes(userEmail.toLowerCase());
+
+        if (!isAdmin) {
+            return res.status(403).json({ error: "Access denied: Admins only." });
+        }
+
+        const limits = req.body;
+        if (!limits || typeof limits !== "object") {
+            return res.status(400).json({ error: "Invalid pricing limits payload" });
+        }
+
+        // Save locally
+        saveLocalGlobalPricingSettings(limits);
+
+        // Async write back to Supabase with company_id: null to prevent foreign key errors
+        (async () => {
+            try {
+                const { error: dbErr } = await supabaseClient
+                    .from("generated_documents")
+                    .upsert({
+                        id: '99999999-9999-9999-9999-999999999999',
+                        company_id: null,
+                        document_type: 'cravebiz_global_pricing_settings',
+                        content: limits
+                    });
+                if (dbErr) {
+                    console.warn("[Global Pricing Sync] Supabase upsert error:", dbErr);
+                } else {
+                    console.log("[Global Pricing Sync] Supabase upsert successful.");
+                }
+            } catch (dbEx) {
+                console.warn("[Global Pricing Sync] Exception syncing with Supabase:", dbEx);
+            }
+        })();
+
+        res.json({ success: true, message: "Global plan settings saved successfully." });
+    } catch (err: any) {
+        console.error("Express POST /api/admin/global-pricing-settings error:", err);
+        res.status(500).json({ error: err.message || "Internal server error" });
+    }
+});
+
+// GET subscription settings
+app.get("/api/subscription/settings", verifyTenant, async (req: any, res) => {
+    try {
+        const tenantId = req.tenantId;
+        let baseCompanyId = tenantId;
+        if (tenantId.startsWith("ws-personal-")) {
+            baseCompanyId = tenantId.replace("ws-personal-", "");
+        } else if (tenantId.startsWith("ws-legal-")) {
+            baseCompanyId = tenantId.replace("ws-legal-", "");
+        } else if (tenantId.startsWith("ws-sales-")) {
+            baseCompanyId = tenantId.replace("ws-sales-", "");
+        }
+
+        const isCravebizInc = baseCompanyId === "cravebiz-inc" || tenantId === "cravebiz-inc";
+        let dbCompanyId = baseCompanyId;
+        if (isCravebizInc) {
+            dbCompanyId = "00000000-0000-0000-0000-000000000000";
+        } else if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(dbCompanyId)) {
+            dbCompanyId = "11111111-1111-1111-1111-111111111111";
+        }
+
+        const docId = dbCompanyId;
+
+        // Try local file cache first
+        const localSettings = getLocalWorkspaceSettings();
+        if (localSettings[docId]) {
+            return res.json({ success: true, content: localSettings[docId] });
+        }
+
+        // Fall back to database fetch
+        const { data, error } = await supabaseClient
+            .from("generated_documents")
+            .select("*")
+            .eq("id", docId)
+            .maybeSingle();
+
+        if (error) {
+            return res.status(500).json({ error: error.message });
+        }
+
+        if (data && data.content) {
+            saveLocalWorkspaceSettings(docId, data.content);
+            return res.json({ success: true, content: data.content });
+        }
+
+        return res.json({ success: true, content: null });
+    } catch (err: any) {
+        console.error("Express GET /api/subscription/settings error:", err);
+        res.status(500).json({ error: err.message || "Internal server error" });
+    }
+});
+
+// POST subscription settings
+app.post("/api/subscription/settings", verifyTenant, async (req: any, res) => {
+    try {
+        const tenantId = req.tenantId;
+        const content = req.body;
+        if (!content || typeof content !== "object") {
+            return res.status(400).json({ error: "Invalid subscription settings payload" });
+        }
+
+        let baseCompanyId = tenantId;
+        if (tenantId.startsWith("ws-personal-")) {
+            baseCompanyId = tenantId.replace("ws-personal-", "");
+        } else if (tenantId.startsWith("ws-legal-")) {
+            baseCompanyId = tenantId.replace("ws-legal-", "");
+        } else if (tenantId.startsWith("ws-sales-")) {
+            baseCompanyId = tenantId.replace("ws-sales-", "");
+        }
+
+        const isCravebizInc = baseCompanyId === "cravebiz-inc" || tenantId === "cravebiz-inc";
+        let dbCompanyId = baseCompanyId;
+        if (isCravebizInc) {
+            dbCompanyId = "00000000-0000-0000-0000-000000000000";
+        } else if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(dbCompanyId)) {
+            dbCompanyId = "11111111-1111-1111-1111-111111111111";
+        }
+
+        const docId = dbCompanyId;
+
+        // Save locally
+        saveLocalWorkspaceSettings(docId, content);
+
+        // Async sync with Supabase
+        (async () => {
+            try {
+                let { error: upsertError } = await supabaseClient
+                    .from("generated_documents")
+                    .upsert({
+                        id: docId,
+                        company_id: isCravebizInc ? null : dbCompanyId,
+                        document_type: "cravebiz_workspace_settings",
+                        content: content
+                    });
+
+                if (upsertError) {
+                    await supabaseClient
+                        .from("generated_documents")
+                        .upsert({
+                            id: docId,
+                            company_id: null,
+                            document_type: "cravebiz_workspace_settings",
+                            content: content
+                        });
+                }
+            } catch (dbErr) {
+                console.warn("[Sub Settings Sync] Database sync failed:", dbErr);
+            }
+        })();
+
+        res.json({ success: true, message: "Subscription settings saved successfully." });
+    } catch (err: any) {
+        console.error("Express POST /api/subscription/settings error:", err);
         res.status(500).json({ error: err.message || "Internal server error" });
     }
 });

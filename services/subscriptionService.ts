@@ -131,40 +131,40 @@ export async function saveSubscriptionInfoToDb(companyId: string): Promise<void>
     console.warn("Could not read localstorage invited members:", e);
   }
 
+  const payload = {
+    tier: sub.tier,
+    aiUnits: sub.aiUnits,
+    aiModeEnabled: sub.aiModeEnabled,
+    memberPermissions,
+    invitedMembers
+  };
+
   try {
-    let { error } = await supabase.from('generated_documents').upsert({
-      id: docId,
-      company_id: docId,
-      document_type: 'cravebiz_workspace_settings',
-      content: {
-        tier: sub.tier,
-        aiUnits: sub.aiUnits,
-        aiModeEnabled: sub.aiModeEnabled,
-        memberPermissions,
-        invitedMembers
-      }
+    const headers = await api.getAuthHeaders(companyId);
+    const response = await fetch('/api/subscription/settings', {
+      method: 'POST',
+      headers,
+      body: JSON.stringify(payload)
     });
-    if (error) {
-      console.warn("Standard client-side subscription upsert failed, trying with company_id: null fallback...", error);
-      const fallbackUpsert = await supabase.from('generated_documents').upsert({
-        id: docId,
-        company_id: null,
-        document_type: 'cravebiz_workspace_settings',
-        content: {
-          tier: sub.tier,
-          aiUnits: sub.aiUnits,
-          aiModeEnabled: sub.aiModeEnabled,
-          memberPermissions,
-          invitedMembers
-        }
-      });
-      error = fallbackUpsert.error;
+    if (!response.ok) {
+      throw new Error(`HTTP ${response.status}`);
     }
-    if (error) {
-      console.warn("Supabase upsert subscription error:", error);
-    }
+    console.log("Successfully synced subscription settings via backend proxy.");
   } catch (err) {
-    console.warn("Could not sync subscription to Supabase:", err);
+    console.warn("Could not sync subscription to server via proxy, trying direct Supabase fallback:", err);
+    try {
+      const { error } = await supabase.from('generated_documents').upsert({
+        id: docId,
+        company_id: companyId === 'cravebiz-inc' ? null : docId,
+        document_type: 'cravebiz_workspace_settings',
+        content: payload
+      });
+      if (error) {
+        console.warn("Direct Supabase save subscription fallback failed:", error);
+      }
+    } catch (fallbackErr) {
+      console.warn("Direct Supabase exception:", fallbackErr);
+    }
   }
 }
 
@@ -176,6 +176,45 @@ export async function syncSubscriptionInfoFromDb(companyId: string): Promise<voi
   const docId = getSettingsDocId(companyId);
 
   try {
+    const headers = await api.getAuthHeaders(companyId);
+    const response = await fetch('/api/subscription/settings', {
+      headers
+    });
+    if (!response.ok) {
+      throw new Error(`HTTP ${response.status}`);
+    }
+    const resData = await response.json();
+    const content = resData?.content;
+
+    if (content) {
+      if (content.tier) {
+        localStorage.setItem(`cravebiz_tier_${companyId}`, content.tier);
+      }
+      if (content.aiUnits !== undefined) {
+        localStorage.setItem(`cravebiz_units_${companyId}`, content.aiUnits.toString());
+      }
+      if (content.aiModeEnabled !== undefined) {
+        localStorage.setItem(`cravebiz_aimode_${companyId}`, content.aiModeEnabled.toString());
+      }
+      if (content.memberPermissions) {
+        Object.entries(content.memberPermissions).forEach(([email, allowed]) => {
+          localStorage.setItem(`cravebiz_member_ai_allowed_${companyId}_${email}`, String(allowed));
+        });
+      }
+      if (content.invitedMembers) {
+        Object.entries(content.invitedMembers).forEach(([userId, info]: [string, any]) => {
+          localStorage.setItem(`cravebiz_invited_member_info_${companyId}_${userId}`, JSON.stringify(info));
+        });
+      }
+      window.dispatchEvent(new Event('cravebiz_subscription_change'));
+      return;
+    }
+  } catch (err) {
+    console.warn("Could not sync subscription from backend proxy, trying direct Supabase fallback:", err);
+  }
+
+  // Direct Supabase query as fallback
+  try {
     const { data, error } = await supabase
       .from('generated_documents')
       .select('content')
@@ -183,7 +222,7 @@ export async function syncSubscriptionInfoFromDb(companyId: string): Promise<voi
       .maybeSingle();
 
     if (error) {
-      console.warn("Supabase fetch subscription error:", error);
+      console.warn("Supabase direct query fallback error:", error);
       return;
     }
 
@@ -211,7 +250,7 @@ export async function syncSubscriptionInfoFromDb(companyId: string): Promise<voi
       window.dispatchEvent(new Event('cravebiz_subscription_change'));
     }
   } catch (err) {
-    console.warn("Could not sync subscription from Supabase:", err);
+    console.warn("Direct Supabase query exception:", err);
   }
 }
 
@@ -220,17 +259,32 @@ export async function syncSubscriptionInfoFromDb(companyId: string): Promise<voi
  */
 export async function saveGlobalPlanSettings(limits: typeof TIER_LIMITS): Promise<void> {
   try {
-    const { error } = await supabase.from('generated_documents').upsert({
-      id: '99999999-9999-9999-9999-999999999999',
-      company_id: 'cravebiz-inc',
-      document_type: 'cravebiz_global_pricing_settings',
-      content: limits
+    const headers = await api.getAuthHeaders('cravebiz-inc');
+    const response = await fetch('/api/admin/global-pricing-settings', {
+      method: 'POST',
+      headers,
+      body: JSON.stringify(limits)
     });
-    if (error) {
-      console.warn("Supabase save global plans error:", error);
+    if (!response.ok) {
+      const errData = await response.json().catch(() => ({}));
+      throw new Error(errData.error || `HTTP ${response.status}`);
     }
+    console.log("Successfully saved global plan settings via backend proxy.");
   } catch (err) {
-    console.warn("Could not save global plans to Supabase:", err);
+    console.warn("Could not save global plans via backend proxy, trying direct Supabase fallback:", err);
+    try {
+      const { error } = await supabase.from('generated_documents').upsert({
+        id: '99999999-9999-9999-9999-999999999999',
+        company_id: null,
+        document_type: 'cravebiz_global_pricing_settings',
+        content: limits
+      });
+      if (error) {
+        console.warn("Direct Supabase save global plans fallback also failed:", error);
+      }
+    } catch (dbErr) {
+      console.warn("Direct Supabase fallback exception:", dbErr);
+    }
   }
 }
 
@@ -239,19 +293,13 @@ export async function saveGlobalPlanSettings(limits: typeof TIER_LIMITS): Promis
  */
 export async function syncGlobalPlanSettings(): Promise<void> {
   try {
-    const { data, error } = await supabase
-      .from('generated_documents')
-      .select('content')
-      .eq('id', '99999999-9999-9999-9999-999999999999')
-      .maybeSingle();
-
-    if (error) {
-      console.warn("Supabase fetch global plans error:", error);
-      return;
+    const response = await fetch('/api/admin/global-pricing-settings');
+    if (!response.ok) {
+      throw new Error(`HTTP ${response.status}`);
     }
+    const content = await response.json();
 
-    if (data && data.content) {
-      const content = data.content as any;
+    if (content) {
       Object.keys(content).forEach((tierKey) => {
         const tier = tierKey as SubscriptionTier;
         if (content[tier]) {
@@ -278,15 +326,50 @@ export async function syncGlobalPlanSettings(): Promise<void> {
       }
     }
   } catch (err) {
-    console.warn("Could not sync global plans from Supabase:", err);
+    console.warn("Could not sync global plans from backend proxy, trying direct Supabase fallback:", err);
+    try {
+      const { data, error } = await supabase
+        .from('generated_documents')
+        .select('content')
+        .eq('id', '99999999-9999-9999-9999-999999999999')
+        .maybeSingle();
+
+      if (data && data.content) {
+        const content = data.content as any;
+        Object.keys(content).forEach((tierKey) => {
+          const tier = tierKey as SubscriptionTier;
+          if (content[tier]) {
+            TIER_LIMITS[tier] = {
+              ...TIER_LIMITS[tier],
+              ...content[tier]
+            };
+          }
+        });
+        localStorage.setItem('cravebiz_custom_tier_limits', JSON.stringify(TIER_LIMITS));
+        window.dispatchEvent(new Event('cravebiz_subscription_change'));
+      } else {
+        const cached = localStorage.getItem('cravebiz_custom_tier_limits');
+        if (cached) {
+          const parsed = JSON.parse(cached);
+          Object.keys(parsed).forEach((tierKey) => {
+            const tier = tierKey as SubscriptionTier;
+            TIER_LIMITS[tier] = {
+              ...TIER_LIMITS[tier],
+              ...parsed[tier]
+            };
+          });
+        }
+      }
+    } catch (fallbackErr) {
+      console.warn("Direct Supabase sync fallback failed:", fallbackErr);
+    }
   }
 }
 
 // Track which workspaces have had their AI mode initialized during this application session.
-// Track if we have already reset AI modes on initial application load.
 // This ensures they default to OFF on initial app loads/reloads as requested,
 // but do not turn off on their own during the session.
-let hasResetOnAppLoad = false;
+const globalObj = typeof window !== 'undefined' ? (window as any) : {};
 
 /**
  * Helper to get subscription details for a specific company
@@ -303,7 +386,7 @@ export function getSubscriptionInfo(companyId: string): SubscriptionInfo {
   const defaultTier: SubscriptionTier = (isCravebizInc || isActiveSuperAdminTenant) ? 'Enterprise' : 'Free';
 
   // Initialize AI Mode to OFF on initial application load exactly once
-  if (companyId && !hasResetOnAppLoad) {
+  if (companyId && !globalObj.__cravebiz_aimode_initialized) {
     for (let i = 0; i < localStorage.length; i++) {
       const key = localStorage.key(i);
       if (key && key.startsWith('cravebiz_aimode_')) {
@@ -311,7 +394,7 @@ export function getSubscriptionInfo(companyId: string): SubscriptionInfo {
       }
     }
     localStorage.setItem(`cravebiz_aimode_${companyId}`, 'false');
-    hasResetOnAppLoad = true;
+    globalObj.__cravebiz_aimode_initialized = true;
   }
 
   if (!companyId) {
