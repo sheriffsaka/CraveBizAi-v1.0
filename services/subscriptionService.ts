@@ -16,13 +16,13 @@ export const TIER_LIMITS: Record<SubscriptionTier, { maxInvoices: number; maxRec
   Free: { 
     maxInvoices: 10, 
     maxReceipts: 10, 
-    maxAiUnits: 10, 
+    maxAiUnits: 5, 
     maxUsers: 1, 
     aiAvailable: true, 
     price: "₦0.00",
     monthlyPriceVal: 0,
     annualPriceVal: 0,
-    description: "Instead of disabling AI completely, get 10 free AI Credits every month to experience all automation features."
+    description: "Instead of disabling AI completely, get 5 free AI Credits every month to experience all automation features."
   },
   Starter: { 
     maxInvoices: 100, 
@@ -775,4 +775,119 @@ export function safeFlutterwaveCheckout(config: any): void {
     }
   });
 }
+
+/**
+ * Customizable Refill Packs configuration, syncable from DB
+ */
+export let REFILL_PACKS = {
+  pack_100: { id: 'pack_100', amount: 1000, credits: 100, title: "100 AI Credits" },
+  pack_300: { id: 'pack_300', amount: 2500, credits: 300, title: "300 AI Credits" },
+  pack_1000: { id: 'pack_1000', amount: 7500, credits: 1000, title: "1000 AI Credits" },
+  pack_5000: { id: 'pack_5000', amount: 30000, credits: 5000, title: "5000 AI Credits" }
+};
+
+/**
+ * Saves customized Refill Packs settings to Supabase and cache
+ */
+export async function saveGlobalRefillPacks(packs: typeof REFILL_PACKS): Promise<void> {
+  try {
+    const headers = await api.getAuthHeaders('cravebiz-inc');
+    const response = await fetch('/api/admin/global-refill-packs', {
+      method: 'POST',
+      headers,
+      body: JSON.stringify(packs)
+    });
+    if (!response.ok) {
+      const errData = await response.json().catch(() => ({}));
+      throw new Error(errData.error || `HTTP ${response.status}`);
+    }
+    console.log("Successfully saved global refill packs via backend proxy.");
+    REFILL_PACKS = { ...REFILL_PACKS, ...packs };
+    localStorage.setItem('cravebiz_custom_refill_packs', JSON.stringify(REFILL_PACKS));
+    window.dispatchEvent(new Event('cravebiz_subscription_change'));
+  } catch (err) {
+    console.warn("Could not save refill packs via backend proxy, trying direct Supabase fallback:", err);
+    try {
+      const { error } = await supabase.from('generated_documents').upsert({
+        id: '88888888-8888-8888-8888-888888888888',
+        company_id: null,
+        document_type: 'cravebiz_global_refill_packs',
+        content: packs
+      });
+      if (!error) {
+        REFILL_PACKS = { ...REFILL_PACKS, ...packs };
+        localStorage.setItem('cravebiz_custom_refill_packs', JSON.stringify(REFILL_PACKS));
+        window.dispatchEvent(new Event('cravebiz_subscription_change'));
+      } else {
+        console.warn("Direct Supabase save refill packs fallback failed:", error);
+      }
+    } catch (dbErr) {
+      console.warn("Direct Supabase fallback exception:", dbErr);
+    }
+  }
+}
+
+/**
+ * Syncs customized Refill Packs from database/cache
+ */
+export async function syncGlobalRefillPacks(): Promise<void> {
+  try {
+    const response = await fetch('/api/admin/global-refill-packs');
+    if (!response.ok) {
+      throw new Error(`HTTP ${response.status}`);
+    }
+    const content = await response.json();
+
+    if (content && typeof content === 'object') {
+      Object.keys(content).forEach((packKey) => {
+        const pk = packKey as keyof typeof REFILL_PACKS;
+        if (content[pk]) {
+          REFILL_PACKS[pk] = {
+            ...REFILL_PACKS[pk],
+            ...content[pk]
+          };
+        }
+      });
+      localStorage.setItem('cravebiz_custom_refill_packs', JSON.stringify(REFILL_PACKS));
+      window.dispatchEvent(new Event('cravebiz_subscription_change'));
+    } else {
+      // Look up cached in local storage
+      const cached = localStorage.getItem('cravebiz_custom_refill_packs');
+      if (cached) {
+        const parsed = JSON.parse(cached);
+        Object.keys(parsed).forEach((packKey) => {
+          const pk = packKey as keyof typeof REFILL_PACKS;
+          REFILL_PACKS[pk] = {
+            ...REFILL_PACKS[pk],
+            ...parsed[pk]
+          };
+        });
+      }
+    }
+  } catch (err) {
+    console.warn("Could not sync refill packs from backend, trying direct Supabase fallback:", err);
+    try {
+      const { data, error } = await supabase
+        .from('generated_documents')
+        .select('content')
+        .eq('id', '88888888-8888-8888-8888-888888888888')
+        .maybeSingle();
+      if (data && data.content) {
+        const content = data.content;
+        Object.keys(content).forEach((packKey) => {
+          const pk = packKey as keyof typeof REFILL_PACKS;
+          REFILL_PACKS[pk] = {
+            ...REFILL_PACKS[pk],
+            ...content[pk]
+          };
+        });
+        localStorage.setItem('cravebiz_custom_refill_packs', JSON.stringify(REFILL_PACKS));
+        window.dispatchEvent(new Event('cravebiz_subscription_change'));
+      }
+    } catch (dbErr) {
+      console.warn("Direct Supabase refill sync fallback error:", dbErr);
+    }
+  }
+}
+
 

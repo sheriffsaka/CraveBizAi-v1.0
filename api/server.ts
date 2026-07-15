@@ -248,9 +248,11 @@ function getAuthenticatedClient(token?: string) {
 // Server-side secure subscription validation and AI unit deduction
 let WORKSPACE_SETTINGS_FILE = path.join(process.cwd(), "cravebiz_workspace_settings.json");
 let GLOBAL_PRICING_FILE = path.join(process.cwd(), "cravebiz_global_pricing_settings.json");
+let GLOBAL_REFILL_PACKS_FILE = path.join(process.cwd(), "cravebiz_global_refill_packs.json");
 if (isProductionDir) {
     WORKSPACE_SETTINGS_FILE = path.join("/tmp", "cravebiz_workspace_settings.json");
     GLOBAL_PRICING_FILE = path.join("/tmp", "cravebiz_global_pricing_settings.json");
+    GLOBAL_REFILL_PACKS_FILE = path.join("/tmp", "cravebiz_global_refill_packs.json");
 }
 
 function getLocalWorkspaceSettings(): Record<string, any> {
@@ -293,6 +295,37 @@ function saveLocalGlobalPricingSettings(limits: any) {
     } catch (e) {
         console.warn("Failed to write local global pricing settings:", e);
     }
+}
+
+function getLocalGlobalRefillPacks(): any {
+    try {
+        if (fs.existsSync(GLOBAL_REFILL_PACKS_FILE)) {
+            return JSON.parse(fs.readFileSync(GLOBAL_REFILL_PACKS_FILE, "utf-8"));
+        }
+    } catch (e) {
+        console.warn("Failed to read local global refill packs settings:", e);
+    }
+    return null;
+}
+
+function saveLocalGlobalRefillPacks(packs: any) {
+    try {
+        fs.writeFileSync(GLOBAL_REFILL_PACKS_FILE, JSON.stringify(packs, null, 2), "utf-8");
+        console.log("[AI Settings] Saved global refill packs locally.");
+    } catch (e) {
+        console.warn("Failed to write local global refill packs settings:", e);
+    }
+}
+
+function getGlobalRefillPacksWithFallback(): Record<string, { amount: number; credits: number }> {
+    const cached = getLocalGlobalRefillPacks();
+    if (cached) return cached;
+    return {
+        pack_100: { amount: 1000, credits: 100 },
+        pack_300: { amount: 2500, credits: 300 },
+        pack_1000: { amount: 7500, credits: 1000 },
+        pack_5000: { amount: 30000, credits: 5000 }
+    };
 }
 
 async function recordAiUsageLedgerEntry(
@@ -490,7 +523,7 @@ async function deductAiUnitServerSide(
     }
 
     let tier = isCravebizInc ? "Enterprise" : "Free";
-    let aiUnits = isCravebizInc ? 1000 : 10;
+    let aiUnits = isCravebizInc ? 1000 : 5;
     let aiModeEnabled = false;
     let memberPermissions: Record<string, boolean> = {};
 
@@ -508,8 +541,8 @@ async function deductAiUnitServerSide(
     }
 
     // Allow client header to override or verify if AI Mode is enabled
-    if (clientAiModeEnabled !== undefined) {
-        aiModeEnabled = clientAiModeEnabled;
+    if (clientAiModeEnabled === true) {
+        aiModeEnabled = true;
     }
 
     // Perform checks
@@ -1523,7 +1556,7 @@ app.post("/api/subscription/upgrade", verifyTenant, async (req: any, res) => {
         }
 
         const tierLimits: Record<string, number> = {
-            Free: 10,
+            Free: 5,
             Starter: 100,
             Growth: 300,
             Business: 800,
@@ -1622,12 +1655,7 @@ app.post("/api/subscription/refill", verifyTenant, async (req: any, res) => {
         const { transactionId, packId } = req.body;
         const tenantId = req.tenantId;
 
-        const packMap: Record<string, { amount: number; credits: number }> = {
-            pack_100: { amount: 1000, credits: 100 },
-            pack_300: { amount: 2500, credits: 300 },
-            pack_1000: { amount: 7500, credits: 1000 },
-            pack_5000: { amount: 30000, credits: 5000 }
-        };
+        const packMap = getGlobalRefillPacksWithFallback();
 
         const chosenPackId = packId || 'pack_300';
         const pack = packMap[chosenPackId] || packMap['pack_300'];
@@ -1960,6 +1988,94 @@ app.post("/api/admin/global-pricing-settings", verifyTenant, async (req: any, re
         res.json({ success: true, message: "Global plan settings saved successfully." });
     } catch (err: any) {
         console.error("Express POST /api/admin/global-pricing-settings error:", err);
+        res.status(500).json({ error: err.message || "Internal server error" });
+    }
+});
+
+// GET endpoint to fetch global refill packs settings
+app.get("/api/admin/global-refill-packs", async (req, res) => {
+    try {
+        // 1. Try local cache file first
+        const local = getLocalGlobalRefillPacks();
+        if (local) {
+            console.log("[Global Refill Packs] Successfully loaded global refill packs from local file.");
+            return res.json(local);
+        }
+
+        // 2. Fall back to Supabase
+        console.log("[Global Refill Packs] Fetching global refill packs from Supabase...");
+        const { data, error } = await supabaseClient
+            .from("generated_documents")
+            .select("content")
+            .eq("id", "88888888-8888-8888-8888-888888888888")
+            .maybeSingle();
+
+        if (data && data.content) {
+            saveLocalGlobalRefillPacks(data.content);
+            return res.json(data.content);
+        }
+
+        // 3. Fall back to returning default REFILL_PACKS structure
+        const defaultPacks = {
+            pack_100: { id: 'pack_100', amount: 1000, credits: 100, title: "100 AI Credits" },
+            pack_300: { id: 'pack_300', amount: 2500, credits: 300, title: "300 AI Credits" },
+            pack_1000: { id: 'pack_1000', amount: 7500, credits: 1000, title: "1000 AI Credits" },
+            pack_5000: { id: 'pack_5000', amount: 30000, credits: 5000, title: "5000 AI Credits" }
+        };
+        return res.json(defaultPacks);
+    } catch (err: any) {
+        console.error("Express GET /api/admin/global-refill-packs error:", err);
+        res.status(500).json({ error: err.message || "Internal server error" });
+    }
+});
+
+// POST endpoint to update global refill packs settings
+app.post("/api/admin/global-refill-packs", verifyTenant, async (req: any, res) => {
+    try {
+        // Double-check admin privileges
+        const userEmail = req.user?.email || "";
+        const isAdmin = [
+            'cravebiz@cloudcraves.com',
+            'super@admin.com',
+            'sheriffdeenalade@gmail.com'
+        ].includes(userEmail.toLowerCase());
+
+        if (!isAdmin) {
+            return res.status(403).json({ error: "Access denied: Admins only." });
+        }
+
+        const packs = req.body;
+        if (!packs || typeof packs !== "object") {
+            return res.status(400).json({ error: "Invalid refill packs payload" });
+        }
+
+        // Save locally
+        saveLocalGlobalRefillPacks(packs);
+
+        // Async write back to Supabase with company_id: null to prevent foreign key errors
+        (async () => {
+            try {
+                const { error: dbErr } = await supabaseClient
+                    .from("generated_documents")
+                    .upsert({
+                        id: '88888888-8888-8888-8888-888888888888',
+                        company_id: null,
+                        document_type: 'cravebiz_global_refill_packs',
+                        content: packs
+                    });
+                if (dbErr) {
+                    console.warn("[Global Refill Packs Sync] Supabase upsert error:", dbErr);
+                } else {
+                    console.log("[Global Refill Packs Sync] Supabase upsert successful.");
+                }
+            } catch (dbEx) {
+                console.warn("[Global Refill Packs Sync] Exception syncing with Supabase:", dbEx);
+            }
+        })();
+
+        res.json({ success: true, message: "Global refill packs saved successfully." });
+    } catch (err: any) {
+        console.error("Express POST /api/admin/global-refill-packs error:", err);
         res.status(500).json({ error: err.message || "Internal server error" });
     }
 });

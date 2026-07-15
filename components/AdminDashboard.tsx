@@ -8,7 +8,7 @@ import { generateTextResponse } from '../services/aiGenerationService';
 import CompanyDetailModal from './CompanyDetailModal';
 import EditUserModal from './EditUserModal';
 import { api } from '../lib/api';
-import { getSubscriptionInfo, setSubscriptionInfo, TIER_LIMITS, SubscriptionTier, saveGlobalPlanSettings } from '../services/subscriptionService';
+import { getSubscriptionInfo, setSubscriptionInfo, TIER_LIMITS, SubscriptionTier, saveGlobalPlanSettings, REFILL_PACKS, saveGlobalRefillPacks, syncGlobalRefillPacks } from '../services/subscriptionService';
 
 interface AdminDashboardProps {
   allTenantData: AllTenantsData;
@@ -145,8 +145,18 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ allTenantData, companie
   const [editableLimits, setEditableLimits] = useState<typeof TIER_LIMITS>(() => ({ ...TIER_LIMITS }));
   const [savePricingSuccess, setSavePricingSuccess] = useState(false);
 
+  const [editableRefillPacks, setEditableRefillPacks] = useState<typeof REFILL_PACKS>(() => ({ ...REFILL_PACKS }));
+  const [saveRefillSuccess, setSaveRefillSuccess] = useState(false);
+
+  useEffect(() => {
+    syncGlobalRefillPacks().then(() => {
+      setEditableRefillPacks({ ...REFILL_PACKS });
+    }).catch(console.error);
+  }, []);
+
   useEffect(() => {
     setEditableLimits({ ...TIER_LIMITS });
+    setEditableRefillPacks({ ...REFILL_PACKS });
   }, [activeTab]);
 
   // Load AI Credit logs ledger when entering AI Usage tab
@@ -189,6 +199,18 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ allTenantData, companie
       alert("Subscription Plan limits and pricing saved and updated globally!");
     } catch (err) {
       alert("Failed to save plan pricing and limits configuration.");
+    }
+  };
+
+  const handleSaveRefillPacks = async (e: React.FormEvent) => {
+    e.preventDefault();
+    try {
+      await saveGlobalRefillPacks(editableRefillPacks);
+      setSaveRefillSuccess(true);
+      setTimeout(() => setSaveRefillSuccess(false), 3000);
+      alert("Global AI Credit Refill Packs updated and saved successfully!");
+    } catch (err) {
+      alert("Failed to save custom Refill Packs settings.");
     }
   };
 
@@ -842,6 +864,85 @@ Admin Query: ${activePrompt}
                 className="bg-primary-600 hover:bg-primary-700 text-white text-xs font-black uppercase tracking-widest px-6 py-3 rounded-xl shadow-lg transition-all"
               >
                 Save Pricing & Limits Config
+              </button>
+            </div>
+          </form>
+        </div>
+
+        {/* Global AI Credit Refill Packs Panel */}
+        <div className="bg-white p-8 rounded-[3rem] shadow-2xl border border-gray-100 mt-8">
+          <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 mb-6">
+            <div>
+              <h3 className="text-lg font-black text-gray-800 uppercase tracking-tight">Global AI Credit Refill Packs</h3>
+              <p className="text-xs text-gray-400 font-medium">Configure global prices, credit amounts, and titles for each purchasable AI Refill pack</p>
+            </div>
+          </div>
+
+          <form onSubmit={handleSaveRefillPacks} className="space-y-6">
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+              {(Object.keys(editableRefillPacks) as Array<keyof typeof REFILL_PACKS>).map((packKey) => {
+                const pack = editableRefillPacks[packKey];
+                return (
+                  <div key={packKey} className="bg-gray-50/50 border border-gray-100 p-5 rounded-2xl space-y-4">
+                    <div className="flex justify-between items-center border-b border-gray-100 pb-2">
+                      <span className="text-xs font-black uppercase tracking-wider text-gray-800">{packKey.replace('_', ' ')}</span>
+                    </div>
+
+                    <div className="space-y-3 text-xs font-bold">
+                      <div>
+                        <label className="text-4xs font-black uppercase tracking-widest text-gray-400 block mb-1">Pack Title</label>
+                        <input
+                          type="text"
+                          value={pack.title}
+                          onChange={(e) => {
+                            setEditableRefillPacks(prev => ({
+                              ...prev,
+                              [packKey]: { ...prev[packKey], title: e.target.value }
+                            }));
+                          }}
+                          className="w-full px-3 py-2 bg-white border border-gray-200 rounded-lg outline-none text-gray-800"
+                        />
+                      </div>
+                      <div>
+                        <label className="text-4xs font-black uppercase tracking-widest text-gray-400 block mb-1">AI Credits Count</label>
+                        <input
+                          type="number"
+                          value={pack.credits}
+                          onChange={(e) => {
+                            setEditableRefillPacks(prev => ({
+                              ...prev,
+                              [packKey]: { ...prev[packKey], credits: parseInt(e.target.value) || 0 }
+                            }));
+                          }}
+                          className="w-full px-3 py-2 bg-white border border-gray-200 rounded-lg outline-none text-gray-800"
+                        />
+                      </div>
+                      <div>
+                        <label className="text-4xs font-black uppercase tracking-widest text-gray-400 block mb-1">Price (₦ - Naira)</label>
+                        <input
+                          type="number"
+                          value={pack.amount}
+                          onChange={(e) => {
+                            setEditableRefillPacks(prev => ({
+                              ...prev,
+                              [packKey]: { ...prev[packKey], amount: parseInt(e.target.value) || 0 }
+                            }));
+                          }}
+                          className="w-full px-3 py-2 bg-white border border-gray-200 rounded-lg outline-none text-gray-800"
+                        />
+                      </div>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+
+            <div className="flex justify-end pt-4 border-t border-gray-100">
+              <button
+                type="submit"
+                className="bg-primary-600 hover:bg-primary-700 text-white text-xs font-black uppercase tracking-widest px-6 py-3 rounded-xl shadow-lg transition-all"
+              >
+                Save Refill Packs Config
               </button>
             </div>
           </form>

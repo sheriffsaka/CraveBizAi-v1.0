@@ -3,7 +3,7 @@ import { Company, BankAccount, User, WorkspaceRole, AuditLog, Invoice } from '..
 import { supabase } from '../lib/api';
 import ImageCropperModal from './ImageCropperModal';
 import Icon from './common/Icon';
-import { getSubscriptionInfo, setSubscriptionInfo, SubscriptionTier, TIER_LIMITS, saveSubscriptionInfoToDb, secureUpgradeSubscriptionOnDb, secureRefillCreditsOnDb, safeFlutterwaveCheckout, getFlutterwavePublicKey } from '../services/subscriptionService';
+import { getSubscriptionInfo, setSubscriptionInfo, SubscriptionTier, TIER_LIMITS, saveSubscriptionInfoToDb, secureUpgradeSubscriptionOnDb, secureRefillCreditsOnDb, safeFlutterwaveCheckout, getFlutterwavePublicKey, REFILL_PACKS, syncGlobalRefillPacks } from '../services/subscriptionService';
 
 const getPlanActionLabel = (targetTier: string, currentTier: string): string => {
   const TIER_RANKS: Record<string, number> = {
@@ -156,6 +156,7 @@ const Settings: React.FC<SettingsProps> = ({ company, onSaveChanges, onInviteUse
 
   useEffect(() => {
     setSubInfo(getSubscriptionInfo(activeTenantId));
+    syncGlobalRefillPacks();
   }, [activeTenantId]);
 
   useEffect(() => {
@@ -365,14 +366,7 @@ const Settings: React.FC<SettingsProps> = ({ company, onSaveChanges, onInviteUse
   }, [activeTenantId, company, userRole]);
 
   const handleNonAdminRefill = (packId: 'pack_100' | 'pack_300' | 'pack_1000' | 'pack_5000') => {
-    const packMap: Record<string, { amount: number; credits: number; title: string }> = {
-      pack_100: { amount: 1000, credits: 100, title: "100 AI Credits" },
-      pack_300: { amount: 2500, credits: 300, title: "300 AI Credits" },
-      pack_1000: { amount: 7500, credits: 1000, title: "1000 AI Credits" },
-      pack_5000: { amount: 30000, credits: 5000, title: "5000 AI Credits" }
-    };
-
-    const pack = packMap[packId] || packMap['pack_300'];
+    const pack = REFILL_PACKS[packId] || REFILL_PACKS['pack_300'];
     const checkoutAmount = pack.amount;
     const addedCredits = pack.credits;
 
@@ -863,10 +857,10 @@ const Settings: React.FC<SettingsProps> = ({ company, onSaveChanges, onInviteUse
 
             <div className="space-y-3 mb-6">
               {[
-                { id: 'pack_100', credits: 100, price: 1000, title: "100" },
-                { id: 'pack_300', credits: 300, price: 2500, title: "300" },
-                { id: 'pack_1000', credits: 1000, price: 7500, title: "1,000" },
-                { id: 'pack_5000', credits: 5000, price: 30000, title: "5,000" }
+                { id: 'pack_100', credits: REFILL_PACKS.pack_100.credits, price: REFILL_PACKS.pack_100.amount, title: REFILL_PACKS.pack_100.credits.toLocaleString() },
+                { id: 'pack_300', credits: REFILL_PACKS.pack_300.credits, price: REFILL_PACKS.pack_300.amount, title: REFILL_PACKS.pack_300.credits.toLocaleString() },
+                { id: 'pack_1000', credits: REFILL_PACKS.pack_1000.credits, price: REFILL_PACKS.pack_1000.amount, title: REFILL_PACKS.pack_1000.credits.toLocaleString() },
+                { id: 'pack_5000', credits: REFILL_PACKS.pack_5000.credits, price: REFILL_PACKS.pack_5000.amount, title: REFILL_PACKS.pack_5000.credits.toLocaleString() }
               ].map((p) => (
                 <label
                   key={p.id}
@@ -903,7 +897,7 @@ const Settings: React.FC<SettingsProps> = ({ company, onSaveChanges, onInviteUse
                 onClick={() => handleNonAdminRefill(selectedRefillPack)}
                 className="w-1/2 px-4 py-3 bg-primary-600 hover:bg-primary-700 text-white font-black uppercase tracking-widest text-[10px] rounded-xl shadow-lg hover:shadow-xl transition-all"
               >
-                Pay ₦{selectedRefillPack === 'pack_100' ? '1,000' : selectedRefillPack === 'pack_300' ? '2,500' : selectedRefillPack === 'pack_1000' ? '7,500' : '30,000'}
+                Pay ₦{REFILL_PACKS[selectedRefillPack]?.amount.toLocaleString()}
               </button>
             </div>
           </div>
