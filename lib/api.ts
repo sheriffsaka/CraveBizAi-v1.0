@@ -65,12 +65,13 @@ class CraveBizApi {
         }
       }
 
-      await supabase.from('profiles').upsert({ 
+      const { error: upsertErr } = await supabase.from('profiles').upsert({ 
         id: userId, 
         full_name: name || 'User', 
         status: 'Active',
         ...(email ? { email: email.trim().toLowerCase() } : {})
       });
+      if (upsertErr) throw upsertErr;
       return true;
     } catch (e) {
       console.error("ensureProfile Error:", e);

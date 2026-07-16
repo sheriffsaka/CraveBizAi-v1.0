@@ -225,11 +225,22 @@ export default function App() {
     if (isInitialLoad) setIsLoading(true);
     
     try {
-        await api.ensureProfile(user.id, user.user_metadata?.full_name, user.email);
+        const profileSucceeded = await api.ensureProfile(user.id, user.user_metadata?.full_name, user.email);
+        if (!profileSucceeded) {
+            console.error("[Auth Sync] Profile creation/update failed for userId:", user.id);
+            throw new Error("We authenticated you successfully, but we could not synchronize your profile record. This can happen if database access is restricted or offline. Please contact support.");
+        }
+
         let profile = await api.getProfile(user.id);
         if (!profile && user.email?.toLowerCase() === 'cravebiz@cloudcraves.com') {
             profile = { id: user.id, name: 'Super Admin', email: user.email, tenantIds: [], isAdmin: true, status: 'Active' };
         }
+
+        if (!profile) {
+            console.error("[Auth Sync] Profile fetch returned null after ensureProfile for userId:", user.id);
+            throw new Error("Your user profile record was not found in our database vault. Please try logging in again, or verify your email if you haven't already.");
+        }
+
         if (profile && isMounted.current) {
             profile.email = user.email || '';
             profile.user_metadata = user.user_metadata || {};
@@ -272,7 +283,10 @@ export default function App() {
                 }
             }
         }
-    } catch (e) { setSyncError(stringifyError(e)); } 
+    } catch (e) { 
+        console.error("Authentication Synchronization Exception:", e);
+        setSyncError(stringifyError(e)); 
+    } 
     finally { if (isMounted.current && isInitialLoad) setIsLoading(false); }
   };
 
@@ -480,10 +494,41 @@ export default function App() {
   if (!isLoading && !currentUser) {
     return (
       <>
+        {syncError && (
+          <div className="fixed top-4 left-1/2 -translate-x-1/2 z-[9999] max-w-md w-full px-4 animate-in slide-in-from-top-4">
+            <div className="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-2xl shadow-xl flex items-start text-sm">
+              <Icon name="reports" className="w-5 h-5 mr-3 shrink-0 text-red-600 mt-0.5" />
+              <div className="flex-1">
+                <p className="font-bold">Database Sync Error</p>
+                <p className="mt-0.5 text-xs text-red-600">{syncError}</p>
+              </div>
+              <button onClick={() => setSyncError(null)} className="ml-3 font-bold text-red-500 hover:text-red-700">✕</button>
+            </div>
+          </div>
+        )}
         <AuthPage 
           onLogin={async (e, p) => {
-              const { error } = await supabase.auth.signInWithPassword({ email: e, password: p });
-              if (error) return stringifyError(error);
+              const { data, error } = await supabase.auth.signInWithPassword({ email: e, password: p });
+              if (error) {
+                  console.error("Supabase sign-in failed:", error);
+                  return stringifyError(error);
+              }
+              if (data?.user) {
+                  try {
+                      console.log("Validating and pre-ensuring profile for user:", data.user.id);
+                      const profileCreated = await api.ensureProfile(data.user.id, data.user.user_metadata?.full_name, data.user.email);
+                      if (!profileCreated) {
+                          return "Profile Initialization Failed: We authenticated you, but could not initialize your profile in the database. Please check your internet connection.";
+                      }
+                      const profile = await api.getProfile(data.user.id);
+                      if (!profile && data.user.email?.toLowerCase() !== 'cravebiz@cloudcraves.com') {
+                          return "Profile Lookup Failed: Your credentials are valid, but we couldn't fetch your profile from the database. Please try again.";
+                      }
+                  } catch (pErr: any) {
+                      console.error("Profile creation/lookup error on login:", pErr);
+                      return `Profile Integration Error: ${pErr.message || pErr}`;
+                  }
+              }
               return true;
           }}
           onSignup={async (name, email, pass, companyName, phone, subscriptionTier) => {
@@ -493,10 +538,25 @@ export default function App() {
               if (subscriptionTier) {
                   localStorage.setItem('cravebiz_signup_tier', subscriptionTier);
               }
-              const { error } = await supabase.auth.signUp({ 
+              const { data, error } = await supabase.auth.signUp({ 
                   email, password: pass, options: { data: { full_name: name, company_name: companyName, phone, subscription_tier: subscriptionTier } }
               });
-              if (error) return stringifyError(error);
+              if (error) {
+                  console.error("Supabase sign-up failed:", error);
+                  return stringifyError(error);
+              }
+              
+              if (data?.user) {
+                  try {
+                      console.log("Pre-creating profile table record during registration for:", data.user.id);
+                      const profileCreated = await api.ensureProfile(data.user.id, name, email);
+                      if (!profileCreated) {
+                          console.warn("Direct profile creation during registration returned false (expected if email verification restricts database access).");
+                      }
+                  } catch (pErr) {
+                      console.error("Error creating profile record during registration:", pErr);
+                  }
+              }
               return true;
           }}
           onOpenForgotPassword={() => setIsForgotPasswordOpen(true)} 
