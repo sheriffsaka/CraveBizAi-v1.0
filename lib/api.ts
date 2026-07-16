@@ -37,16 +37,20 @@ class CraveBizApi {
     return CraveBizApi.instance;
   }
 
-  async ensureProfile(userId: string, name?: string, email?: string): Promise<boolean> {
+  async ensureProfile(userId: string, name?: string, email?: string): Promise<{ success: boolean; error?: any }> {
     try {
       if (email) {
         const cleanEmail = email.trim().toLowerCase();
         // Look up the placeholder profile by email (excluding the logged-in userId itself)
-        const { data: placeholders } = await supabase
+        const { data: placeholders, error: selectErr } = await supabase
           .from('profiles')
           .select('id')
           .eq('email', cleanEmail)
           .neq('id', userId);
+
+        if (selectErr) {
+          console.warn("Could not select placeholder profiles (might be restricted by RLS):", selectErr);
+        }
 
         if (placeholders && placeholders.length > 0) {
           for (const ph of placeholders) {
@@ -54,28 +58,62 @@ class CraveBizApi {
             console.log(`Linking old placeholder profile ${oldTempId} for ${cleanEmail} to real userId ${userId}`);
 
             // Update company_members to point to the new real userId and set status as Active (or Joined)
-            await supabase
+            const { error: memberErr } = await supabase
               .from('company_members')
               .update({ user_id: userId, status: 'Active' })
               .eq('user_id', oldTempId);
 
+            if (memberErr) {
+              console.warn("Failed to update company members link:", memberErr);
+            }
+
             // Clean up the old placeholder profile
-            await supabase.from('profiles').delete().eq('id', oldTempId);
+            const { error: deleteErr } = await supabase.from('profiles').delete().eq('id', oldTempId);
+            if (deleteErr) {
+              console.warn("Failed to delete old placeholder profile:", deleteErr);
+            }
           }
         }
       }
 
-      const { error: upsertErr } = await supabase.from('profiles').upsert({ 
-        id: userId, 
-        full_name: name || 'User', 
+      // Try to insert a brand new profile first (avoids RLS ON CONFLICT SELECT policy requirements of upsert)
+      const { error: insertErr } = await supabase.from('profiles').insert({
+        id: userId,
+        full_name: name || 'User',
         status: 'Active',
         ...(email ? { email: email.trim().toLowerCase() } : {})
       });
-      if (upsertErr) throw upsertErr;
-      return true;
-    } catch (e) {
+
+      if (!insertErr) {
+        return { success: true };
+      }
+
+      // If it failed due to duplicate key (already exists), perform an update targeting the userId
+      const errCode = insertErr.code;
+      const errMsg = insertErr.message?.toLowerCase() || '';
+      if (errCode === '23505' || errMsg.includes('duplicate') || errMsg.includes('already exists') || errMsg.includes('unique')) {
+        console.log("Profile already exists or conflict detected, performing update fallback instead of insert...");
+        const { error: updateErr } = await supabase
+          .from('profiles')
+          .update({
+            full_name: name || 'User',
+            status: 'Active',
+            ...(email ? { email: email.trim().toLowerCase() } : {})
+          })
+          .eq('id', userId);
+
+        if (updateErr) {
+          console.error("update fallback failed:", updateErr);
+          return { success: false, error: updateErr };
+        }
+        return { success: true };
+      } else {
+        console.error("insert profiles failed:", insertErr);
+        return { success: false, error: insertErr };
+      }
+    } catch (e: any) {
       console.error("ensureProfile Error:", e);
-      return false;
+      return { success: false, error: e };
     }
   }
 
