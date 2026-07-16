@@ -41,38 +41,45 @@ class CraveBizApi {
     try {
       if (email) {
         const cleanEmail = email.trim().toLowerCase();
-        // Look up the placeholder profile by email (excluding the logged-in userId itself)
-        const { data: placeholders, error: selectErr } = await supabase
-          .from('profiles')
-          .select('id')
-          .eq('email', cleanEmail)
-          .neq('id', userId);
+        // Since there is no 'email' column on 'profiles' in the remote DB, we search for invited placeholder ids in local storage.
+        try {
+          for (let i = 0; i < localStorage.length; i++) {
+            const key = localStorage.key(i);
+            if (key && key.startsWith('cravebiz_invited_member_info_')) {
+              const savedStr = localStorage.getItem(key);
+              if (savedStr) {
+                try {
+                  const saved = JSON.parse(savedStr);
+                  if (saved && saved.email?.toLowerCase() === cleanEmail) {
+                    const parts = key.split('_');
+                    const oldTempId = parts[parts.length - 1]; // tempUserId is the last segment
+                    
+                    console.log(`[Local Sync Link] Linking placeholder user ${oldTempId} for ${cleanEmail} to real userId ${userId}`);
+                    
+                    // Update company_members to point to the new real userId and set status as Active (or Joined)
+                    const { error: memberErr } = await supabase
+                      .from('company_members')
+                      .update({ user_id: userId, status: 'Active' })
+                      .eq('user_id', oldTempId);
 
-        if (selectErr) {
-          console.warn("Could not select placeholder profiles (might be restricted by RLS):", selectErr);
-        }
+                    if (memberErr) {
+                      console.warn("Failed to update company members link:", memberErr);
+                    }
 
-        if (placeholders && placeholders.length > 0) {
-          for (const ph of placeholders) {
-            const oldTempId = ph.id;
-            console.log(`Linking old placeholder profile ${oldTempId} for ${cleanEmail} to real userId ${userId}`);
-
-            // Update company_members to point to the new real userId and set status as Active (or Joined)
-            const { error: memberErr } = await supabase
-              .from('company_members')
-              .update({ user_id: userId, status: 'Active' })
-              .eq('user_id', oldTempId);
-
-            if (memberErr) {
-              console.warn("Failed to update company members link:", memberErr);
-            }
-
-            // Clean up the old placeholder profile
-            const { error: deleteErr } = await supabase.from('profiles').delete().eq('id', oldTempId);
-            if (deleteErr) {
-              console.warn("Failed to delete old placeholder profile:", deleteErr);
+                    // Clean up the old placeholder profile
+                    const { error: deleteErr } = await supabase.from('profiles').delete().eq('id', oldTempId);
+                    if (deleteErr) {
+                      console.warn("Failed to delete old placeholder profile:", deleteErr);
+                    }
+                  }
+                } catch (e) {
+                  console.warn("Failed to parse local invitation during auto-link:", e);
+                }
+              }
             }
           }
+        } catch (storageErr) {
+          console.warn("Storage access failed during link check:", storageErr);
         }
       }
 
@@ -81,7 +88,6 @@ class CraveBizApi {
         id: userId,
         full_name: name || 'User',
         status: 'Active',
-        ...(email ? { email: email.trim().toLowerCase() } : {})
       });
 
       if (!insertErr) {
@@ -98,7 +104,6 @@ class CraveBizApi {
           .update({
             full_name: name || 'User',
             status: 'Active',
-            ...(email ? { email: email.trim().toLowerCase() } : {})
           })
           .eq('id', userId);
 

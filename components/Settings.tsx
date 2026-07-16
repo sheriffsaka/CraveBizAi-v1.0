@@ -324,7 +324,7 @@ const Settings: React.FC<SettingsProps> = ({ company, onSaveChanges, onInviteUse
 
             // Determine Invited vs Joined status
             let memberStatus = m.status || 'Invited';
-            if (profile && (profile as any).status !== 'Invited' && (profile as any).email) {
+            if (profile && (profile as any).status !== 'Invited' && email) {
               memberStatus = 'Joined';
             } else if (profile && (profile as any).status === 'Invited') {
               memberStatus = 'Invited';
@@ -543,16 +543,35 @@ const Settings: React.FC<SettingsProps> = ({ company, onSaveChanges, onInviteUse
       let isNewInvite = true;
       
       try {
-        const { data: existingUser, error: lookupErr } = await supabase.from('profiles').select('id').eq('email', inviteEmail.trim().toLowerCase()).maybeSingle();
-        if (!lookupErr && existingUser) {
-          tempUserId = existingUser.id;
+        // Since 'profiles' doesn't have an 'email' column, we check if we can find this member locally or skip lookup
+        let localExistingId: string | null = null;
+        for (let i = 0; i < localStorage.length; i++) {
+          const key = localStorage.key(i);
+          if (key && key.startsWith('cravebiz_invited_member_info_')) {
+            const savedStr = localStorage.getItem(key);
+            if (savedStr) {
+              try {
+                const saved = JSON.parse(savedStr);
+                if (saved && saved.email?.toLowerCase() === inviteEmail.trim().toLowerCase()) {
+                  const parts = key.split('_');
+                  localExistingId = parts[parts.length - 1]; // tempUserId is the last segment
+                  break;
+                }
+              } catch (e) {
+                console.warn("Failed to parse local invitation during check:", e);
+              }
+            }
+          }
+        }
+
+        if (localExistingId) {
+          tempUserId = localExistingId;
           isNewInvite = false;
         } else {
           // Create placeholder profile (handled resiliently)
           const { error: profileErr } = await supabase.from('profiles').insert({
             id: tempUserId,
             full_name: inviteName.trim() || 'Workspace Member',
-            email: inviteEmail.trim().toLowerCase(),
             status: 'Invited'
           });
           if (profileErr) {
