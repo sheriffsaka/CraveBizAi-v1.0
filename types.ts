@@ -19,6 +19,7 @@ export interface User {
   isAdmin: boolean;
   status: 'Pending' | 'Active' | 'Declined';
   avatarUrl?: string;
+  user_metadata?: any;
 }
 
 export interface BankAccount {

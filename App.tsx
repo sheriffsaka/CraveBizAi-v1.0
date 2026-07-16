@@ -107,7 +107,7 @@ export default function App() {
 
   useEffect(() => {
     if (currentUser) {
-      const signupTier = localStorage.getItem('cravebiz_signup_tier') as SubscriptionTier;
+      const signupTier = (currentUser.user_metadata?.subscription_tier || localStorage.getItem('cravebiz_signup_tier')) as SubscriptionTier;
       if (signupTier && (signupTier === 'Free' || signupTier === 'Starter' || signupTier === 'Growth' || signupTier === 'Enterprise')) {
         setSelectedProvisionTier(signupTier);
       }
@@ -232,6 +232,7 @@ export default function App() {
         }
         if (profile && isMounted.current) {
             profile.email = user.email || '';
+            profile.user_metadata = user.user_metadata || {};
             if (profile.email.toLowerCase() === 'cravebiz@cloudcraves.com') {
                 profile.name = 'Super Admin';
                 profile.isAdmin = true;
@@ -486,11 +487,14 @@ export default function App() {
               return true;
           }}
           onSignup={async (name, email, pass, companyName, phone, subscriptionTier) => {
+              localStorage.setItem('cravebiz_signup_name', name);
+              localStorage.setItem('cravebiz_signup_company_name', companyName);
+              if (phone) localStorage.setItem('cravebiz_signup_phone', phone);
               if (subscriptionTier) {
                   localStorage.setItem('cravebiz_signup_tier', subscriptionTier);
               }
               const { error } = await supabase.auth.signUp({ 
-                  email, password: pass, options: { data: { full_name: name, company_name: companyName, phone } }
+                  email, password: pass, options: { data: { full_name: name, company_name: companyName, phone, subscription_tier: subscriptionTier } }
               });
               if (error) return stringifyError(error);
               return true;
@@ -563,6 +567,10 @@ export default function App() {
         const planPrice = TIER_LIMITS[selectedProvisionTier]?.price || "₦0.00";
         const monthlyVal = TIER_LIMITS[selectedProvisionTier]?.monthlyPriceVal || 0;
 
+        const regCompanyName = currentUser?.user_metadata?.company_name || localStorage.getItem('cravebiz_signup_company_name') || `${currentUser?.name || 'My'}'s Workspace`;
+        const regName = currentUser?.user_metadata?.full_name || localStorage.getItem('cravebiz_signup_name') || currentUser?.name || 'User';
+        const regPhone = currentUser?.user_metadata?.phone || localStorage.getItem('cravebiz_signup_phone') || '';
+
         const handleProvisionCheckout = () => {
             const flutterwaveKey = getFlutterwavePublicKey();
             
@@ -574,7 +582,8 @@ export default function App() {
                 payment_options: "card, banktransfer, ussd",
                 customer: {
                     email: currentUser?.email || "customer@cravebiz.ai",
-                    name: currentUser?.name || "CraveBiZ Client",
+                    name: regName,
+                    phone_number: regPhone
                 },
                 customizations: {
                     title: `Activate CraveBiZ ${selectedProvisionTier}`,
@@ -586,7 +595,7 @@ export default function App() {
                     if (data.status === "successful" || data.status === "completed") {
                         try {
                             setIsDataSyncing(true);
-                            const nc = await api.createCompany({ name: `${currentUser?.name || 'My'}'s Workspace` });
+                            const nc = await api.createCompany({ name: regCompanyName, phone: regPhone });
                             setSubscriptionInfo(nc.id, selectedProvisionTier);
                             await saveSubscriptionInfoToDb(nc.id);
                             setCompanies([nc]);
@@ -612,7 +621,7 @@ export default function App() {
         const handleProvisionFree = async () => {
             try {
                 setIsDataSyncing(true);
-                const nc = await api.createCompany({ name: `${currentUser?.name || 'My'}'s Workspace` });
+                const nc = await api.createCompany({ name: regCompanyName, phone: regPhone });
                 setSubscriptionInfo(nc.id, 'Free');
                 await saveSubscriptionInfoToDb(nc.id);
                 setCompanies([nc]);
@@ -636,78 +645,43 @@ export default function App() {
                     
                     <h2 className="text-3xl font-black text-gray-800 tracking-tighter mb-2 text-center">Activate Your Workspace</h2>
                     <p className="text-gray-500 mb-8 text-sm leading-relaxed text-center">
-                        Select a plan below to provision your workspace. Paid plans will be redirected to pay using our secure gateway.
+                        Confirm your workspace details below to complete your activation.
                     </p>
                     
-                    {/* Step 1: Plan Selection */}
-                    <div className="mb-8 text-left">
-                        <span className="text-xs font-bold uppercase text-gray-400 tracking-wider block mb-3">Step 1: Choose Subscription Tier</span>
-                        <div className="grid grid-cols-2 gap-3">
-                            <button
-                                type="button"
-                                onClick={() => setSelectedProvisionTier('Free')}
-                                className={`p-4 rounded-2xl border text-left transition-all flex flex-col justify-between h-32 outline-none ${selectedProvisionTier === 'Free' ? 'border-primary-600 bg-primary-50/40 ring-2 ring-primary-500/20 font-semibold shadow-sm' : 'border-gray-200 hover:bg-gray-50 bg-white'}`}
-                            >
-                                <div>
-                                    <p className="font-bold text-sm text-gray-900">Free</p>
-                                    <p className="text-[11px] text-gray-500 mt-1 leading-snug">10 Invoices/mo</p>
-                                </div>
-                                <div className="mt-2">
-                                    <span className="text-[10px] text-primary-700 font-bold bg-primary-50 px-2 py-0.5 rounded block w-max mb-1">10 AI Credits</span>
-                                    <span className="text-sm font-bold text-gray-900">₦0.00</span>
-                                </div>
-                            </button>
+                    {/* Workspace Summary Card */}
+                    <div className="bg-gray-50 p-6 rounded-2xl border border-gray-100 text-left mb-8 space-y-4">
+                        <span className="text-xs font-bold uppercase text-gray-400 tracking-wider block">Workspace Configuration Details</span>
+                        
+                        <div className="grid grid-cols-2 gap-4 pt-2 border-t border-gray-100">
+                            <div>
+                                <p className="text-[10px] uppercase font-bold text-gray-400">Workspace Name</p>
+                                <p className="text-sm font-bold text-gray-900 mt-0.5">{regCompanyName}</p>
+                            </div>
+                            <div>
+                                <p className="text-[10px] uppercase font-bold text-gray-400">Workspace Owner</p>
+                                <p className="text-sm font-medium text-gray-900 mt-0.5">{regName}</p>
+                            </div>
+                        </div>
 
-                            <button
-                                type="button"
-                                onClick={() => setSelectedProvisionTier('Starter')}
-                                className={`p-4 rounded-2xl border text-left transition-all flex flex-col justify-between h-32 outline-none ${selectedProvisionTier === 'Starter' ? 'border-primary-600 bg-primary-50/40 ring-2 ring-primary-500/20 font-semibold shadow-sm' : 'border-gray-200 hover:bg-gray-50 bg-white'}`}
-                            >
-                                <div>
-                                    <p className="font-bold text-sm text-gray-900">Starter</p>
-                                    <p className="text-[11px] text-gray-500 mt-1 leading-snug">100 Invoices/mo</p>
+                        <div className="grid grid-cols-2 gap-4 pt-4 border-t border-gray-100">
+                            <div>
+                                <p className="text-[10px] uppercase font-bold text-gray-400">Selected Plan</p>
+                                <div className="flex items-center space-x-1.5 mt-0.5">
+                                    <span className="text-sm font-bold text-primary-700">{selectedProvisionTier}</span>
+                                    <span className="text-[9px] font-bold bg-primary-100 text-primary-800 px-1.5 py-0.5 rounded">
+                                        {TIER_LIMITS[selectedProvisionTier]?.maxInvoices === -1 ? 'Unlimited' : `${TIER_LIMITS[selectedProvisionTier]?.maxInvoices} Invoices`}
+                                    </span>
                                 </div>
-                                <div className="mt-2">
-                                    <span className="text-[10px] text-primary-700 font-bold bg-primary-50 px-2 py-0.5 rounded block w-max mb-1">100 AI Credits</span>
-                                    <span className="text-sm font-bold text-primary-700">₦4,500</span>
-                                </div>
-                            </button>
-
-                            <button
-                                type="button"
-                                onClick={() => setSelectedProvisionTier('Growth')}
-                                className={`p-4 rounded-2xl border text-left transition-all flex flex-col justify-between h-32 outline-none ${selectedProvisionTier === 'Growth' ? 'border-primary-600 bg-primary-50/40 ring-2 ring-primary-500/20 font-semibold shadow-sm' : 'border-gray-200 hover:bg-gray-50 bg-white'}`}
-                            >
-                                <div>
-                                    <p className="font-bold text-sm text-gray-900">Growth</p>
-                                    <p className="text-[11px] text-gray-500 mt-1 leading-snug">Unlimited Invoices</p>
-                                </div>
-                                <div className="mt-2">
-                                    <span className="text-[10px] text-emerald-700 font-bold bg-emerald-50 px-2 py-0.5 rounded block w-max mb-1">300 AI Credits</span>
-                                    <span className="text-sm font-bold text-emerald-700">₦9,500</span>
-                                </div>
-                            </button>
-
-                            <button
-                                type="button"
-                                onClick={() => setSelectedProvisionTier('Enterprise')}
-                                className={`p-4 rounded-2xl border text-left transition-all flex flex-col justify-between h-32 outline-none ${selectedProvisionTier === 'Enterprise' ? 'border-primary-600 bg-primary-50/40 ring-2 ring-primary-500/20 font-semibold shadow-sm' : 'border-gray-200 hover:bg-gray-50 bg-white'}`}
-                            >
-                                <div>
-                                    <p className="font-bold text-sm text-gray-900">Enterprise</p>
-                                    <p className="text-[11px] text-gray-500 mt-1 leading-snug">Unlimited Invoices</p>
-                                </div>
-                                <div className="mt-2">
-                                    <span className="text-[10px] text-amber-700 font-bold bg-amber-50 px-2 py-0.5 rounded block w-max mb-1">2,500 AI Credits</span>
-                                    <span className="text-sm font-bold text-amber-700">₦49,500</span>
-                                </div>
-                            </button>
+                            </div>
+                            <div>
+                                <p className="text-[10px] uppercase font-bold text-gray-400">Billing Price</p>
+                                <p className="text-sm font-bold text-gray-900 mt-0.5">{planPrice}</p>
+                            </div>
                         </div>
                     </div>
 
-                    {/* Step 2: Payment Gateway or Free Access */}
-                    <div className="bg-gray-50 p-5 rounded-2xl border border-gray-100 text-left mb-8">
-                        <span className="text-xs font-bold uppercase text-gray-400 tracking-wider block mb-2">Step 2: Verification & Checkout</span>
+                    {/* Verification & Checkout description */}
+                    <div className="bg-primary-50/50 p-5 rounded-2xl border border-primary-100/50 text-left mb-8">
                         <div className="flex items-start space-x-3">
                             <div className="bg-primary-100 p-2 rounded-xl mt-0.5">
                                 <Icon name="reports" className="w-5 h-5 text-primary-700" />
@@ -718,8 +692,8 @@ export default function App() {
                                 </h4>
                                 <p className="text-xs text-gray-500 mt-1">
                                     {isPaidPlan 
-                                        ? `Requires secure checkout. Clicking below will open Flutterwave gateway to authorize the ₦${monthlyVal.toLocaleString()} payment.`
-                                        : "Free tier selected. Instant workspace provisioning. No payment details required."}
+                                        ? `Your workspace requires secure activation. Clicking below will open the Flutterwave gateway to complete your subscription payment of ${planPrice}.`
+                                        : "Your Free tier is ready for immediate setup. No payment details or card inputs are required."}
                                 </p>
                             </div>
                         </div>
