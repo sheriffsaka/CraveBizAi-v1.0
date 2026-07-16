@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import Modal from './Modal';
 import { Invoice, Client } from '../types';
 import { safeFlutterwaveCheckout, getFlutterwavePublicKey } from '../services/subscriptionService';
+import { api } from '../lib/api';
 
 interface PaymentModalProps {
   isOpen: boolean;
@@ -61,6 +62,7 @@ const PaymentModal: React.FC<PaymentModalProps> = ({ isOpen, onClose, invoice, o
     }
 
     const flutterwaveKey = getFlutterwavePublicKey();
+    let isSuccess = false;
 
     safeFlutterwaveCheckout({
       public_key: flutterwaveKey,
@@ -79,18 +81,53 @@ const PaymentModal: React.FC<PaymentModalProps> = ({ isOpen, onClose, invoice, o
       },
       callback: function (data: any) {
         console.log("Flutterwave Success response:", data);
+        const transactionId = data.transaction_id || data.tx_ref || "";
         if (data.status === "successful" || data.status === "completed") {
+          isSuccess = true;
           // Calculate the new cumulative amount paid
           const newlyPaid = (invoice.amountPaid || 0) + checkoutAmount;
           onConfirmPayment(newlyPaid);
+          
+          api.recordTransaction(invoice.companyId || "unknown", {
+            transactionId,
+            type: 'invoice-payment',
+            invoiceId: invoice.id,
+            amount: checkoutAmount,
+            status: 'successful',
+            customerEmail: client?.email || "customer@cravebiz.ai",
+            customerName: client?.name || "CraveBiZ Client"
+          });
+
           alert(`Payment of ₦${checkoutAmount.toLocaleString()} successfully processed and verified!`);
           onClose();
         } else {
+          api.recordTransaction(invoice.companyId || "unknown", {
+            transactionId: transactionId || `failed-${Date.now()}`,
+            type: 'invoice-payment',
+            invoiceId: invoice.id,
+            amount: checkoutAmount,
+            status: 'failed',
+            errorMessage: `Payment failed with status: ${data.status || 'unknown'}`,
+            customerEmail: client?.email || "customer@cravebiz.ai",
+            customerName: client?.name || "CraveBiZ Client"
+          });
           alert(`Payment transaction response: ${data.status}. If this is an error, please try again.`);
         }
       },
       onclose: function() {
         console.log("Flutterwave payment modal dismissed");
+        if (!isSuccess) {
+          api.recordTransaction(invoice.companyId || "unknown", {
+            transactionId: `cancelled-${Date.now()}`,
+            type: 'invoice-payment',
+            invoiceId: invoice.id,
+            amount: checkoutAmount,
+            status: 'failed',
+            errorMessage: "Payment modal dismissed or closed by the user",
+            customerEmail: client?.email || "customer@cravebiz.ai",
+            customerName: client?.name || "CraveBiZ Client"
+          });
+        }
       }
     });
   };

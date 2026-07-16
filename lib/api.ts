@@ -144,6 +144,37 @@ class CraveBizApi {
     }
   }
 
+  async recordTransaction(companyId: string, details: any): Promise<void> {
+    try {
+      const response = await fetch('/api/subscription/record-transaction', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'x-tenant-id': companyId,
+          ...(localStorage.getItem('cravebiz_auth_token') ? { 'Authorization': `Bearer ${localStorage.getItem('cravebiz_auth_token')}` } : {})
+        },
+        body: JSON.stringify(details)
+      });
+      if (!response.ok) {
+        console.warn('Failed to record transaction on backend:', await response.text());
+      }
+    } catch (e) {
+      console.error('Error in recordTransaction:', e);
+    }
+  }
+
+  async fetchTransactions(): Promise<any[]> {
+    try {
+      const response = await fetch('/api/admin/transactions');
+      if (!response.ok) throw new Error('Failed to fetch transactions');
+      const data = await response.json();
+      return data.transactions || [];
+    } catch (e) {
+      console.error('Error in fetchTransactions:', e);
+      return [];
+    }
+  }
+
   async getAllInvoices(): Promise<Invoice[]> {
     const { data, error } = await supabase.from('invoices').select('*, invoice_items(*)').order('created_at', { ascending: false });
     if (error) throw error;

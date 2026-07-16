@@ -1452,6 +1452,97 @@ app.get("/api/subscription/public-key", (req, res) => {
     res.json({ publicKey: process.env.VITE_FLUTTERWAVE_PUBLIC_KEY || "" });
 });
 
+async function logPaymentTransaction(
+    tenantId: string,
+    details: {
+        transactionId: string;
+        type: 'upgrade' | 'refill' | 'invoice-payment';
+        tier?: string;
+        packId?: string;
+        amount: number;
+        billingCycle?: string;
+        status: 'successful' | 'failed';
+        errorMessage?: string;
+        invoiceId?: string;
+        customerEmail?: string;
+        customerName?: string;
+    }
+) {
+    try {
+        console.log(`[Transaction Logger] Recording ${details.status} ${details.type} transaction:`, details.transactionId);
+        const entryId = crypto.randomUUID();
+        const timestamp = new Date().toISOString();
+
+        // Safe DB Company ID resolving
+        let baseCompanyId = tenantId || 'unknown';
+        if (baseCompanyId.startsWith("ws-personal-")) {
+            baseCompanyId = baseCompanyId.replace("ws-personal-", "");
+        } else if (baseCompanyId.startsWith("ws-legal-")) {
+            baseCompanyId = baseCompanyId.replace("ws-legal-", "");
+        } else if (baseCompanyId.startsWith("ws-sales-")) {
+            baseCompanyId = baseCompanyId.replace("ws-sales-", "");
+        }
+        const isCravebizInc = baseCompanyId === "cravebiz-inc" || tenantId === "cravebiz-inc";
+        let dbCompanyId: string | null = baseCompanyId;
+        if (isCravebizInc) {
+            dbCompanyId = "00000000-0000-0000-0000-000000000000";
+        } else if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(dbCompanyId)) {
+            dbCompanyId = null; // Use null to avoid foreign key errors for personal workspaces
+        }
+
+        const { error } = await supabaseClient
+            .from("generated_documents")
+            .insert({
+                id: entryId,
+                company_id: dbCompanyId,
+                document_type: "cravebiz_payment_transaction",
+                content: {
+                    tenantId,
+                    transactionId: details.transactionId,
+                    type: details.type,
+                    tier: details.tier || null,
+                    packId: details.packId || null,
+                    amount: details.amount,
+                    billingCycle: details.billingCycle || null,
+                    status: details.status,
+                    errorMessage: details.errorMessage || null,
+                    invoiceId: details.invoiceId || null,
+                    customerEmail: details.customerEmail || null,
+                    customerName: details.customerName || null,
+                    timestamp
+                }
+            });
+
+        if (error) {
+            console.warn("[Transaction Logger] Initial insert failed, trying with company_id null fallback:", error.message);
+            await supabaseClient
+                .from("generated_documents")
+                .insert({
+                    id: entryId,
+                    company_id: null,
+                    document_type: "cravebiz_payment_transaction",
+                    content: {
+                        tenantId,
+                        transactionId: details.transactionId,
+                        type: details.type,
+                        tier: details.tier || null,
+                        packId: details.packId || null,
+                        amount: details.amount,
+                        billingCycle: details.billingCycle || null,
+                        status: details.status,
+                        errorMessage: details.errorMessage || null,
+                        invoiceId: details.invoiceId || null,
+                        customerEmail: details.customerEmail || null,
+                        customerName: details.customerName || null,
+                        timestamp
+                    }
+                });
+        }
+    } catch (ex: any) {
+        console.error("[Transaction Logger] Exception writing payment transaction:", ex.message || ex);
+    }
+}
+
 // 1. Upgrade subscription tier
 app.post("/api/subscription/upgrade", verifyTenant, async (req: any, res) => {
     try {
@@ -1502,23 +1593,68 @@ app.post("/api/subscription/upgrade", verifyTenant, async (req: any, res) => {
                 if (!flwRes.ok) {
                     const flwErrorText = await flwRes.text();
                     console.error("Flutterwave API verification call failed:", flwErrorText);
+                    await logPaymentTransaction(tenantId, {
+                        transactionId: transactionId || "failed-tx",
+                        type: 'upgrade',
+                        tier,
+                        amount: expectedAmount,
+                        billingCycle,
+                        status: 'failed',
+                        errorMessage: `Could not verify payment with Flutterwave: ${flwErrorText}`
+                    });
                     return res.status(400).json({ error: "Could not securely verify payment with Flutterwave API." });
                 }
 
                 const flwData: any = await flwRes.json();
                 if (flwData.status !== "success" || !flwData.data || (flwData.data.status !== "successful" && flwData.data.status !== "completed")) {
+                    await logPaymentTransaction(tenantId, {
+                        transactionId: transactionId || "failed-tx",
+                        type: 'upgrade',
+                        tier,
+                        amount: expectedAmount,
+                        billingCycle,
+                        status: 'failed',
+                        errorMessage: `Payment transaction not successful (status: ${flwData.status})`
+                    });
                     return res.status(400).json({ error: "Payment transaction was not successful or is incomplete." });
                 }
 
                 if (flwData.data.currency !== "NGN") {
+                    await logPaymentTransaction(tenantId, {
+                        transactionId: transactionId || "failed-tx",
+                        type: 'upgrade',
+                        tier,
+                        amount: expectedAmount,
+                        billingCycle,
+                        status: 'failed',
+                        errorMessage: `Invalid currency: ${flwData.data.currency}. Must pay in NGN.`
+                    });
                     return res.status(400).json({ error: "Invalid currency. Must pay in NGN." });
                 }
 
                 if (flwData.data.amount < expectedAmount) {
+                    await logPaymentTransaction(tenantId, {
+                        transactionId: transactionId || "failed-tx",
+                        type: 'upgrade',
+                        tier,
+                        amount: expectedAmount,
+                        billingCycle,
+                        status: 'failed',
+                        errorMessage: `Insufficient payment amount. Paid: ${flwData.data.amount}, Expected: ${expectedAmount}`
+                    });
                     return res.status(400).json({ error: `Insufficient payment amount. Paid: ${flwData.data.amount}, Expected: ${expectedAmount}` });
                 }
             } catch (flwErr: any) {
                 console.error("Flutterwave API fetch error:", flwErr);
+                await logPaymentTransaction(tenantId, {
+                    transactionId: transactionId || "failed-tx",
+                    type: 'upgrade',
+                    tier,
+                    amount: expectedAmount,
+                    billingCycle,
+                    status: 'failed',
+                    errorMessage: `Flutterwave communication error: ${flwErr.message || flwErr}`
+                });
                 return res.status(400).json({ error: "Failed to communicate with Flutterwave verification servers." });
             }
         }
@@ -1655,8 +1791,26 @@ app.post("/api/subscription/upgrade", verifyTenant, async (req: any, res) => {
 
         if (upsertError) {
             console.error("Backend subscription upgrade upsert error:", upsertError);
+            await logPaymentTransaction(tenantId, {
+                transactionId: transactionId || "failed-db-tx",
+                type: 'upgrade',
+                tier,
+                amount: expectedAmount,
+                billingCycle,
+                status: 'failed',
+                errorMessage: `Database sync failed: ${upsertError.message || JSON.stringify(upsertError)}`
+            });
             return res.status(500).json({ error: "Failed to update subscription in secure cloud vault." });
         }
+
+        await logPaymentTransaction(tenantId, {
+            transactionId: transactionId || "sim-tx-" + Date.now(),
+            type: 'upgrade',
+            tier,
+            amount: expectedAmount,
+            billingCycle,
+            status: 'successful'
+        });
 
         res.json({ success: true, tier, aiUnits: newUnits });
     } catch (err: any) {
@@ -1701,23 +1855,63 @@ app.post("/api/subscription/refill", verifyTenant, async (req: any, res) => {
                 if (!flwRes.ok) {
                     const flwErrorText = await flwRes.text();
                     console.error("Flutterwave API verification call failed:", flwErrorText);
+                    await logPaymentTransaction(tenantId, {
+                        transactionId: transactionId || "failed-tx",
+                        type: 'refill',
+                        packId: chosenPackId,
+                        amount: expectedAmount,
+                        status: 'failed',
+                        errorMessage: `Could not verify payment with Flutterwave: ${flwErrorText}`
+                    });
                     return res.status(400).json({ error: "Could not securely verify payment with Flutterwave API." });
                 }
 
                 const flwData: any = await flwRes.json();
                 if (flwData.status !== "success" || !flwData.data || (flwData.data.status !== "successful" && flwData.data.status !== "completed")) {
+                    await logPaymentTransaction(tenantId, {
+                        transactionId: transactionId || "failed-tx",
+                        type: 'refill',
+                        packId: chosenPackId,
+                        amount: expectedAmount,
+                        status: 'failed',
+                        errorMessage: `Payment transaction not successful (status: ${flwData.status})`
+                    });
                     return res.status(400).json({ error: "Payment transaction was not successful or is incomplete." });
                 }
 
                 if (flwData.data.currency !== "NGN") {
+                    await logPaymentTransaction(tenantId, {
+                        transactionId: transactionId || "failed-tx",
+                        type: 'refill',
+                        packId: chosenPackId,
+                        amount: expectedAmount,
+                        status: 'failed',
+                        errorMessage: `Invalid currency: ${flwData.data.currency}. Must pay in NGN.`
+                    });
                     return res.status(400).json({ error: "Invalid currency. Must pay in NGN." });
                 }
 
                 if (flwData.data.amount < expectedAmount) {
+                    await logPaymentTransaction(tenantId, {
+                        transactionId: transactionId || "failed-tx",
+                        type: 'refill',
+                        packId: chosenPackId,
+                        amount: expectedAmount,
+                        status: 'failed',
+                        errorMessage: `Insufficient payment amount. Paid: ${flwData.data.amount}, Expected: ${expectedAmount}`
+                    });
                     return res.status(400).json({ error: `Insufficient payment amount. Paid: ${flwData.data.amount}, Expected: ${expectedAmount}` });
                 }
             } catch (flwErr: any) {
                 console.error("Flutterwave API fetch error:", flwErr);
+                await logPaymentTransaction(tenantId, {
+                    transactionId: transactionId || "failed-tx",
+                    type: 'refill',
+                    packId: chosenPackId,
+                    amount: expectedAmount,
+                    status: 'failed',
+                    errorMessage: `Flutterwave communication error: ${flwErr.message || flwErr}`
+                });
                 return res.status(400).json({ error: "Failed to communicate with Flutterwave verification servers." });
             }
         }
@@ -1852,8 +2046,24 @@ app.post("/api/subscription/refill", verifyTenant, async (req: any, res) => {
 
         if (upsertError) {
             console.error("Backend subscription refill upsert error:", upsertError);
+            await logPaymentTransaction(tenantId, {
+                transactionId: transactionId || "failed-db-tx",
+                type: 'refill',
+                packId: chosenPackId,
+                amount: expectedAmount,
+                status: 'failed',
+                errorMessage: `Database sync failed: ${upsertError.message || JSON.stringify(upsertError)}`
+            });
             return res.status(500).json({ error: "Failed to update AI units in secure cloud vault." });
         }
+
+        await logPaymentTransaction(tenantId, {
+            transactionId: transactionId || "sim-tx-" + Date.now(),
+            type: 'refill',
+            packId: chosenPackId,
+            amount: expectedAmount,
+            status: 'successful'
+        });
 
         res.json({ success: true, tier, aiUnits: newUnits });
     } catch (err: any) {
@@ -1922,6 +2132,77 @@ app.get("/api/admin/ai-ledger", async (req: any, res) => {
         res.json({ success: true, entries, source: "generated_documents" });
     } catch (err: any) {
         console.error("Express /api/admin/ai-ledger error:", err);
+        res.status(500).json({ error: err.message || "Internal server error" });
+    }
+});
+
+// POST endpoint to manually record/log a payment transaction (successful or failed)
+app.post("/api/subscription/record-transaction", verifyTenant, async (req: any, res) => {
+    try {
+        const tenantId = req.tenantId;
+        const {
+            transactionId,
+            type,
+            tier,
+            packId,
+            amount,
+            billingCycle,
+            status,
+            errorMessage,
+            invoiceId,
+            customerEmail,
+            customerName
+        } = req.body;
+
+        if (!transactionId) {
+            return res.status(400).json({ error: "transactionId is required" });
+        }
+        if (!type) {
+            return res.status(400).json({ error: "transaction type is required" });
+        }
+
+        await logPaymentTransaction(tenantId, {
+            transactionId,
+            type,
+            tier,
+            packId,
+            amount: Number(amount || 0),
+            billingCycle,
+            status: status || 'failed',
+            errorMessage,
+            invoiceId,
+            customerEmail,
+            customerName
+        });
+
+        res.json({ success: true, message: "Transaction recorded successfully." });
+    } catch (err: any) {
+        console.error("Express POST /api/subscription/record-transaction error:", err);
+        res.status(500).json({ error: err.message || "Internal server error" });
+    }
+});
+
+// GET endpoint to fetch all transactions (for admin dashboard)
+app.get("/api/admin/transactions", async (req: any, res) => {
+    try {
+        const { data, error } = await supabaseClient
+            .from("generated_documents")
+            .select("*")
+            .eq("document_type", "cravebiz_payment_transaction");
+
+        if (error) {
+            return res.status(500).json({ error: error.message });
+        }
+
+        const transactions = (data || []).map((doc: any) => ({
+            id: doc.id,
+            companyId: doc.company_id,
+            ...(doc.content as any)
+        })).sort((a, b) => new Date(b.timestamp || 0).getTime() - new Date(a.timestamp || 0).getTime());
+
+        res.json({ success: true, transactions });
+    } catch (err: any) {
+        console.error("Express GET /api/admin/transactions error:", err);
         res.status(500).json({ error: err.message || "Internal server error" });
     }
 });

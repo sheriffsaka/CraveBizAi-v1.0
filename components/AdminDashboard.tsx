@@ -135,12 +135,18 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ allTenantData, companie
   const [query, setQuery] = useState('');
   const [response, setResponse] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
-  const [activeTab, setActiveTab] = useState<'overview' | 'companies' | 'users' | 'reports' | 'security' | 'ai_usage'>('overview');
+  const [activeTab, setActiveTab] = useState<'overview' | 'companies' | 'users' | 'reports' | 'security' | 'ai_usage' | 'transactions'>('overview');
   const [aiUsageSearch, setAiUsageSearch] = useState('');
   const [aiUsageList, setAiUsageList] = useState<any[]>([]);
   const [aiLedgerEntries, setAiLedgerEntries] = useState<any[]>([]);
   const [isFetchingLedger, setIsFetchingLedger] = useState<boolean>(false);
   const [ledgerSearch, setLedgerSearch] = useState('');
+
+  const [transactions, setTransactions] = useState<any[]>([]);
+  const [isFetchingTransactions, setIsFetchingTransactions] = useState<boolean>(false);
+  const [transactionSearch, setTransactionSearch] = useState('');
+  const [txStatusFilter, setTxStatusFilter] = useState<'all' | 'successful' | 'failed'>('all');
+  const [txTypeFilter, setTxTypeFilter] = useState<'all' | 'upgrade' | 'refill' | 'invoice-payment'>('all');
 
   const [editableLimits, setEditableLimits] = useState<typeof TIER_LIMITS>(() => ({ ...TIER_LIMITS }));
   const [savePricingSuccess, setSavePricingSuccess] = useState(false);
@@ -174,6 +180,23 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ allTenantData, companie
         }
       };
       loadLedger();
+    }
+  }, [activeTab]);
+
+  useEffect(() => {
+    if (activeTab === 'transactions') {
+      const loadTransactions = async () => {
+        setIsFetchingTransactions(true);
+        try {
+          const txs = await api.fetchTransactions();
+          setTransactions(txs || []);
+        } catch (e) {
+          console.error("Failed to load payment transactions:", e);
+        } finally {
+          setIsFetchingTransactions(false);
+        }
+      };
+      loadTransactions();
     }
   }, [activeTab]);
 
@@ -1091,6 +1114,246 @@ Admin Query: ${activePrompt}
     );
   };
 
+  const renderTransactions = () => {
+    // Calculate stats specifically for transaction logs
+    const totalTxCount = transactions.length;
+    const successfulTxs = transactions.filter(t => t.status === 'successful');
+    const successfulTxCount = successfulTxs.length;
+    const failedTxCount = totalTxCount - successfulTxCount;
+    
+    const totalVolume = successfulTxs.reduce((sum, t) => sum + Number(t.amount || 0), 0);
+    const failureRate = totalTxCount > 0 ? ((failedTxCount / totalTxCount) * 100).toFixed(1) : "0.0";
+
+    // Filtering logic
+    const filtered = transactions.filter(t => {
+      // 1. Search filter
+      const searchLower = transactionSearch.toLowerCase();
+      const matchesSearch = !transactionSearch || 
+        String(t.transactionId || '').toLowerCase().includes(searchLower) ||
+        String(t.customerEmail || '').toLowerCase().includes(searchLower) ||
+        String(t.customerName || '').toLowerCase().includes(searchLower) ||
+        String(t.tenantId || '').toLowerCase().includes(searchLower);
+
+      // 2. Status filter
+      const matchesStatus = txStatusFilter === 'all' || t.status === txStatusFilter;
+
+      // 3. Type filter
+      const matchesType = txTypeFilter === 'all' || t.type === txTypeFilter;
+
+      return matchesSearch && matchesStatus && matchesType;
+    });
+
+    return (
+      <div className="space-y-8 animate-in fade-in duration-300">
+        {/* Transaction Summary Cards */}
+        <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
+          <div className="bg-white p-8 rounded-[2.5rem] shadow-xl border border-gray-100 flex items-center justify-between">
+            <div>
+              <p className="text-[10px] font-black text-gray-400 uppercase tracking-widest">Total Volume (₦)</p>
+              <h4 className="text-2xl font-black text-gray-900 mt-2 select-all">₦{totalVolume.toLocaleString()}</h4>
+              <p className="text-[10px] text-emerald-500 font-bold mt-1">From validated SME settle assets</p>
+            </div>
+            <div className="w-12 h-12 rounded-2xl bg-emerald-50 flex items-center justify-center text-emerald-600">
+              <Icon name="reports" className="w-6 h-6" />
+            </div>
+          </div>
+
+          <div className="bg-white p-8 rounded-[2.5rem] shadow-xl border border-gray-100 flex items-center justify-between">
+            <div>
+              <p className="text-[10px] font-black text-gray-400 uppercase tracking-widest">Successful Settlements</p>
+              <h4 className="text-2xl font-black text-emerald-600 mt-2 select-all">{successfulTxCount}</h4>
+              <p className="text-[10px] text-gray-400 font-semibold mt-1">Cleared vault entries</p>
+            </div>
+            <div className="w-12 h-12 rounded-2xl bg-emerald-50 flex items-center justify-center text-emerald-600">
+              <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>
+            </div>
+          </div>
+
+          <div className="bg-white p-8 rounded-[2.5rem] shadow-xl border border-gray-100 flex items-center justify-between">
+            <div>
+              <p className="text-[10px] font-black text-gray-400 uppercase tracking-widest">Failed Attempts</p>
+              <h4 className="text-2xl font-black text-rose-600 mt-2 select-all">{failedTxCount}</h4>
+              <p className="text-[10px] text-gray-400 font-semibold mt-1">Rejected, closed or incomplete</p>
+            </div>
+            <div className="w-12 h-12 rounded-2xl bg-rose-50 flex items-center justify-center text-rose-600">
+              <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M10 14l2-2m0 0l2-2m-2 2l-2-2m2 2l2 2m7-2a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>
+            </div>
+          </div>
+
+          <div className="bg-white p-8 rounded-[2.5rem] shadow-xl border border-gray-100 flex items-center justify-between">
+            <div>
+              <p className="text-[10px] font-black text-gray-400 uppercase tracking-widest">Failure Rate Index</p>
+              <h4 className="text-2xl font-black text-gray-800 mt-2 select-all">{failureRate}%</h4>
+              <p className="text-[10px] text-gray-400 font-semibold mt-1">Ratio of failed/total requests</p>
+            </div>
+            <div className="w-12 h-12 rounded-2xl bg-gray-50 flex items-center justify-center text-gray-500">
+              <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M11 3.055A9.001 9.001 0 1020.945 13H11V3.055z"></path><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M20.488 9H15V3.512A9.025 9.025 0 0120.488 9z"></path></svg>
+            </div>
+          </div>
+        </div>
+
+        {/* Central Filters and Table Container */}
+        <div className="bg-white p-8 rounded-[3rem] shadow-2xl border border-gray-100">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-6 pb-6 border-b border-gray-100">
+            <div>
+              <h3 className="text-xl font-black uppercase tracking-tighter text-gray-800 flex items-center gap-2">
+                <svg className="w-5 h-5 text-primary-600" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M3 10h18M7 15h1m4 0h1m-7 4h12a3 3 0 003-3V8a3 3 0 00-3-3H6a3 3 0 00-3 3v8a3 3 0 003 3z"></path></svg>
+                Payment & Invoice Settlement Logs
+              </h3>
+              <p className="text-xs text-gray-400 font-medium">Platform-wide history of premium plans, credit refills, and invoice paychecks</p>
+            </div>
+          </div>
+
+          {/* Filters Bar */}
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6 bg-gray-50/50 p-6 rounded-2xl border border-gray-100/50">
+            <div>
+              <label className="block text-[10px] font-black text-gray-400 uppercase tracking-wider mb-1.5">Free-text Search</label>
+              <input
+                type="text"
+                value={transactionSearch}
+                onChange={e => setTransactionSearch(e.target.value)}
+                placeholder="ID, Customer, Workspace ID..."
+                className="w-full px-4 py-2.5 bg-white border border-gray-200 rounded-xl text-xs font-bold text-gray-700 outline-none focus:ring-2 focus:ring-primary-500"
+              />
+            </div>
+            
+            <div>
+              <label className="block text-[10px] font-black text-gray-400 uppercase tracking-wider mb-1.5">Settle Status</label>
+              <select
+                value={txStatusFilter}
+                onChange={e => setTxStatusFilter(e.target.value as any)}
+                className="w-full px-4 py-2.5 bg-white border border-gray-200 rounded-xl text-xs font-bold text-gray-700 outline-none focus:ring-2 focus:ring-primary-500"
+              >
+                <option value="all">All Statuses</option>
+                <option value="successful">Successful</option>
+                <option value="failed">Failed / Cancelled</option>
+              </select>
+            </div>
+
+            <div>
+              <label className="block text-[10px] font-black text-gray-400 uppercase tracking-wider mb-1.5">Transaction Type</label>
+              <select
+                value={txTypeFilter}
+                onChange={e => setTxTypeFilter(e.target.value as any)}
+                className="w-full px-4 py-2.5 bg-white border border-gray-200 rounded-xl text-xs font-bold text-gray-700 outline-none focus:ring-2 focus:ring-primary-500"
+              >
+                <option value="all">All Types</option>
+                <option value="upgrade">Subscription Plan Upgrade</option>
+                <option value="refill">AI Quota Credit Refill</option>
+                <option value="invoice-payment">Invoice Payment Settlement</option>
+              </select>
+            </div>
+          </div>
+
+          {/* Transactions List */}
+          {isFetchingTransactions ? (
+            <div className="py-16 text-center text-xs text-gray-400 font-bold">
+              Fetching financial transaction logs from Supabase vault...
+            </div>
+          ) : filtered.length > 0 ? (
+            <div className="overflow-x-auto border border-gray-100 rounded-2xl">
+              <table className="w-full text-left border-collapse">
+                <thead>
+                  <tr className="border-b border-gray-100 text-[10px] font-black text-gray-400 uppercase tracking-widest bg-gray-50/50">
+                    <th className="py-3 px-4">Date & Time</th>
+                    <th className="py-3 px-4">Customer info</th>
+                    <th className="py-3 px-4">Workspace / Tenant</th>
+                    <th className="py-3 px-4">Transfer Type</th>
+                    <th className="py-3 px-4">Amount Paid</th>
+                    <th className="py-3 px-4">Status & Details</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-gray-50 text-xs">
+                  {filtered.map(t => {
+                    const formattedDate = t.timestamp ? new Date(t.timestamp).toLocaleString() : 'N/A';
+                    const compName = companies.find(c => c.id === t.tenantId)?.name || t.tenantId || 'Unknown Workspace';
+
+                    return (
+                      <tr key={t.id} className="hover:bg-gray-50/50 transition-colors">
+                        <td className="py-4 px-4 font-mono text-[10px] text-gray-400">
+                          {formattedDate}
+                        </td>
+                        
+                        <td className="py-4 px-4">
+                          <p className="font-extrabold text-gray-900">{t.customerName || 'Anonymous'}</p>
+                          <span className="text-[10px] text-gray-400 select-all font-semibold">{t.customerEmail || 'no-email@cravebiz.ai'}</span>
+                        </td>
+
+                        <td className="py-4 px-4">
+                          <div className="flex flex-col">
+                            <span className="font-bold text-gray-800">{compName}</span>
+                            <span className="text-[9px] font-mono text-gray-400 select-all">{t.tenantId || 'no-id'}</span>
+                          </div>
+                        </td>
+
+                        <td className="py-4 px-4">
+                          <span className={`px-2.5 py-1 text-[10px] font-black uppercase tracking-wider rounded-md border ${
+                            t.type === 'upgrade' 
+                              ? 'bg-blue-50 text-blue-700 border-blue-100' 
+                              : t.type === 'refill' 
+                              ? 'bg-purple-50 text-purple-700 border-purple-100'
+                              : 'bg-amber-50 text-amber-700 border-amber-100'
+                          }`}>
+                            {t.type === 'upgrade' 
+                              ? '⚡ Plan Upgrade' 
+                              : t.type === 'refill' 
+                              ? '🔑 Credit Refill'
+                              : '📁 Settlement'}
+                          </span>
+                        </td>
+
+                        <td className="py-4 px-4 font-bold">
+                          <span className={t.status === 'successful' ? 'text-emerald-600' : 'text-gray-400 line-through'}>
+                            ₦{Number(t.amount || 0).toLocaleString()}
+                          </span>
+                        </td>
+
+                        <td className="py-4 px-4">
+                          <div className="flex flex-col gap-1">
+                            <div className="flex items-center gap-1.5">
+                              <span className={`inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-black uppercase tracking-wider ${
+                                t.status === 'successful' 
+                                  ? 'bg-emerald-50 text-emerald-700 border border-emerald-100' 
+                                  : 'bg-rose-50 text-rose-700 border border-rose-100'
+                              }`}>
+                                {t.status === 'successful' ? '✓ Successful' : '✗ Failed'}
+                              </span>
+                              <span className="text-[9px] font-mono bg-gray-100 text-gray-600 px-1.5 py-0.5 rounded-md font-bold select-all" title="Transaction reference">
+                                Ref: {t.transactionId}
+                              </span>
+                            </div>
+                            
+                            {/* Detailed Description */}
+                            <p className="text-[10px] text-gray-500 font-medium">
+                              {t.type === 'upgrade' && `Upgraded to ${t.tier || 'Starter'} Plan (${t.billingCycle || 'monthly'})`}
+                              {t.type === 'refill' && `Quota Refill Pack: ${t.packId || 'custom'}`}
+                              {t.type === 'invoice-payment' && `Invoice Settlement for ID: ${t.invoiceId || 'N/A'}`}
+                            </p>
+
+                            {/* Error Message if failed */}
+                            {t.status === 'failed' && t.errorMessage && (
+                              <p className="text-[10px] text-rose-600 font-extrabold italic bg-rose-50/50 p-1.5 rounded-lg border border-rose-100">
+                                Error: {t.errorMessage}
+                              </p>
+                            )}
+                          </div>
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+          ) : (
+            <div className="py-16 text-center border border-dashed border-gray-100 rounded-3xl bg-gray-50/20">
+              <p className="text-sm font-bold text-gray-400 italic">No transaction records match your filter criteria.</p>
+            </div>
+          )}
+        </div>
+      </div>
+    );
+  };
+
   const renderOverview = () => {
     return (
       <div className="space-y-8">
@@ -1544,6 +1807,7 @@ Admin Query: ${activePrompt}
           <button onClick={() => setActiveTab('users')} className={`px-4 py-2.5 rounded-xl text-xs font-black uppercase tracking-widest transition-all ${activeTab === 'users' ? 'bg-primary-600 text-white shadow-lg' : 'text-gray-400 hover:text-gray-600'}`}>Users</button>
           <button onClick={() => setActiveTab('ai_usage')} className={`px-4 py-2.5 rounded-xl text-xs font-black uppercase tracking-widest transition-all ${activeTab === 'ai_usage' ? 'bg-primary-600 text-white shadow-lg' : 'text-gray-400 hover:text-gray-600'}`}>AI Usage & Billing</button>
           <button onClick={() => setActiveTab('security')} className={`px-4 py-2.5 rounded-xl text-xs font-black uppercase tracking-widest transition-all ${activeTab === 'security' ? 'bg-primary-600 text-white shadow-lg' : 'text-gray-400 hover:text-gray-600'}`}>Compliance & Auditing</button>
+          <button onClick={() => setActiveTab('transactions')} className={`px-4 py-2.5 rounded-xl text-xs font-black uppercase tracking-widest transition-all ${activeTab === 'transactions' ? 'bg-primary-600 text-white shadow-lg' : 'text-gray-400 hover:text-gray-600'}`}>Transactions Log</button>
           <button onClick={() => setActiveTab('reports')} className={`px-4 py-2.5 rounded-xl text-xs font-black uppercase tracking-widest transition-all ${activeTab === 'reports' ? 'bg-primary-600 text-white shadow-lg' : 'text-gray-400 hover:text-gray-600'}`}>Reports</button>
         </div>
       </div>
@@ -1553,6 +1817,8 @@ Admin Query: ${activePrompt}
       {activeTab === 'ai_usage' && renderAiUsage()}
 
       {activeTab === 'security' && renderSecurity()}
+
+      {activeTab === 'transactions' && renderTransactions()}
 
       {activeTab === 'companies' && (
         <div className="bg-white rounded-3xl shadow-xl border border-gray-100 overflow-hidden">

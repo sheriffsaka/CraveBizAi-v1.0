@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { Company, BankAccount, User, WorkspaceRole, AuditLog, Invoice } from '../types';
-import { supabase } from '../lib/api';
+import { supabase, api } from '../lib/api';
 import ImageCropperModal from './ImageCropperModal';
 import Icon from './common/Icon';
 import { getSubscriptionInfo, setSubscriptionInfo, SubscriptionTier, TIER_LIMITS, saveSubscriptionInfoToDb, secureUpgradeSubscriptionOnDb, secureRefillCreditsOnDb, safeFlutterwaveCheckout, getFlutterwavePublicKey, REFILL_PACKS, syncGlobalRefillPacks } from '../services/subscriptionService';
@@ -241,12 +241,36 @@ const Settings: React.FC<SettingsProps> = ({ company, onSaveChanges, onInviteUse
               alert(`Subscription Payment was received, but we encountered an issue syncing it to our secure vault: ${err.message || err}. Please contact support with your Transaction ID: ${transactionId}.`);
             });
         } else {
+          const transactionId = data.transaction_id || data.tx_ref || `flw-fail-${Date.now()}`;
+          api.recordTransaction(activeTenantId, {
+            transactionId,
+            type: 'upgrade',
+            tier,
+            amount: checkoutAmount,
+            billingCycle,
+            status: 'failed',
+            errorMessage: `Payment failed with status: ${data.status || 'unknown'}`,
+            customerEmail: company?.email || "customer@cravebiz.ai",
+            customerName: company?.name || "CraveBiZ Client"
+          });
           alert(`Failed Subscription Upgrade: Payment transaction status was '${data.status}'. Please try again.`);
         }
       },
       onclose: function() {
         console.log("Flutterwave payment modal dismissed");
         if (!isSuccess) {
+          const mockTxId = `cancelled-${Date.now()}`;
+          api.recordTransaction(activeTenantId, {
+            transactionId: mockTxId,
+            type: 'upgrade',
+            tier,
+            amount: checkoutAmount,
+            billingCycle,
+            status: 'failed',
+            errorMessage: "Payment modal dismissed or closed by the user",
+            customerEmail: company?.email || "customer@cravebiz.ai",
+            customerName: company?.name || "CraveBiZ Client"
+          });
           alert("Failed Subscription Upgrade: Payment checkout was closed or cancelled before completion.");
         }
       }
@@ -409,12 +433,34 @@ const Settings: React.FC<SettingsProps> = ({ company, onSaveChanges, onInviteUse
               alert(`Refill Payment was received, but we encountered an issue syncing credits to our secure vault: ${err.message || err}. Please contact support with your Transaction ID: ${transactionId}.`);
             });
         } else {
+          const transactionId = data.transaction_id || data.tx_ref || `flw-fail-${Date.now()}`;
+          api.recordTransaction(activeTenantId, {
+            transactionId,
+            type: 'refill',
+            packId,
+            amount: checkoutAmount,
+            status: 'failed',
+            errorMessage: `Refill failed with status: ${data.status || 'unknown'}`,
+            customerEmail: company?.email || "customer@cravebiz.ai",
+            customerName: company?.name || "CraveBiZ Client"
+          });
           alert(`Failed Refill: Payment transaction status was '${data.status}'. Please try again.`);
         }
       },
       onclose: function() {
         console.log("Flutterwave payment modal dismissed");
         if (!isSuccess) {
+          const mockTxId = `cancelled-${Date.now()}`;
+          api.recordTransaction(activeTenantId, {
+            transactionId: mockTxId,
+            type: 'refill',
+            packId,
+            amount: checkoutAmount,
+            status: 'failed',
+            errorMessage: "Payment modal dismissed or closed by the user",
+            customerEmail: company?.email || "customer@cravebiz.ai",
+            customerName: company?.name || "CraveBiZ Client"
+          });
           alert("Failed Refill: Payment checkout was closed or cancelled before completion.");
         }
       }
