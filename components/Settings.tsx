@@ -608,6 +608,23 @@ const Settings: React.FC<SettingsProps> = ({ company, onSaveChanges, onInviteUse
       // Sync to cloud DB
       await saveSubscriptionInfoToDb(activeTenantId);
 
+      // Send simulated invitation email via backend
+      try {
+        const headers = await api.getAuthHeaders(activeTenantId);
+        await fetch("/api/subscription/invite", {
+          method: "POST",
+          headers,
+          body: JSON.stringify({
+            inviteName: inviteName.trim(),
+            inviteEmail: inviteEmail.trim().toLowerCase(),
+            inviteRole: inviteRole
+          })
+        });
+        console.log("Simulated team invitation email dispatched via backend API.");
+      } catch (emailErr) {
+        console.warn("Failed to dispatch team invitation email:", emailErr);
+      }
+
       if (onTriggerAuditLog) {
         onTriggerAuditLog('INVITE_MEMBER', inviteEmail, `Invited team member ${inviteName || inviteEmail} as role ${inviteRole} with AI Permission: ${inviteAiAllowed ? 'Allowed' : 'Disallowed'}`);
       }

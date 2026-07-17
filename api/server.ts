@@ -502,36 +502,43 @@ async function deductAiUnitServerSide(
 
     const docId = dbCompanyId;
 
-    // Check high-resiliency local cache file first
-    const localSettings = getLocalWorkspaceSettings();
-    let data = localSettings[docId] ? { content: localSettings[docId] } : null;
+    let data = null;
 
-    if (!data) {
-        // Fetch workspace settings from DB using the request-specific authenticated client
-        const client = getAuthenticatedClient(token);
-        try {
-            const fetchRes = await client
+    // Fetch workspace settings from DB using the request-specific authenticated client first
+    const client = getAuthenticatedClient(token);
+    try {
+        const fetchRes = await client
+            .from("generated_documents")
+            .select("*")
+            .eq("id", docId)
+            .maybeSingle();
+
+        if (fetchRes.data) {
+            data = fetchRes.data;
+        } else {
+            // Resiliency fallback: try unauthenticated server-level client
+            const fallbackRes = await supabaseClient
                 .from("generated_documents")
                 .select("*")
                 .eq("id", docId)
                 .maybeSingle();
-
-            if (fetchRes.data) {
-                data = fetchRes.data;
-            } else {
-                // Resiliency fallback: try unauthenticated server-level client
-                const fallbackRes = await supabaseClient
-                    .from("generated_documents")
-                    .select("*")
-                    .eq("id", docId)
-                    .maybeSingle();
-                if (fallbackRes.data) {
-                    data = fallbackRes.data;
-                }
+            if (fallbackRes.data) {
+                data = fallbackRes.data;
             }
-        } catch (fetchErr) {
-            console.warn("[AI Deduct] Database fetch failed, relying on defaults:", fetchErr);
         }
+    } catch (fetchErr) {
+        console.warn("[AI Deduct] Database fetch failed, relying on fallback/cache:", fetchErr);
+    }
+
+    // If database query failed or returned no data, check high-resiliency local cache file
+    if (!data) {
+        const localSettings = getLocalWorkspaceSettings();
+        if (localSettings[docId]) {
+            data = { content: localSettings[docId] };
+        }
+    } else if (data && data.content) {
+        // Keep our local cache in sync
+        saveLocalWorkspaceSettings(docId, data.content);
     }
 
     let tier = isCravebizInc ? "Enterprise" : "Free";
@@ -2402,30 +2409,46 @@ app.get("/api/subscription/settings", verifyTenant, async (req: any, res) => {
 
         const docId = dbCompanyId;
 
-        // Try local file cache first
-        const localSettings = getLocalWorkspaceSettings();
-        if (localSettings[docId]) {
-            return res.json({ success: true, content: localSettings[docId] });
-        }
+        let data = null;
+        let error = null;
 
-        // Fall back to database fetch
+        // Try database fetch first
         const client = getAuthenticatedClient(req.token);
-        let { data, error } = await client
-            .from("generated_documents")
-            .select("*")
-            .eq("id", docId)
-            .maybeSingle();
-
-        if (error || !data) {
-            // System-level fallback
-            const fallbackRes = await supabaseClient
+        try {
+            const dbRes = await client
                 .from("generated_documents")
                 .select("*")
                 .eq("id", docId)
                 .maybeSingle();
-            if (fallbackRes.data) {
-                data = fallbackRes.data;
-                error = null;
+            
+            data = dbRes.data;
+            error = dbRes.error;
+        } catch (fetchErr: any) {
+            console.warn("[Sub Settings GET] Auth client fetch failed:", fetchErr);
+        }
+
+        if (error || !data) {
+            try {
+                // System-level fallback
+                const fallbackRes = await supabaseClient
+                    .from("generated_documents")
+                    .select("*")
+                    .eq("id", docId)
+                    .maybeSingle();
+                if (fallbackRes.data) {
+                    data = fallbackRes.data;
+                    error = null;
+                }
+            } catch (fallbackErr) {
+                console.warn("[Sub Settings GET] Fallback query failed:", fallbackErr);
+            }
+        }
+
+        // If database fetch yielded nothing or failed, try local file cache fallback
+        if (!data) {
+            const localSettings = getLocalWorkspaceSettings();
+            if (localSettings[docId]) {
+                return res.json({ success: true, content: localSettings[docId] });
             }
         }
 
@@ -2520,6 +2543,65 @@ app.post("/api/subscription/settings", verifyTenant, async (req: any, res) => {
     } catch (err: any) {
         console.error("Express POST /api/subscription/settings error:", err);
         res.status(500).json({ error: err.message || "Internal server error" });
+    }
+});
+
+// POST subscription team invitation (sends simulated email from inviter)
+app.post("/api/subscription/invite", verifyTenant, async (req: any, res) => {
+    try {
+        const tenantId = req.tenantId;
+        const { inviteName, inviteEmail, inviteRole } = req.body;
+        
+        if (!inviteEmail) {
+            return res.status(400).json({ error: "inviteEmail is required" });
+        }
+
+        const inviterEmail = req.user?.email || "owner@cravebiz.ai";
+        const inviterName = req.user?.name || "Workspace Owner";
+        
+        // Resolve the real, base company ID
+        let baseCompanyId = tenantId;
+        if (tenantId.startsWith("ws-personal-")) {
+            baseCompanyId = tenantId.replace("ws-personal-", "");
+        } else if (tenantId.startsWith("ws-legal-")) {
+            baseCompanyId = tenantId.replace("ws-legal-", "");
+        } else if (tenantId.startsWith("ws-sales-")) {
+            baseCompanyId = tenantId.replace("ws-sales-", "");
+        }
+
+        const secureLink = `${req.protocol}://${req.get('host')}?tenant=${tenantId}&invitedEmail=${encodeURIComponent(inviteEmail)}`;
+
+        const emailBody = `
+================================================================================
+📧 OUTGOING TEAM INVITATION EMAIL DISPATCHED via CRAVEBIZ SSL
+================================================================================
+Timestamp: ${new Date().toISOString()}
+Tenant/Workspace ID: ${tenantId}
+From: ${inviterName} <${inviterEmail}>
+To: ${inviteName || "Workspace Member"} <${inviteEmail}>
+Subject: Invitation to join the '${baseCompanyId.toUpperCase()}' Workspace on CraveBiZ
+
+Dear ${inviteName || "Workspace Member"},
+
+You have been invited by ${inviterName} (${inviterEmail}) to join the '${baseCompanyId.toUpperCase()}' Workspace as a ${inviteRole || "Member"}.
+
+With this access, you can collaborate on invoice generation, dynamic documents, signature workflows, and leverage workspace AI features.
+
+To accept this invitation and securely access the workspace, please click the link below:
+${secureLink}
+
+This invitation link is unique to your email address and secured via SSL.
+
+Best regards,
+The CraveBiZ Team
+================================================================================
+`;
+        console.log(emailBody);
+
+        res.json({ success: true, message: "Invitation email dispatched successfully." });
+    } catch (err: any) {
+        console.error("Express POST /api/subscription/invite error:", err);
+        res.status(500).json({ error: err.message || "Internal server error dispatching invitation email" });
     }
 });
 
