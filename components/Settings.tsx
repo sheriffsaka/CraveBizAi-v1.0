@@ -463,6 +463,7 @@ const Settings: React.FC<SettingsProps> = ({ company, onSaveChanges, onInviteUse
           });
           alert("Failed Refill: Payment checkout was closed or cancelled before completion.");
         }
+        setIsRefillModalOpen(false);
       }
     });
   };

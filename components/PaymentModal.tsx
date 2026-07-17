@@ -128,6 +128,7 @@ const PaymentModal: React.FC<PaymentModalProps> = ({ isOpen, onClose, invoice, o
             customerName: client?.name || "CraveBiZ Client"
           });
         }
+        onClose();
       }
     });
   };
