@@ -2,6 +2,7 @@
 import React, { useState, useMemo, useEffect } from 'react';
 import { Client, Service, Invoice, InvoiceStatus, InvoiceItem, Company, InvoiceFrequency } from '../types';
 import { generateTextResponse } from '../services/aiGenerationService';
+import { getSubscriptionInfo } from '../services/subscriptionService';
 import Icon from './common/Icon';
 import InvoiceDetail from './InvoiceDetail';
 
@@ -139,7 +140,12 @@ const InvoiceForm: React.FC<InvoiceFormProps> = ({ initialInvoice, clients, serv
         const s = services.find(srv => srv.id === value);
         if (s) {
             newItems[index].price = s.price;
-            await handleGenerateDescription(index, s.name, s.category);
+            const sub = getSubscriptionInfo(company?.id || '');
+            if (sub && sub.aiModeEnabled) {
+                await handleGenerateDescription(index, s.name, s.category);
+            } else {
+                newItems[index].description = s.description || '';
+            }
         }
     }
     setItems(newItems);
