@@ -594,47 +594,45 @@ async function deductAiUnitServerSide(
     };
     saveLocalWorkspaceSettings(docId, updatedContent);
 
-    // Sync back to Supabase database asynchronously (never blocks the request)
-    (async () => {
-        try {
-            const client = getAuthenticatedClient(token);
-            let { error: upsertError } = await client
+    // Sync back to Supabase database synchronously (save immediately as single source of truth)
+    try {
+        const client = getAuthenticatedClient(token);
+        let { error: upsertError } = await client
+            .from("generated_documents")
+            .upsert({
+                id: docId,
+                company_id: isCravebizInc ? null : dbCompanyId,
+                document_type: "cravebiz_workspace_settings",
+                content: updatedContent
+            });
+
+        if (upsertError) {
+            // Fallback with company_id: null
+            const nullCompanyUpsert = await client
                 .from("generated_documents")
                 .upsert({
                     id: docId,
-                    company_id: isCravebizInc ? null : dbCompanyId,
+                    company_id: null,
                     document_type: "cravebiz_workspace_settings",
                     content: updatedContent
                 });
-
-            if (upsertError) {
-                // Fallback with company_id: null
-                const nullCompanyUpsert = await client
-                    .from("generated_documents")
-                    .upsert({
-                        id: docId,
-                        company_id: null,
-                        document_type: "cravebiz_workspace_settings",
-                        content: updatedContent
-                    });
-                upsertError = nullCompanyUpsert.error;
-            }
-
-            if (upsertError) {
-                // Fallback unauthenticated
-                await supabaseClient
-                    .from("generated_documents")
-                    .upsert({
-                        id: docId,
-                        company_id: null,
-                        document_type: "cravebiz_workspace_settings",
-                        content: updatedContent
-                    });
-            }
-        } catch (syncErr) {
-            console.warn("[AI Deduct Sync] Failed to sync workspace settings to Supabase:", syncErr);
+            upsertError = nullCompanyUpsert.error;
         }
-    })();
+
+        if (upsertError) {
+            // Fallback unauthenticated
+            await supabaseClient
+                .from("generated_documents")
+                .upsert({
+                    id: docId,
+                    company_id: null,
+                    document_type: "cravebiz_workspace_settings",
+                    content: updatedContent
+                });
+        }
+    } catch (syncErr) {
+        console.warn("[AI Deduct Sync] Failed to sync workspace settings to Supabase:", syncErr);
+    }
 
     // SUCCESSFUL DECOUPLED LOGGING: Always record usage ledger entry
     const finalEmail = userEmail || "unknown@cravebiz.com";

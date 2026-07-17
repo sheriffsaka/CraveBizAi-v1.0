@@ -989,7 +989,47 @@ const Settings: React.FC<SettingsProps> = ({ company, onSaveChanges, onInviteUse
                         <p className="text-xs text-gray-400 font-bold">{user.email}</p>
                     </div>
                     <div className="flex items-center gap-3">
-                      <span className="text-[10px] font-black text-primary-600 uppercase tracking-widest bg-primary-50 px-3 py-1 rounded-full border border-primary-100">{user.role}</span>
+                      {userRole?.toLowerCase() === 'owner' && user.id !== '1' ? (
+                        <select
+                          value={user.role.charAt(0).toUpperCase() + user.role.slice(1).toLowerCase()}
+                          onChange={async (e) => {
+                            const newRole = e.target.value;
+                            const updatedMembers = teamMembers.map(m => m.id === user.id ? { ...m, role: newRole } : m);
+                            setTeamMembers(updatedMembers);
+                            
+                            const key = `cravebiz_invited_member_info_${activeTenantId}_${user.id}`;
+                            const cached = localStorage.getItem(key);
+                            if (cached) {
+                              const parsed = JSON.parse(cached);
+                              parsed.role = newRole;
+                              localStorage.setItem(key, JSON.stringify(parsed));
+                            }
+                            
+                            try {
+                              await supabase
+                                .from('company_members')
+                                .update({ role: newRole.toLowerCase() })
+                                .eq('company_id', activeTenantId)
+                                .eq('user_id', user.id);
+                            } catch (err) {
+                              console.warn("Could not update role in Supabase:", err);
+                            }
+                            
+                            await saveSubscriptionInfoToDb(activeTenantId);
+                            if (onTriggerAuditLog) {
+                              onTriggerAuditLog('UPDATE_MEMBER_ROLE', user.email, `Updated member ${user.name || user.email} role to ${newRole}`);
+                            }
+                          }}
+                          className="text-[10px] font-black text-primary-600 uppercase tracking-widest bg-white border border-primary-100 px-2.5 py-1 rounded-full outline-none focus:ring-1 focus:ring-primary-500 cursor-pointer"
+                        >
+                          <option value="Owner">Owner</option>
+                          <option value="Admin">Admin</option>
+                          <option value="Member">Member</option>
+                        </select>
+                      ) : (
+                        <span className="text-[10px] font-black text-primary-600 uppercase tracking-widest bg-primary-50 px-3 py-1 rounded-full border border-primary-100">{user.role}</span>
+                      )}
+
                       <span className={`text-[10px] font-black uppercase tracking-widest px-3 py-1 rounded-full border ${
                         isInvited 
                           ? 'text-amber-600 bg-amber-50 border-amber-100' 
@@ -1007,6 +1047,39 @@ const Settings: React.FC<SettingsProps> = ({ company, onSaveChanges, onInviteUse
                           className={`text-[9px] font-black px-2.5 py-1 rounded-xl border transition-all ${isUserAiAllowed ? 'bg-emerald-50 text-emerald-700 border-emerald-100' : 'bg-red-50 text-red-700 border-red-100'}`}
                         >
                           {isUserAiAllowed ? 'AI: ALLOWED' : 'AI: DISABLED'}
+                        </button>
+                      )}
+
+                      {userRole?.toLowerCase() === 'owner' && user.id !== '1' && (
+                        <button
+                          type="button"
+                          onClick={async () => {
+                            if (!confirm(`Are you sure you want to remove ${user.name || user.email} from this workspace?`)) return;
+                            
+                            const updatedMembers = teamMembers.filter(m => m.id !== user.id);
+                            setTeamMembers(updatedMembers);
+                            
+                            localStorage.removeItem(`cravebiz_invited_member_info_${activeTenantId}_${user.id}`);
+                            localStorage.removeItem(`cravebiz_member_ai_allowed_${activeTenantId}_${emailLower}`);
+                            
+                            try {
+                              await supabase
+                                .from('company_members')
+                                .delete()
+                                .eq('company_id', activeTenantId)
+                                .eq('user_id', user.id);
+                            } catch (err) {
+                              console.warn("Could not delete member from Supabase:", err);
+                            }
+                            
+                            await saveSubscriptionInfoToDb(activeTenantId);
+                            if (onTriggerAuditLog) {
+                              onTriggerAuditLog('REMOVE_MEMBER', user.email, `Removed team member ${user.name || user.email}`);
+                            }
+                          }}
+                          className="text-[10px] font-black text-red-600 uppercase tracking-widest bg-red-50 hover:bg-red-100 px-2.5 py-1 rounded-full border border-red-100 transition-all cursor-pointer"
+                        >
+                          Remove
                         </button>
                       )}
                     </div>

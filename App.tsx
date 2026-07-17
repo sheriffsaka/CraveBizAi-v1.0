@@ -26,7 +26,7 @@ import PublicSigningPortal from './components/PublicSigningPortal';
 import ProjectManagement from './components/ProjectManagement';
 import { api, supabase } from './lib/api';
 import { generateRenewalInvoiceSuggestion } from './services/aiGenerationService';
-import { getSubscriptionInfo, setSubscriptionInfo, SubscriptionTier, TIER_LIMITS, syncGlobalPlanSettings, syncSubscriptionInfoFromDb, secureRefillCreditsOnDb, safeFlutterwaveCheckout, getFlutterwavePublicKey, saveSubscriptionInfoToDb, fetchAndCacheFlutterwavePublicKey } from './services/subscriptionService';
+import { getSubscriptionInfo, setSubscriptionInfo, SubscriptionTier, TIER_LIMITS, syncGlobalPlanSettings, syncSubscriptionInfoFromDb, secureRefillCreditsOnDb, safeFlutterwaveCheckout, getFlutterwavePublicKey, saveSubscriptionInfoToDb, fetchAndCacheFlutterwavePublicKey, incrementInvoiceCount, incrementReceiptCount } from './services/subscriptionService';
 import { Invoice, Client, Service, Company, User, TenantData, InvoiceStatus, AllTenantsData, GeneratedDocument, DbDocumentSignatory, Project, WorkspaceRole, AuditLog } from './types';
 import Icon from './components/common/Icon';
 
@@ -408,6 +408,9 @@ export default function App() {
     setIsDataSyncing(true);
     try {
         await api.updateInvoice(updatedInvoice);
+        if (!inv.isReceiptSent) {
+            await incrementReceiptCount(activeTenantId!);
+        }
         await triggerAuditLog('ISSUE_RECEIPT', invoiceId, `Issued receipt for invoice ${inv.invoiceNumber}`);
         setSyncError(null);
     } catch (e) {
@@ -697,7 +700,7 @@ export default function App() {
                 setActiveTenantId(nc.id);
                 localStorage.setItem('cravebiz_tenant', nc.id);
                 await forceSyncData(nc.id);
-                alert("Your free workspace is ready! Enjoy 10 free AI credits every month.");
+                alert("Your free workspace is ready! Enjoy 5 free AI credits every month.");
             } catch(e) {
                 setSyncError(stringifyError(e));
             } finally {
@@ -712,9 +715,9 @@ export default function App() {
                         <Icon name="dashboard" className="w-10 h-10 text-primary-600" />
                     </div>
                     
-                    <h2 className="text-3xl font-black text-gray-800 tracking-tighter mb-2 text-center">Activate Your Workspace</h2>
+                    <h2 className="text-3xl font-black text-gray-800 tracking-tighter mb-2 text-center">Dashboard Activation</h2>
                     <p className="text-gray-500 mb-8 text-sm leading-relaxed text-center">
-                        Confirm your workspace details below to complete your activation.
+                        Your registration information has been successfully retrieved. Confirm your workspace details below to activate your account. No password re-entry or plan selection is required.
                     </p>
                     
                     {/* Workspace Summary Card */}
@@ -896,6 +899,7 @@ export default function App() {
                   setIsDataSyncing(true); 
                   const newInvoice = await api.createInvoice(activeTenantId!, i); 
                   setTenantData(prev => ({ ...prev, invoices: [newInvoice, ...prev.invoices] }));
+                  await incrementInvoiceCount(activeTenantId!);
                   setDraftRenewal(null);
                   navigateTo('invoices');
                   await forceSyncData(activeTenantId!); 

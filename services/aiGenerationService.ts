@@ -1,6 +1,6 @@
 import { GeneratedDocument, Invoice, InvoiceItem, DocumentReviewResult } from "../types.ts";
 import { api } from "../lib/api.ts";
-import { syncSubscriptionInfoFromDb } from "./subscriptionService.ts";
+import { syncSubscriptionInfoFromDb, ensureAiCreditsOrThrow } from "./subscriptionService.ts";
 
 function handleAiResponseUnits(companyId: string, data: any) {
     if (companyId && data && typeof data.newAiUnits === "number") {
@@ -16,6 +16,7 @@ export async function generateTextResponse(
 ): Promise<string> {
     try {
         const companyId = localStorage.getItem('cravebiz_tenant') || '';
+        ensureAiCreditsOrThrow(companyId);
         const headers = await api.getAuthHeaders(companyId);
         const response = await fetch("/api/ai/text-response", {
             method: "POST",
@@ -43,6 +44,7 @@ export async function transformDocument(
 ): Promise<GeneratedDocument | null> {
     try {
         const companyId = localStorage.getItem('cravebiz_tenant') || '';
+        ensureAiCreditsOrThrow(companyId);
         const headers = await api.getAuthHeaders(companyId);
         const response = await fetch("/api/ai/transform-document", {
             method: "POST",
@@ -70,6 +72,7 @@ export async function generateRenewalInvoiceSuggestion(
 ): Promise<Partial<Invoice> | null> {
     try {
         const companyId = localStorage.getItem('cravebiz_tenant') || '';
+        ensureAiCreditsOrThrow(companyId);
         const headers = await api.getAuthHeaders(companyId);
         const response = await fetch("/api/ai/renewal-suggestion", {
             method: "POST",
@@ -97,6 +100,7 @@ export async function generateClientPaymentHealthReport(
 ): Promise<string> {
     try {
         const companyId = localStorage.getItem('cravebiz_tenant') || '';
+        ensureAiCreditsOrThrow(companyId);
         const headers = await api.getAuthHeaders(companyId);
         const response = await fetch("/api/ai/client-payment-health-report", {
             method: "POST",
@@ -125,6 +129,7 @@ export async function generateDocumentFromPurpose(
 ): Promise<GeneratedDocument | null> {
     try {
         const companyId = localStorage.getItem('cravebiz_tenant') || '';
+        ensureAiCreditsOrThrow(companyId);
         const headers = await api.getAuthHeaders(companyId);
         const response = await fetch("/api/ai/generate-document-from-purpose", {
             method: "POST",
@@ -151,6 +156,7 @@ export async function reviewDocumentContent(
 ): Promise<DocumentReviewResult | null> {
     try {
         const companyId = localStorage.getItem('cravebiz_tenant') || '';
+        ensureAiCreditsOrThrow(companyId);
         const headers = await api.getAuthHeaders(companyId);
         const response = await fetch("/api/ai/review-document-content", {
             method: "POST",

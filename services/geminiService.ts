@@ -1,5 +1,5 @@
 import { api } from "../lib/api.ts";
-import { syncSubscriptionInfoFromDb } from "./subscriptionService.ts";
+import { syncSubscriptionInfoFromDb, ensureAiCreditsOrThrow } from "./subscriptionService.ts";
 
 function handleAiResponseUnits(companyId: string, data: any) {
     if (companyId && data && typeof data.newAiUnits === "number") {
@@ -11,6 +11,7 @@ function handleAiResponseUnits(companyId: string, data: any) {
 export async function generateInvoiceInsight(prompt: string, complex: boolean = false): Promise<string> {
     try {
         const companyId = localStorage.getItem('cravebiz_tenant') || '';
+        ensureAiCreditsOrThrow(companyId);
         const headers = await api.getAuthHeaders(companyId);
         const response = await fetch("/api/ai/invoice-insight", {
             method: "POST",

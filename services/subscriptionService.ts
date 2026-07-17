@@ -9,6 +9,8 @@ export interface SubscriptionInfo {
   maxReceipts: number;
   maxUsers: number;
   aiModeEnabled: boolean;
+  invoiceCount?: number;
+  receiptCount?: number;
 }
 
 // Map tiers to limits
@@ -131,12 +133,21 @@ export async function saveSubscriptionInfoToDb(companyId: string): Promise<void>
     console.warn("Could not read localstorage invited members:", e);
   }
 
+  const invoiceCount = parseInt(localStorage.getItem(`cravebiz_invoice_count_${companyId}`) || '0', 10);
+  const receiptCount = parseInt(localStorage.getItem(`cravebiz_receipt_count_${companyId}`) || '0', 10);
+  const lastFreeUnitsReset = localStorage.getItem(`cravebiz_last_free_units_reset_${companyId}`) || '';
+  const purchasedAiUnits = parseInt(localStorage.getItem(`cravebiz_purchased_units_${companyId}`) || '0', 10);
+
   const payload = {
     tier: sub.tier,
     aiUnits: sub.aiUnits,
     aiModeEnabled: sub.aiModeEnabled,
     memberPermissions,
-    invitedMembers
+    invitedMembers,
+    invoiceCount,
+    receiptCount,
+    lastFreeUnitsReset,
+    purchasedAiUnits
   };
 
   try {
@@ -169,12 +180,71 @@ export async function saveSubscriptionInfoToDb(companyId: string): Promise<void>
 }
 
 /**
+ * Ensures that free credits are reset monthly
+ */
+export function checkAndEnforceMonthlyCreditReset(companyId: string, currentContent?: any): void {
+  const now = new Date();
+  const currentMonthStr = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
+  
+  const lastResetKey = `cravebiz_last_free_units_reset_${companyId}`;
+  const lastReset = localStorage.getItem(lastResetKey) || (currentContent?.lastFreeUnitsReset) || '';
+  
+  if (lastReset !== currentMonthStr) {
+    // Current month is different! Reset free credits
+    // Read current tier
+    const savedTier = localStorage.getItem(`cravebiz_tier_${companyId}`) || (currentContent?.tier) || 'Free';
+    const limits = TIER_LIMITS[savedTier as SubscriptionTier] || TIER_LIMITS.Free;
+    
+    // Reset monthly free credits to the plan's allowance (5 for Free, 100 for Starter, etc.)
+    const standardCredits = limits.maxAiUnits;
+    
+    const purchasedKey = `cravebiz_purchased_units_${companyId}`;
+    const purchasedCredits = parseInt(localStorage.getItem(purchasedKey) || (currentContent?.purchasedAiUnits?.toString()) || '0', 10);
+    
+    const newTotalCredits = standardCredits + purchasedCredits;
+    
+    localStorage.setItem(`cravebiz_units_${companyId}`, newTotalCredits.toString());
+    localStorage.setItem(lastResetKey, currentMonthStr);
+    
+    console.log(`[Monthly Credit Reset] Reset standard credits for workspace ${companyId} to ${standardCredits}. Total units: ${newTotalCredits}`);
+    
+    // Save immediately in the background
+    saveSubscriptionInfoToDb(companyId).catch(err => console.warn("Failed to save reset settings:", err));
+  }
+}
+
+/**
  * Synchronizes subscription details from Supabase to local storage
  */
 export async function syncSubscriptionInfoFromDb(companyId: string): Promise<void> {
   if (!companyId) return;
   const docId = getSettingsDocId(companyId);
 
+  // 1. Retrieve the latest invoice and receipt counts directly from Supabase (making database the absolute single source of truth)
+  try {
+    const { count: dbInvoiceCount, error: invError } = await supabase
+      .from('invoices')
+      .select('*', { count: 'exact', head: true })
+      .eq('company_id', companyId);
+    
+    if (!invError && dbInvoiceCount !== null) {
+      localStorage.setItem(`cravebiz_invoice_count_${companyId}`, dbInvoiceCount.toString());
+    }
+
+    const { count: dbReceiptCount, error: recError } = await supabase
+      .from('invoices')
+      .select('*', { count: 'exact', head: true })
+      .eq('company_id', companyId)
+      .eq('is_receipt_sent', true);
+    
+    if (!recError && dbReceiptCount !== null) {
+      localStorage.setItem(`cravebiz_receipt_count_${companyId}`, dbReceiptCount.toString());
+    }
+  } catch (err) {
+    console.warn("Could not sync live counts from DB:", err);
+  }
+
+  // 2. Fetch workspace settings
   try {
     const headers = await api.getAuthHeaders(companyId);
     const response = await fetch('/api/subscription/settings', {
@@ -196,6 +266,12 @@ export async function syncSubscriptionInfoFromDb(companyId: string): Promise<voi
       if (content.aiModeEnabled !== undefined) {
         localStorage.setItem(`cravebiz_aimode_${companyId}`, content.aiModeEnabled.toString());
       }
+      if (content.lastFreeUnitsReset) {
+        localStorage.setItem(`cravebiz_last_free_units_reset_${companyId}`, content.lastFreeUnitsReset);
+      }
+      if (content.purchasedAiUnits !== undefined) {
+        localStorage.setItem(`cravebiz_purchased_units_${companyId}`, content.purchasedAiUnits.toString());
+      }
       if (content.memberPermissions) {
         Object.entries(content.memberPermissions).forEach(([email, allowed]) => {
           localStorage.setItem(`cravebiz_member_ai_allowed_${companyId}_${email}`, String(allowed));
@@ -206,6 +282,10 @@ export async function syncSubscriptionInfoFromDb(companyId: string): Promise<voi
           localStorage.setItem(`cravebiz_invited_member_info_${companyId}_${userId}`, JSON.stringify(info));
         });
       }
+
+      // Check and enforce monthly reset
+      checkAndEnforceMonthlyCreditReset(companyId, content);
+
       window.dispatchEvent(new Event('cravebiz_subscription_change'));
       return;
     }
@@ -237,6 +317,12 @@ export async function syncSubscriptionInfoFromDb(companyId: string): Promise<voi
       if (content.aiModeEnabled !== undefined) {
         localStorage.setItem(`cravebiz_aimode_${companyId}`, content.aiModeEnabled.toString());
       }
+      if (content.lastFreeUnitsReset) {
+        localStorage.setItem(`cravebiz_last_free_units_reset_${companyId}`, content.lastFreeUnitsReset);
+      }
+      if (content.purchasedAiUnits !== undefined) {
+        localStorage.setItem(`cravebiz_purchased_units_${companyId}`, content.purchasedAiUnits.toString());
+      }
       if (content.memberPermissions) {
         Object.entries(content.memberPermissions).forEach(([email, allowed]) => {
           localStorage.setItem(`cravebiz_member_ai_allowed_${companyId}_${email}`, String(allowed));
@@ -247,11 +333,45 @@ export async function syncSubscriptionInfoFromDb(companyId: string): Promise<voi
           localStorage.setItem(`cravebiz_invited_member_info_${companyId}_${userId}`, JSON.stringify(info));
         });
       }
+
+      // Check and enforce monthly reset
+      checkAndEnforceMonthlyCreditReset(companyId, content);
+
       window.dispatchEvent(new Event('cravebiz_subscription_change'));
     }
   } catch (err) {
     console.warn("Direct Supabase query exception:", err);
   }
+}
+
+/**
+ * Increments the invoice count on the DB and caches it
+ */
+export async function incrementInvoiceCount(companyId: string): Promise<void> {
+  if (!companyId) return;
+  const key = `cravebiz_invoice_count_${companyId}`;
+  const currentCount = parseInt(localStorage.getItem(key) || '0', 10);
+  const newCount = currentCount + 1;
+  localStorage.setItem(key, newCount.toString());
+  
+  // Save in workspace settings payload
+  await saveSubscriptionInfoToDb(companyId);
+  window.dispatchEvent(new Event('cravebiz_subscription_change'));
+}
+
+/**
+ * Increments the receipt count on the DB and caches it
+ */
+export async function incrementReceiptCount(companyId: string): Promise<void> {
+  if (!companyId) return;
+  const key = `cravebiz_receipt_count_${companyId}`;
+  const currentCount = parseInt(localStorage.getItem(key) || '0', 10);
+  const newCount = currentCount + 1;
+  localStorage.setItem(key, newCount.toString());
+  
+  // Save in workspace settings payload
+  await saveSubscriptionInfoToDb(companyId);
+  window.dispatchEvent(new Event('cravebiz_subscription_change'));
 }
 
 /**
@@ -409,7 +529,9 @@ export function getSubscriptionInfo(companyId: string): SubscriptionInfo {
       maxInvoices: limits.maxInvoices, 
       maxReceipts: limits.maxReceipts,
       maxUsers: limits.maxUsers,
-      aiModeEnabled: false 
+      aiModeEnabled: false,
+      invoiceCount: 0,
+      receiptCount: 0
     };
   }
 
@@ -429,13 +551,18 @@ export function getSubscriptionInfo(companyId: string): SubscriptionInfo {
   const defaultAiMode = 'false';
   const aiModeEnabled = (limits.aiAvailable || aiUnits > 0) && (savedAiMode !== null ? savedAiMode === 'true' : false);
 
+  const invoiceCount = parseInt(localStorage.getItem(`cravebiz_invoice_count_${companyId}`) || '0', 10);
+  const receiptCount = parseInt(localStorage.getItem(`cravebiz_receipt_count_${companyId}`) || '0', 10);
+
   return {
     tier,
     aiUnits: aiUnits < 0 ? 0 : aiUnits,
     maxInvoices: limits.maxInvoices,
     maxReceipts: limits.maxReceipts,
     maxUsers: limits.maxUsers,
-    aiModeEnabled
+    aiModeEnabled,
+    invoiceCount,
+    receiptCount
   };
 }
 
@@ -895,6 +1022,41 @@ export async function syncGlobalRefillPacks(): Promise<void> {
     } catch (dbErr) {
       console.warn("Direct Supabase refill sync fallback error:", dbErr);
     }
+  }
+}
+
+/**
+ * Validates user's AI credits and permissions before an AI request is initiated on the client.
+ */
+export function ensureAiCreditsOrThrow(companyId: string): void {
+  if (!companyId) return;
+  const sub = getSubscriptionInfo(companyId);
+
+  // Check custom member AI permission
+  const currentUserEmail = localStorage.getItem('cravebiz_current_user_email');
+  if (currentUserEmail) {
+    const aiAllowedStr = localStorage.getItem(`cravebiz_member_ai_allowed_${companyId}_${currentUserEmail.toLowerCase()}`);
+    if (aiAllowedStr === 'false') {
+      const msg = "Your user account is not authorized to use this workspace's AI tokens. Please contact the workspace owner to enable AI permissions for your account.";
+      window.dispatchEvent(new CustomEvent('cravebiz_subscription_error', { detail: { message: msg } }));
+      throw new Error(msg);
+    }
+  }
+
+  // Check if AI mode is turned ON
+  if (!sub.aiModeEnabled) {
+    const msg = "AI Mode is currently turned OFF. Please turn ON AI Mode in the top header or Workspace Settings to use AI features.";
+    window.dispatchEvent(new CustomEvent('cravebiz_subscription_error', { detail: { message: msg } }));
+    throw new Error(msg);
+  }
+
+  // Check credits
+  if (sub.aiUnits <= 0) {
+    const msg = sub.tier === 'Free'
+      ? "You have used all your free monthly AI credits. Please upgrade your plan or purchase additional credits to continue."
+      : `Your subscription AI units are depleted. Please upgrade your plan or purchase additional credits to continue.`;
+    window.dispatchEvent(new CustomEvent('cravebiz_subscription_error', { detail: { message: msg } }));
+    throw new Error(msg);
   }
 }
 

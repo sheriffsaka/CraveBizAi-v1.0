@@ -81,6 +81,61 @@ class CraveBizApi {
         } catch (storageErr) {
           console.warn("Storage access failed during link check:", storageErr);
         }
+
+        // Cross-device server-authoritative invitation check and auto-join
+        try {
+          const { data: workspaces, error: wsError } = await supabase
+            .from('generated_documents')
+            .select('*')
+            .eq('document_type', 'cravebiz_workspace_settings');
+
+          if (!wsError && workspaces) {
+            for (const ws of workspaces) {
+              const content = ws.content as any;
+              if (content && content.invitedMembers) {
+                const matchingInviteEntry = Object.entries(content.invitedMembers).find(
+                  ([_, member]: [string, any]) => member.email?.toLowerCase() === cleanEmail
+                );
+
+                if (matchingInviteEntry) {
+                  const [tempId, inviteInfo]: [string, any] = matchingInviteEntry;
+                  const companyId = ws.company_id || ws.id;
+
+                  console.log(`[Cloud Invitation Link] Found pending invitation for ${cleanEmail} in workspace ${companyId}`);
+
+                  // 1. Insert or update into company_members
+                  const { error: joinErr } = await supabase
+                    .from('company_members')
+                    .upsert({
+                      company_id: companyId,
+                      user_id: userId,
+                      role: (inviteInfo.role || 'member').toLowerCase(),
+                      status: 'Joined'
+                    }, { onConflict: 'company_id,user_id' });
+
+                  if (joinErr) {
+                    console.warn("Failed to join company from cloud invitation:", joinErr);
+                  }
+
+                  // 2. Mark as Joined in workspace settings
+                  inviteInfo.status = 'Joined';
+                  content.invitedMembers[tempId] = inviteInfo;
+
+                  await supabase
+                    .from('generated_documents')
+                    .update({ content })
+                    .eq('id', ws.id);
+
+                  // 3. Store locally in local storage
+                  localStorage.setItem(`cravebiz_invited_member_info_${companyId}_${userId}`, JSON.stringify(inviteInfo));
+                  localStorage.setItem(`cravebiz_member_ai_allowed_${companyId}_${cleanEmail}`, 'true');
+                }
+              }
+            }
+          }
+        } catch (inviteLinkErr) {
+          console.warn("Cloud invitation checking failed, continuing anyway:", inviteLinkErr);
+        }
       }
 
       // Try to insert a brand new profile first (avoids RLS ON CONFLICT SELECT policy requirements of upsert)
