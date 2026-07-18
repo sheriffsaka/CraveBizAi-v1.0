@@ -370,9 +370,42 @@ class CraveBizApi {
     if (error) throw error;
   }
 
+  async syncWorkspaceCounts(companyId: string): Promise<void> {
+    try {
+      const cleanCompId = cleanCompanyId(companyId);
+      if (!cleanCompId) return;
+      const { data } = await supabase.from('invoices').select('is_receipt_sent').eq('company_id', cleanCompId);
+      if (data) {
+        const invoiceCount = data.length;
+        const receiptCount = data.filter((i: any) => i.is_receipt_sent).length;
+        
+        localStorage.setItem(`cravebiz_invoice_count_${cleanCompId}`, invoiceCount.toString());
+        localStorage.setItem(`cravebiz_receipt_count_${cleanCompId}`, receiptCount.toString());
+        
+        const { saveSubscriptionInfoToDb } = await import("../services/subscriptionService");
+        await saveSubscriptionInfoToDb(cleanCompId);
+        window.dispatchEvent(new Event('cravebiz_subscription_change'));
+      }
+    } catch (e) {
+      console.warn("syncWorkspaceCounts failed:", e);
+    }
+  }
+
   async fetchInvoices(companyId: string): Promise<Invoice[]> {
     const { data, error } = await supabase.from('invoices').select('*, invoice_items(*)').eq('company_id', cleanCompanyId(companyId)).order('created_at', { ascending: false });
     if (error) throw error;
+
+    if (data) {
+      const cleanCompId = cleanCompanyId(companyId);
+      const invoiceCount = data.length;
+      const receiptCount = data.filter((i: any) => i.is_receipt_sent).length;
+      localStorage.setItem(`cravebiz_invoice_count_${cleanCompId}`, invoiceCount.toString());
+      localStorage.setItem(`cravebiz_receipt_count_${cleanCompId}`, receiptCount.toString());
+      
+      import("../services/subscriptionService").then(({ saveSubscriptionInfoToDb }) => {
+        saveSubscriptionInfoToDb(cleanCompId).catch(err => console.warn("Background count sync failed:", err));
+      }).catch(err => console.warn("Deferred import failed:", err));
+    }
     
     return (data || []).map(inv => ({
       id: inv.id, companyId: inv.company_id, invoiceNumber: inv.invoice_number, clientId: inv.client_id, 
@@ -474,6 +507,8 @@ class CraveBizApi {
         await performItemsInsert(itemsToInsert);
     }
 
+    this.syncWorkspaceCounts(companyId).catch(err => console.warn("Deferred count sync failed:", err));
+
     return { ...invoice, id: invId, invoiceNumber: invNum, companyId };
   }
 
@@ -551,6 +586,8 @@ class CraveBizApi {
         
         await performItemsInsert(itemsToInsert);
     }
+
+    this.syncWorkspaceCounts(invoice.companyId || localStorage.getItem('cravebiz_tenant') || '').catch(err => console.warn("Deferred count sync failed:", err));
   }
 
   async updateInvoiceStatus(id: string, status: InvoiceStatus): Promise<void> {
@@ -564,6 +601,11 @@ class CraveBizApi {
     
     const { error } = await supabase.from('invoices').delete().eq('id', id);
     if (error) throw error;
+
+    const companyId = localStorage.getItem('cravebiz_tenant') || '';
+    if (companyId) {
+      this.syncWorkspaceCounts(companyId).catch(err => console.warn("Deferred count sync failed:", err));
+    }
   }
 
   async fetchClients(companyId: string): Promise<Client[]> {

@@ -3,7 +3,7 @@ import React, { useState, useEffect } from 'react';
 import Modal from './Modal';
 import { Company, User } from '../types';
 import ImageCropperModal from './ImageCropperModal';
-import { getSubscriptionInfo, setSubscriptionInfo, SubscriptionTier, saveSubscriptionInfoToDb } from '../services/subscriptionService';
+import { getSubscriptionInfo, setSubscriptionInfo, SubscriptionTier, saveSubscriptionInfoToDb, TIER_LIMITS } from '../services/subscriptionService';
 
 interface CompanyDetailModalProps {
   isOpen: boolean;
@@ -184,10 +184,9 @@ const CompanyDetailModal: React.FC<CompanyDetailModalProps> = ({
                   onChange={(e) => setSubTier(e.target.value as SubscriptionTier)}
                   className="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-primary-500 focus:border-primary-500 bg-white text-gray-900"
                 >
-                  <option value="Free">Free Plan</option>
-                  <option value="Starter">Starter Plan</option>
-                  <option value="Growth">Growth Plan</option>
-                  <option value="Enterprise">Enterprise Plan</option>
+                  {(Object.keys(TIER_LIMITS) as SubscriptionTier[]).filter(t => !TIER_LIMITS[t].inactive).map((t) => (
+                    <option key={t} value={t}>{t} Plan</option>
+                  ))}
                 </select>
               </div>
               <div>

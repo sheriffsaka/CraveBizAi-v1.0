@@ -882,8 +882,15 @@ export function safeFlutterwaveCheckout(config: any): void {
   const failBtn = card.querySelector('#sim-btn-fail');
   const closeBtn = card.querySelector('#sim-btn-close');
 
+  const removeOverlay = () => {
+    const el = document.getElementById('flutterwave-simulator-overlay');
+    if (el && el.parentNode) {
+      el.parentNode.removeChild(el);
+    }
+  };
+
   successBtn?.addEventListener('click', () => {
-    document.body.removeChild(overlay);
+    removeOverlay();
     config.callback({
       status: 'successful',
       transaction_id: 'sim-tx-' + Date.now(),
@@ -892,7 +899,7 @@ export function safeFlutterwaveCheckout(config: any): void {
   });
 
   failBtn?.addEventListener('click', () => {
-    document.body.removeChild(overlay);
+    removeOverlay();
     config.callback({
       status: 'failed',
       tx_ref: config.tx_ref
@@ -900,7 +907,7 @@ export function safeFlutterwaveCheckout(config: any): void {
   });
 
   closeBtn?.addEventListener('click', () => {
-    document.body.removeChild(overlay);
+    removeOverlay();
     if (typeof config.onclose === 'function') {
       config.onclose();
     }

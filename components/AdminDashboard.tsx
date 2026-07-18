@@ -677,54 +677,28 @@ Admin Query: ${activePrompt}
                         </td>
                         <td className="py-4 px-4">
                           <div className="flex items-center gap-1.5 flex-wrap max-w-xs">
-                            <button
-                              type="button"
-                              onClick={() => changePlan(item.companyId, 'Free')}
-                              disabled={item.tier === 'Free'}
-                              className={`px-2 py-1 rounded text-[9px] font-black uppercase tracking-wider transition-colors ${
-                                item.tier === 'Free' 
-                                  ? 'bg-gray-100 text-gray-400 border border-gray-150 cursor-not-allowed' 
-                                  : 'bg-white text-gray-600 hover:bg-gray-100 border border-gray-200'
-                              }`}
-                            >
-                              Free
-                            </button>
-                            <button
-                              type="button"
-                              onClick={() => changePlan(item.companyId, 'Starter')}
-                              disabled={item.tier === 'Starter'}
-                              className={`px-2 py-1 rounded text-[9px] font-black uppercase tracking-wider transition-colors ${
-                                item.tier === 'Starter' 
-                                  ? 'bg-blue-100 text-blue-800 border border-blue-200 cursor-not-allowed' 
-                                  : 'bg-white text-blue-600 hover:bg-blue-50 border border-blue-200'
-                              }`}
-                            >
-                              Starter
-                            </button>
-                            <button
-                              type="button"
-                              onClick={() => changePlan(item.companyId, 'Growth')}
-                              disabled={item.tier === 'Growth'}
-                              className={`px-2 py-1 rounded text-[9px] font-black uppercase tracking-wider transition-colors ${
-                                item.tier === 'Growth' 
-                                  ? 'bg-purple-100 text-purple-800 border border-purple-200 cursor-not-allowed' 
-                                  : 'bg-white text-purple-600 hover:bg-purple-50 border border-purple-200'
-                              }`}
-                            >
-                              Growth
-                            </button>
-                            <button
-                              type="button"
-                              onClick={() => changePlan(item.companyId, 'Enterprise')}
-                              disabled={item.tier === 'Enterprise'}
-                              className={`px-2 py-1 rounded text-[9px] font-black uppercase tracking-wider transition-colors ${
-                                item.tier === 'Enterprise' 
-                                  ? 'bg-amber-100 text-amber-800 border border-amber-200 cursor-not-allowed' 
-                                  : 'bg-white text-amber-600 hover:bg-amber-50 border border-amber-200'
-                              }`}
-                            >
-                              Enterprise
-                            </button>
+                            {(Object.keys(TIER_LIMITS) as SubscriptionTier[]).filter(tier => !TIER_LIMITS[tier].inactive).map((tier) => {
+                              const isActive = item.tier === tier;
+                              const btnColorClass = tier === 'Free'
+                                ? (isActive ? 'bg-gray-100 text-gray-400 border border-gray-150' : 'bg-white text-gray-600 hover:bg-gray-100 border border-gray-200')
+                                : tier === 'Starter'
+                                ? (isActive ? 'bg-blue-100 text-blue-800 border border-blue-200' : 'bg-white text-blue-600 hover:bg-blue-50 border border-blue-200')
+                                : tier === 'Growth'
+                                ? (isActive ? 'bg-purple-100 text-purple-800 border border-purple-200' : 'bg-white text-purple-600 hover:bg-purple-50 border border-purple-200')
+                                : (isActive ? 'bg-amber-100 text-amber-800 border border-amber-200' : 'bg-white text-amber-600 hover:bg-amber-50 border border-amber-200');
+
+                              return (
+                                <button
+                                  key={tier}
+                                  type="button"
+                                  onClick={() => changePlan(item.companyId, tier)}
+                                  disabled={isActive}
+                                  className={`px-2 py-1 rounded text-[9px] font-black uppercase tracking-wider transition-colors disabled:cursor-not-allowed ${btnColorClass}`}
+                                >
+                                  {tier}
+                                </button>
+                              );
+                            })}
                           </div>
                         </td>
                         <td className="py-4 px-4 text-right">

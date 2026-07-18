@@ -192,16 +192,8 @@ const Settings: React.FC<SettingsProps> = ({ company, onSaveChanges, onInviteUse
       return;
     }
 
-    let checkoutAmount = 0;
-    if (billingCycle === 'annual') {
-      if (tier === 'Starter') checkoutAmount = 45000;
-      else if (tier === 'Growth') checkoutAmount = 95000;
-      else if (tier === 'Enterprise') checkoutAmount = 495000;
-    } else {
-      if (tier === 'Starter') checkoutAmount = 4500;
-      else if (tier === 'Growth') checkoutAmount = 9500;
-      else if (tier === 'Enterprise') checkoutAmount = 49500;
-    }
+    const plan = TIER_LIMITS[tier];
+    const checkoutAmount = billingCycle === 'annual' ? (plan?.annualPriceVal ?? 0) : (plan?.monthlyPriceVal ?? 0);
 
     const flutterwaveKey = getFlutterwavePublicKey();
     let isSuccess = false;
@@ -757,94 +749,53 @@ const Settings: React.FC<SettingsProps> = ({ company, onSaveChanges, onInviteUse
         </div>
 
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 mb-8">
-          {/* Free Plan */}
-          <div className={`p-4 rounded-3xl border transition-all flex flex-col justify-between h-[16rem] ${subInfo.tier === 'Free' ? 'border-primary-600 bg-primary-50/10 ring-2 ring-primary-500/10' : 'border-gray-100 bg-gray-50/50'}`}>
-            <div>
-              <div className="flex justify-between items-start">
-                <span className="font-bold text-xs text-gray-950 uppercase tracking-wider">Free Plan</span>
-                {subInfo.tier === 'Free' && <span className="text-[9px] bg-primary-600 text-white px-2 py-0.5 rounded-full font-bold">Active</span>}
+          {(Object.keys(TIER_LIMITS) as SubscriptionTier[]).filter(tier => !TIER_LIMITS[tier].inactive).map((tier) => {
+            const plan = TIER_LIMITS[tier];
+            const isActive = subInfo.tier === tier;
+            const priceVal = billingCycle === 'annual' ? plan.annualPriceVal : plan.monthlyPriceVal;
+            const formattedPrice = `₦${priceVal.toLocaleString()}`;
+            
+            return (
+              <div 
+                key={tier} 
+                className={`p-4 rounded-3xl border transition-all flex flex-col justify-between h-[16rem] ${isActive ? 'border-primary-600 bg-primary-50/10 ring-2 ring-primary-500/10' : 'border-gray-100 bg-gray-50/50'}`}
+              >
+                <div>
+                  <div className="flex justify-between items-start">
+                    <span className="font-bold text-xs text-gray-950 uppercase tracking-wider">{tier} Plan</span>
+                    {isActive && <span className="text-[9px] bg-primary-600 text-white px-2 py-0.5 rounded-full font-bold">Active</span>}
+                  </div>
+                  <p className="text-[10px] text-gray-500 mt-2 leading-tight">
+                    {plan.description || `The CraveBiZ ${tier} Plan for optimizing your workflow and financial automation.`}
+                  </p>
+                </div>
+                <div className="mt-2 flex flex-col gap-1.5">
+                  <span className="text-[13px] font-black text-gray-900">
+                    {formattedPrice}{' '}
+                    <span className="text-[9px] text-gray-400 font-normal">/ {billingCycle === 'annual' ? 'year' : 'month'}</span>
+                  </span>
+                  <span className="text-[10px] font-bold text-gray-700">
+                    {plan.maxUsers === 999999 ? 'Unlimited Users' : `${plan.maxUsers} ${plan.maxUsers === 1 ? 'User' : 'Users'} max`}
+                  </span>
+                  <span className="text-[10px] font-bold text-gray-700">
+                    {plan.maxInvoices === 999999 ? 'Unlimited Invoices & Receipts' : `${plan.maxInvoices} Invoices / ${plan.maxReceipts} Receipts`}
+                  </span>
+                  <span className="text-[9px] font-bold text-primary-700 bg-primary-50 px-1.5 py-0.5 rounded self-start">
+                    {plan.maxAiUnits.toLocaleString()} AI Credits included
+                  </span>
+                  {!isActive && !isReadOnly && (
+                    <button 
+                      type="button" 
+                      onClick={() => handleUpdateTier(tier)} 
+                      className="mt-1 text-xs font-bold text-primary-600 hover:text-primary-700 text-left"
+                    >
+                      {getPlanActionLabel(tier, subInfo.tier)}
+                    </button>
+                  )}
+                </div>
               </div>
-              <p className="text-[10px] text-gray-500 mt-2 leading-tight">Instead of disabling AI completely, get {TIER_LIMITS.Free.maxAiUnits} free AI Credits every month to experience all automation features.</p>
-            </div>
-            <div className="mt-2 flex flex-col gap-1.5">
-              <span className="text-[13px] font-black text-gray-900">₦0 <span className="text-[9px] text-gray-400 font-normal">/ month</span></span>
-              <span className="text-[10px] font-bold text-gray-700">1 User max</span>
-              <span className="text-[10px] font-bold text-gray-700">{TIER_LIMITS.Free.maxInvoices} Invoices / {TIER_LIMITS.Free.maxReceipts} Receipts</span>
-              <span className="text-[9px] font-bold text-primary-700 bg-primary-50 px-1.5 py-0.5 rounded self-start">{TIER_LIMITS.Free.maxAiUnits} AI Credits included</span>
-              {subInfo.tier !== 'Free' && !isReadOnly && (
-                <button type="button" onClick={() => handleUpdateTier('Free')} className="mt-1 text-xs font-bold text-primary-600 hover:text-primary-700 text-left">{getPlanActionLabel('Free', subInfo.tier)}</button>
-              )}
-            </div>
-          </div>
-
-          {/* Starter Plan */}
-          <div className={`p-4 rounded-3xl border transition-all flex flex-col justify-between h-[16rem] ${subInfo.tier === 'Starter' ? 'border-primary-600 bg-primary-50/10 ring-2 ring-primary-500/10' : 'border-gray-100 bg-gray-50/50'}`}>
-            <div>
-              <div className="flex justify-between items-start">
-                <span className="font-bold text-xs text-gray-950 uppercase tracking-wider">Starter Plan</span>
-                {subInfo.tier === 'Starter' && <span className="text-[9px] bg-primary-600 text-white px-2 py-0.5 rounded-full font-bold">Active</span>}
-              </div>
-              <p className="text-[10px] text-gray-500 mt-2 leading-tight">Highly accessible, perfect for small shops, freelancers, POS operators, tailors, salons, and local restaurants.</p>
-            </div>
-            <div className="mt-2 flex flex-col gap-1.5">
-              <span className="text-[13px] font-black text-gray-900">
-                {billingCycle === 'annual' ? '₦45,000' : '₦4,500'}{' '}
-                <span className="text-[9px] text-gray-400 font-normal">/ {billingCycle === 'annual' ? 'year' : 'month'}</span>
-              </span>
-              <span className="text-[10px] font-bold text-gray-700">2 Users max</span>
-              <span className="text-[10px] font-bold text-gray-700">100 Invoices / 100 Receipts</span>
-              <span className="text-[9px] font-bold text-primary-700 bg-primary-50 px-1.5 py-0.5 rounded self-start">100 AI Credits included</span>
-              {subInfo.tier !== 'Starter' && !isReadOnly && (
-                <button type="button" onClick={() => handleUpdateTier('Starter')} className="mt-1 text-xs font-bold text-primary-600 hover:text-primary-700 text-left">{getPlanActionLabel('Starter', subInfo.tier)}</button>
-              )}
-            </div>
-          </div>
-
-          {/* Growth Plan */}
-          <div className={`p-4 rounded-3xl border transition-all flex flex-col justify-between h-[16rem] ${subInfo.tier === 'Growth' ? 'border-primary-600 bg-primary-50/10 ring-2 ring-primary-500/10' : 'border-gray-100 bg-gray-50/50'}`}>
-            <div>
-              <div className="flex justify-between items-start">
-                <span className="font-bold text-xs text-gray-950 uppercase tracking-wider">Growth Plan</span>
-                {subInfo.tier === 'Growth' && <span className="text-[9px] bg-primary-600 text-white px-2 py-0.5 rounded-full font-bold">Active</span>}
-              </div>
-              <p className="text-[10px] text-gray-500 mt-2 leading-tight">Our flagship plan. Best for SMEs looking to optimize operations, automate workflow, and leverage CRM features.</p>
-            </div>
-            <div className="mt-2 flex flex-col gap-1.5">
-              <span className="text-[13px] font-black text-gray-900">
-                {billingCycle === 'annual' ? '₦95,000' : '₦9,500'}{' '}
-                <span className="text-[9px] text-gray-400 font-normal">/ {billingCycle === 'annual' ? 'year' : 'month'}</span>
-              </span>
-              <span className="text-[10px] font-bold text-gray-700">5 Users max</span>
-              <span className="text-[10px] font-bold text-gray-700">Unlimited Invoices & Receipts</span>
-              <span className="text-[9px] font-bold text-purple-700 bg-purple-50 px-1.5 py-0.5 rounded self-start">300 AI Credits included</span>
-              {subInfo.tier !== 'Growth' && !isReadOnly && (
-                <button type="button" onClick={() => handleUpdateTier('Growth')} className="mt-1 text-xs font-bold text-primary-600 hover:text-primary-700 text-left">{getPlanActionLabel('Growth', subInfo.tier)}</button>
-              )}
-            </div>
-          </div>
-
-          {/* Enterprise Plan */}
-          <div className={`p-4 rounded-3xl border transition-all flex flex-col justify-between h-[16rem] ${subInfo.tier === 'Enterprise' ? 'border-primary-600 bg-primary-50/10 ring-2 ring-primary-500/10' : 'border-gray-100 bg-gray-50/50'}`}>
-            <div>
-              <div className="flex justify-between items-start">
-                <span className="font-bold text-xs text-gray-950 uppercase tracking-wider">Enterprise Plan</span>
-                {subInfo.tier === 'Enterprise' && <span className="text-[9px] bg-primary-600 text-white px-2 py-0.5 rounded-full font-bold">Active</span>}
-              </div>
-              <p className="text-[10px] text-gray-500 mt-2 leading-tight">Ideal for schools, hospitals, wholesalers, manufacturing firms, and larger organizations needing custom scale.</p>
-            </div>
-            <div className="mt-2 flex flex-col gap-1.5">
-              <span className="text-[13px] font-black text-gray-900">
-                {billingCycle === 'annual' ? '₦495,000' : '₦49,500'}{' '}
-                <span className="text-[9px] text-gray-400 font-normal">/ {billingCycle === 'annual' ? 'year' : 'month'}</span>
-              </span>
-              <span className="text-[10px] font-bold text-gray-700">Unlimited Users</span>
-              <span className="text-[10px] font-bold text-gray-700">Unlimited Invoices & Receipts</span>
-              <span className="text-[9px] font-bold text-amber-700 bg-amber-50 px-1.5 py-0.5 rounded self-start">2,500 AI Credits included</span>
-              {subInfo.tier !== 'Enterprise' && !isReadOnly && (
-                <button type="button" onClick={() => handleUpdateTier('Enterprise')} className="mt-1 text-xs font-bold text-primary-600 hover:text-primary-700 text-left">{getPlanActionLabel('Enterprise', subInfo.tier)}</button>
-              )}
-            </div>
-          </div>
+            );
+          })}
         </div>
 
         <div className="bg-gray-50 p-6 rounded-2xl border border-gray-100 space-y-4">

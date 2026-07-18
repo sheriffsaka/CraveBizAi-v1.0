@@ -2,8 +2,9 @@
 import React, { useState } from 'react';
 import Icon from './common/Icon';
 import { User } from '../types';
+import { TIER_LIMITS, SubscriptionTier, syncGlobalPlanSettings } from '../services/subscriptionService';
 
-export type AuthPageSubscriptionTier = 'Free' | 'Starter' | 'Growth' | 'Enterprise';
+export type AuthPageSubscriptionTier = SubscriptionTier;
 
 interface AuthPageProps {
   onLogin: (email: string, pass: string, rememberMe: boolean) => Promise<string | true> | string | true;
@@ -269,65 +270,37 @@ const AuthPage: React.FC<AuthPageProps> = ({ onLogin, onSignup, onOpenForgotPass
                         <div>
                             <label className="block text-xs font-bold text-gray-500 uppercase tracking-wider mb-2">Subscription Plan</label>
                             <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
-                                <button
-                                    type="button"
-                                    onClick={() => setSignupTier('Free')}
-                                    className={`p-2 rounded-xl border text-left transition-all flex flex-col justify-between h-28 outline-none ${signupTier === 'Free' ? 'border-primary-600 bg-primary-50/40 ring-2 ring-primary-500/20' : 'border-gray-200 bg-gray-50 hover:bg-gray-100'}`}
-                                >
-                                    <div>
-                                        <p className="font-bold text-xs text-gray-900">Free</p>
-                                        <p className="text-[9px] text-gray-500 leading-tight mt-1">10 Invoices & Receipts/mo</p>
-                                    </div>
-                                    <div className="flex flex-col gap-1">
-                                        <p className="text-[8px] text-primary-700 font-bold bg-primary-50 px-1 py-0.5 rounded self-start">5 AI Credits</p>
-                                        <p className="text-[9px] font-bold text-gray-700">₦0.00</p>
-                                    </div>
-                                </button>
-
-                                <button
-                                    type="button"
-                                    onClick={() => setSignupTier('Starter')}
-                                    className={`p-2 rounded-xl border text-left transition-all flex flex-col justify-between h-28 outline-none ${signupTier === 'Starter' ? 'border-primary-600 bg-primary-50/40 ring-2 ring-primary-500/20' : 'border-gray-200 bg-gray-50 hover:bg-gray-100'}`}
-                                >
-                                    <div>
-                                        <p className="font-bold text-xs text-gray-900">Starter</p>
-                                        <p className="text-[9px] text-gray-500 leading-tight mt-1">100 Invoices & Receipts/mo</p>
-                                    </div>
-                                    <div className="flex flex-col gap-1">
-                                        <p className="text-[8px] text-primary-700 font-bold bg-primary-50 px-1 py-0.5 rounded self-start">100 AI Credits</p>
-                                        <p className="text-[9px] font-bold text-primary-700">₦4,500/mo</p>
-                                    </div>
-                                </button>
-
-                                <button
-                                    type="button"
-                                    onClick={() => setSignupTier('Growth')}
-                                    className={`p-2 rounded-xl border text-left transition-all flex flex-col justify-between h-28 outline-none ${signupTier === 'Growth' ? 'border-primary-600 bg-primary-50/40 ring-2 ring-primary-500/20' : 'border-gray-200 bg-gray-50 hover:bg-gray-100'}`}
-                                >
-                                    <div>
-                                        <p className="font-bold text-xs text-gray-900">Growth</p>
-                                        <p className="text-[9px] text-gray-500 leading-tight mt-1">Unlimited Invoices</p>
-                                    </div>
-                                    <div className="flex flex-col gap-1">
-                                        <p className="text-[8px] text-emerald-700 font-bold bg-emerald-50 px-1 py-0.5 rounded self-start">300 AI Credits</p>
-                                        <p className="text-[9px] font-bold text-emerald-700">₦9,500/mo</p>
-                                    </div>
-                                </button>
-
-                                <button
-                                    type="button"
-                                    onClick={() => setSignupTier('Enterprise')}
-                                    className={`p-2 rounded-xl border text-left transition-all flex flex-col justify-between h-28 outline-none ${signupTier === 'Enterprise' ? 'border-primary-600 bg-primary-50/40 ring-2 ring-primary-500/20' : 'border-gray-200 bg-gray-50 hover:bg-gray-100'}`}
-                                >
-                                    <div>
-                                        <p className="font-bold text-xs text-gray-900">Enterprise</p>
-                                        <p className="text-[9px] text-gray-500 leading-tight mt-1">Unlimited Invoices</p>
-                                    </div>
-                                    <div className="flex flex-col gap-1">
-                                        <p className="text-[8px] text-amber-700 font-bold bg-amber-50 px-1 py-0.5 rounded self-start">2500 AI Credits</p>
-                                        <p className="text-[9px] font-bold text-amber-700">₦49,500/mo</p>
-                                    </div>
-                                </button>
+                                {(Object.keys(TIER_LIMITS) as SubscriptionTier[]).filter(t => !TIER_LIMITS[t].inactive).map((t) => {
+                                    const plan = TIER_LIMITS[t];
+                                    const isSelected = signupTier === t;
+                                    const textColors = t === 'Enterprise' ? 'text-amber-700' : t === 'Growth' ? 'text-emerald-700' : 'text-primary-700';
+                                    const bgColors = t === 'Enterprise' ? 'bg-amber-50' : t === 'Growth' ? 'bg-emerald-50' : 'bg-primary-50';
+                                    const borderColors = isSelected ? 'border-primary-600 bg-primary-50/40 ring-2 ring-primary-500/20' : 'border-gray-200 bg-gray-50 hover:bg-gray-100';
+                                    
+                                    return (
+                                        <button
+                                            key={t}
+                                            type="button"
+                                            onClick={() => setSignupTier(t)}
+                                            className={`p-2 rounded-xl border text-left transition-all flex flex-col justify-between h-28 outline-none ${borderColors}`}
+                                        >
+                                            <div>
+                                                <p className="font-bold text-xs text-gray-900">{t}</p>
+                                                <p className="text-[9px] text-gray-500 leading-tight mt-1">
+                                                    {plan.maxInvoices === 999999 ? 'Unlimited Invoices' : `${plan.maxInvoices} Invoices & Receipts/mo`}
+                                                </p>
+                                            </div>
+                                            <div className="flex flex-col gap-1">
+                                                <p className={`text-[8px] font-bold px-1 py-0.5 rounded self-start ${textColors} ${bgColors}`}>
+                                                    {plan.maxAiUnits} AI Credits
+                                                </p>
+                                                <p className={`text-[9px] font-bold ${textColors}`}>
+                                                    ₦{plan.monthlyPriceVal.toLocaleString()}/mo
+                                                </p>
+                                            </div>
+                                        </button>
+                                    );
+                                })}
                             </div>
                         </div>
                          <div>
