@@ -20,6 +20,9 @@ export interface User {
   status: 'Pending' | 'Active' | 'Declined';
   avatarUrl?: string;
   user_metadata?: any;
+  invoicesCreated?: number;
+  receiptsCreated?: number;
+  remainingAiCredits?: number;
 }
 
 export interface BankAccount {

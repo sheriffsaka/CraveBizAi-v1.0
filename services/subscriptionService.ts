@@ -94,6 +94,37 @@ export const getSettingsDocId = (companyId: string): string => {
   return baseId;
 };
 
+export async function syncActiveUserUsageToDb(companyId: string): Promise<void> {
+  try {
+    const userId = localStorage.getItem('cravebiz_user_id') || '';
+    if (!userId) return;
+    
+    const invoiceCount = parseInt(localStorage.getItem(`cravebiz_invoice_count_${companyId}`) || '0', 10);
+    const receiptCount = parseInt(localStorage.getItem(`cravebiz_receipt_count_${companyId}`) || '0', 10);
+    const sub = getSubscriptionInfo(companyId);
+    
+    const payload = {
+      invoicesCreated: invoiceCount,
+      receiptsCreated: receiptCount,
+      remainingAiCredits: sub.aiUnits
+    };
+    
+    // Save to user usage record in generated_documents
+    const { error } = await supabase.from('generated_documents').upsert({
+      id: userId,
+      company_id: companyId === 'cravebiz-inc' ? null : companyId,
+      document_type: 'cravebiz_user_usage',
+      content: payload
+    });
+    
+    if (error) {
+      console.warn("Direct Supabase save user usage failed:", error);
+    }
+  } catch (err) {
+    console.warn("syncActiveUserUsageToDb failed:", err);
+  }
+}
+
 /**
  * Saves subscription details to database for easy cloud retrieval
  */
@@ -177,6 +208,9 @@ export async function saveSubscriptionInfoToDb(companyId: string): Promise<void>
       console.warn("Direct Supabase exception:", fallbackErr);
     }
   }
+
+  // Sync user-level usage record immediately
+  syncActiveUserUsageToDb(companyId).catch(err => console.warn("User usage sync exception:", err));
 }
 
 /**

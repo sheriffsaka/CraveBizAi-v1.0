@@ -22,6 +22,10 @@ const AuthPage: React.FC<AuthPageProps> = ({ onLogin, onSignup, onOpenForgotPass
   const [success, setSuccess] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(false);
 
+  React.useEffect(() => {
+    syncGlobalPlanSettings().catch(err => console.warn("Failed to sync global plan settings in AuthPage:", err));
+  }, []);
+
   const [loginEmail, setLoginEmail] = useState('');
   const [loginPassword, setLoginPassword] = useState('');
   const [rememberMe, setRememberMe] = useState(false);

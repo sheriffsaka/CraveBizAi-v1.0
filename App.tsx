@@ -259,6 +259,7 @@ export default function App() {
                 profile.isAdmin = true;
             }
             setCurrentUser(profile);
+            localStorage.setItem('cravebiz_user_id', user.id);
             
             if (profile.isAdmin || profile.email?.toLowerCase() === 'cravebiz@cloudcraves.com' || profile.email?.toLowerCase() === 'super@admin.com') {
                 localStorage.setItem('cravebiz_is_super_admin', 'true');

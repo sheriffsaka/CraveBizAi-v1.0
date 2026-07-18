@@ -2238,6 +2238,7 @@ app.get("/api/admin/global-pricing-settings", verifyTenant, async (req: any, res
     try {
         console.log("[Global Pricing] Fetching global pricing from Supabase...");
         let supabaseError = null;
+        let dbData = null;
         try {
             const client = getAuthenticatedClient(req.token);
             const { data, error } = await client
@@ -2246,16 +2247,39 @@ app.get("/api/admin/global-pricing-settings", verifyTenant, async (req: any, res
                 .eq("id", "99999999-9999-9999-9999-999999999999")
                 .maybeSingle();
 
-            if (error) {
+            if (!error && data && data.content) {
+                dbData = data.content;
+            } else {
                 supabaseError = error;
-            } else if (data && data.content) {
-                console.log("[Global Pricing] Loaded successfully from Supabase database.");
-                saveLocalGlobalPricingSettings(data.content);
-                return res.json(data.content);
             }
         } catch (dbEx: any) {
             console.warn("[Global Pricing] Supabase query exception:", dbEx.message || dbEx);
             supabaseError = dbEx;
+        }
+
+        // Fallback to server-level supabaseClient if client fetch was blocked or failed
+        if (!dbData) {
+            try {
+                console.log("[Global Pricing] Trying root supabaseClient to fetch global pricing settings...");
+                const { data, error } = await supabaseClient
+                    .from("generated_documents")
+                    .select("content")
+                    .eq("id", "99999999-9999-9999-9999-999999999999")
+                    .maybeSingle();
+                if (!error && data && data.content) {
+                    dbData = data.content;
+                } else if (error) {
+                    supabaseError = error;
+                }
+            } catch (fallbackEx: any) {
+                console.warn("[Global Pricing] Root supabaseClient fetch failed:", fallbackEx.message || fallbackEx);
+            }
+        }
+
+        if (dbData) {
+            console.log("[Global Pricing] Loaded successfully from Supabase database.");
+            saveLocalGlobalPricingSettings(dbData);
+            return res.json(dbData);
         }
 
         if (supabaseError) {
@@ -2304,7 +2328,7 @@ app.post("/api/admin/global-pricing-settings", verifyTenant, async (req: any, re
         // Await writing to Supabase synchronously
         console.log("[Global Pricing] Saving global pricing to Supabase database...");
         const client = getAuthenticatedClient(req.token);
-        const { error: dbErr } = await client
+        let { error: dbErr } = await client
             .from("generated_documents")
             .upsert({
                 id: '99999999-9999-9999-9999-999999999999',
@@ -2312,6 +2336,19 @@ app.post("/api/admin/global-pricing-settings", verifyTenant, async (req: any, re
                 document_type: 'cravebiz_global_pricing_settings',
                 content: limits
             });
+
+        if (dbErr) {
+            console.warn("[Global Pricing Sync] Authenticated client failed, trying root supabaseClient fallback...", dbErr);
+            const { error: fallbackErr } = await supabaseClient
+                .from("generated_documents")
+                .upsert({
+                    id: '99999999-9999-9999-9999-999999999999',
+                    company_id: null,
+                    document_type: 'cravebiz_global_pricing_settings',
+                    content: limits
+                });
+            dbErr = fallbackErr;
+        }
 
         if (dbErr) {
             console.warn("[Global Pricing Sync] Supabase upsert error:", dbErr);

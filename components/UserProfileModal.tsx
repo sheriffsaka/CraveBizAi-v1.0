@@ -1,8 +1,8 @@
-
-
 import React, { useState, useEffect } from 'react';
 import Modal from './Modal';
 import { User } from '../types';
+import { supabase } from '../lib/api';
+import Icon from './common/Icon';
 
 interface UserProfileModalProps {
   isOpen: boolean;
@@ -16,12 +16,73 @@ const UserProfileModal: React.FC<UserProfileModalProps> = ({ isOpen, onClose, us
   const [email, setEmail] = useState(user.email);
   const [error, setError] = useState<string | null>(null);
 
+  // Live database metrics state
+  const [invoicesCreated, setInvoicesCreated] = useState<number | null>(null);
+  const [receiptsCreated, setReceiptsCreated] = useState<number | null>(null);
+  const [remainingAiCredits, setRemainingAiCredits] = useState<number | null>(null);
+  const [isLoadingUsage, setIsLoadingUsage] = useState(false);
+
   useEffect(() => {
     if (user) {
       setName(user.name);
       setEmail(user.email);
     }
   }, [user, isOpen]); // Reset form when modal opens or user prop changes
+
+  useEffect(() => {
+    const fetchUserUsage = async () => {
+      if (!isOpen || !user?.id) return;
+      setIsLoadingUsage(true);
+      try {
+        // Fetch latest user usage values directly from Supabase database (never default/hardcode)
+        const { data, error } = await supabase
+          .from('generated_documents')
+          .select('content')
+          .eq('id', user.id)
+          .eq('document_type', 'cravebiz_user_usage')
+          .maybeSingle();
+
+        if (error) {
+          throw error;
+        }
+
+        if (data && data.content) {
+          const content = data.content as any;
+          setInvoicesCreated(content.invoicesCreated ?? 0);
+          setReceiptsCreated(content.receiptsCreated ?? 0);
+          setRemainingAiCredits(content.remainingAiCredits ?? 0);
+        } else {
+          // Fallback: If no record has been created in the DB yet, read current workspace counts directly
+          const activeTenantId = localStorage.getItem('cravebiz_tenant') || '';
+          if (activeTenantId) {
+            const invCount = parseInt(localStorage.getItem(`cravebiz_invoice_count_${activeTenantId}`) || '0', 10);
+            const recCount = parseInt(localStorage.getItem(`cravebiz_receipt_count_${activeTenantId}`) || '0', 10);
+            
+            const unitsKey = `cravebiz_units_${activeTenantId}`;
+            const storedUnits = localStorage.getItem(unitsKey);
+            let aiUnits = 5; // Default for Free plan fallback
+            if (storedUnits !== null) {
+              aiUnits = parseInt(storedUnits, 10);
+            }
+            
+            setInvoicesCreated(invCount);
+            setReceiptsCreated(recCount);
+            setRemainingAiCredits(aiUnits);
+          } else {
+            setInvoicesCreated(0);
+            setReceiptsCreated(0);
+            setRemainingAiCredits(0);
+          }
+        }
+      } catch (err) {
+        console.error("Failed to load user usage from Supabase:", err);
+      } finally {
+        setIsLoadingUsage(false);
+      }
+    };
+
+    fetchUserUsage();
+  }, [user?.id, isOpen]);
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
@@ -43,19 +104,54 @@ const UserProfileModal: React.FC<UserProfileModalProps> = ({ isOpen, onClose, us
 
   return (
     <Modal isOpen={isOpen} onClose={onClose} title="Edit Your Profile">
-      <form onSubmit={handleSubmit} className="space-y-4">
+      <form onSubmit={handleSubmit} className="space-y-6">
         {error && <div className="bg-red-100 border border-red-400 text-red-700 px-4 py-3 rounded-md text-sm">{error}</div>}
-        <div>
-          <label htmlFor="profile-name" className="block text-sm font-medium text-gray-700">Full Name</label>
-          <input type="text" id="profile-name" value={name} onChange={e => setName(e.target.value)} className="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-primary-500 focus:border-primary-500 sm:text-sm bg-white text-gray-900" required />
+        
+        <div className="space-y-4">
+          <div>
+            <label htmlFor="profile-name" className="block text-xs font-black text-gray-500 uppercase tracking-widest mb-1">Full Name</label>
+            <input type="text" id="profile-name" value={name} onChange={e => setName(e.target.value)} className="w-full px-4 py-3 border border-gray-200 rounded-xl bg-gray-50 text-gray-900 font-bold focus:ring-2 focus:ring-primary-500 outline-none" required />
+          </div>
+          <div>
+            <label htmlFor="profile-email" className="block text-xs font-black text-gray-500 uppercase tracking-widest mb-1">Email Address</label>
+            <input type="email" id="profile-email" value={email} onChange={e => setEmail(e.target.value)} className="w-full px-4 py-3 border border-gray-200 rounded-xl bg-gray-50 text-gray-900 font-bold focus:ring-2 focus:ring-primary-500 outline-none" required />
+          </div>
         </div>
-        <div>
-          <label htmlFor="profile-email" className="block text-sm font-medium text-gray-700">Email Address</label>
-          <input type="email" id="profile-email" value={email} onChange={e => setEmail(e.target.value)} className="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-primary-500 focus:border-primary-500 sm:text-sm bg-white text-gray-900" required />
+
+        {/* Database User Usage Display Section */}
+        <div className="border-t border-gray-100 pt-6">
+          <h4 className="text-xs font-black text-gray-800 uppercase tracking-widest mb-4">Your Usage Summary (From Supabase)</h4>
+          
+          {isLoadingUsage ? (
+            <div className="flex justify-center py-4">
+              <span className="text-xs font-black text-primary-600 uppercase tracking-widest animate-pulse">Fetching usage live from Supabase...</span>
+            </div>
+          ) : (
+            <div className="grid grid-cols-3 gap-3">
+              <div className="bg-primary-50/40 border border-primary-50 p-4 rounded-2xl flex flex-col items-center text-center">
+                <Icon name="file-text" className="w-5 h-5 text-primary-600 mb-1.5" />
+                <span className="text-[9px] font-black text-gray-500 uppercase tracking-wider">Invoices</span>
+                <span className="text-lg font-black text-primary-700 mt-1">{invoicesCreated ?? 0}</span>
+              </div>
+              
+              <div className="bg-emerald-50/40 border border-emerald-50 p-4 rounded-2xl flex flex-col items-center text-center">
+                <Icon name="check-square" className="w-5 h-5 text-emerald-600 mb-1.5" />
+                <span className="text-[9px] font-black text-gray-500 uppercase tracking-wider">Receipts</span>
+                <span className="text-lg font-black text-emerald-700 mt-1">{receiptsCreated ?? 0}</span>
+              </div>
+              
+              <div className="bg-indigo-50/40 border border-indigo-50 p-4 rounded-2xl flex flex-col items-center text-center">
+                <Icon name="zap" className="w-5 h-5 text-indigo-600 mb-1.5" />
+                <span className="text-[9px] font-black text-gray-500 uppercase tracking-wider">AI Credits</span>
+                <span className="text-lg font-black text-indigo-700 mt-1">{remainingAiCredits ?? 0}</span>
+              </div>
+            </div>
+          )}
         </div>
-        <div className="flex justify-end pt-4 space-x-2">
-            <button type="button" onClick={onClose} className="px-4 py-2 bg-gray-200 text-gray-800 rounded-lg hover:bg-gray-300">Cancel</button>
-            <button type="submit" className="px-4 py-2 bg-primary-600 text-white rounded-lg hover:bg-primary-700">Save Changes</button>
+
+        <div className="flex justify-end pt-4 space-x-2 border-t border-gray-100">
+            <button type="button" onClick={onClose} className="px-5 py-2.5 bg-gray-100 hover:bg-gray-200 text-gray-700 font-bold rounded-xl transition-all">Cancel</button>
+            <button type="submit" className="px-5 py-2.5 bg-primary-600 hover:bg-primary-700 text-white font-bold rounded-xl shadow-lg transition-all">Save Changes</button>
         </div>
       </form>
     </Modal>

@@ -322,12 +322,24 @@ const Settings: React.FC<SettingsProps> = ({ company, onSaveChanges, onInviteUse
               memberStatus = 'Invited';
             }
 
+            const { data: usageDoc } = await supabase
+              .from('generated_documents')
+              .select('content')
+              .eq('id', m.user_id)
+              .eq('document_type', 'cravebiz_user_usage')
+              .maybeSingle();
+
+            const usage = usageDoc?.content as any || { invoicesCreated: 0, receiptsCreated: 0, remainingAiCredits: 0 };
+
             membersList.push({
               id: m.user_id,
               name: name || 'Workspace Member',
               email: email || 'member@cravebiz.com',
               role: m.role.charAt(0).toUpperCase() + m.role.slice(1).toLowerCase(),
-              status: memberStatus
+              status: memberStatus,
+              invoicesCreated: usage.invoicesCreated ?? 0,
+              receiptsCreated: usage.receiptsCreated ?? 0,
+              remainingAiCredits: usage.remainingAiCredits ?? 0
             });
           }
         }
@@ -956,6 +968,13 @@ const Settings: React.FC<SettingsProps> = ({ company, onSaveChanges, onInviteUse
                     <div>
                         <p className="font-black text-gray-900 text-xs uppercase tracking-tight">{user.name}</p>
                         <p className="text-xs text-gray-400 font-bold">{user.email}</p>
+                        <div className="flex flex-wrap gap-2 mt-2 text-[9px] font-black text-primary-600/90 uppercase tracking-wider bg-primary-50/60 px-2.5 py-1 rounded-xl w-fit border border-primary-50">
+                          <span>Invoices: <strong className="text-primary-800">{(user as any).invoicesCreated ?? 0}</strong></span>
+                          <span className="text-gray-300 font-normal">|</span>
+                          <span>Receipts: <strong className="text-primary-800">{(user as any).receiptsCreated ?? 0}</strong></span>
+                          <span className="text-gray-300 font-normal">|</span>
+                          <span>Credits: <strong className="text-primary-800">{(user as any).remainingAiCredits ?? 0}</strong></span>
+                        </div>
                     </div>
                     <div className="flex items-center gap-3">
                       {userRole?.toLowerCase() === 'owner' && user.id !== '1' ? (
