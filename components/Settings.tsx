@@ -764,13 +764,13 @@ const Settings: React.FC<SettingsProps> = ({ company, onSaveChanges, onInviteUse
                 <span className="font-bold text-xs text-gray-950 uppercase tracking-wider">Free Plan</span>
                 {subInfo.tier === 'Free' && <span className="text-[9px] bg-primary-600 text-white px-2 py-0.5 rounded-full font-bold">Active</span>}
               </div>
-              <p className="text-[10px] text-gray-500 mt-2 leading-tight">Instead of disabling AI completely, get 10 free AI Credits every month to experience all automation features.</p>
+              <p className="text-[10px] text-gray-500 mt-2 leading-tight">Instead of disabling AI completely, get {TIER_LIMITS.Free.maxAiUnits} free AI Credits every month to experience all automation features.</p>
             </div>
             <div className="mt-2 flex flex-col gap-1.5">
               <span className="text-[13px] font-black text-gray-900">₦0 <span className="text-[9px] text-gray-400 font-normal">/ month</span></span>
               <span className="text-[10px] font-bold text-gray-700">1 User max</span>
-              <span className="text-[10px] font-bold text-gray-700">10 Invoices / 10 Receipts</span>
-              <span className="text-[9px] font-bold text-primary-700 bg-primary-50 px-1.5 py-0.5 rounded self-start">10 AI Credits included</span>
+              <span className="text-[10px] font-bold text-gray-700">{TIER_LIMITS.Free.maxInvoices} Invoices / {TIER_LIMITS.Free.maxReceipts} Receipts</span>
+              <span className="text-[9px] font-bold text-primary-700 bg-primary-50 px-1.5 py-0.5 rounded self-start">{TIER_LIMITS.Free.maxAiUnits} AI Credits included</span>
               {subInfo.tier !== 'Free' && !isReadOnly && (
                 <button type="button" onClick={() => handleUpdateTier('Free')} className="mt-1 text-xs font-bold text-primary-600 hover:text-primary-700 text-left">{getPlanActionLabel('Free', subInfo.tier)}</button>
               )}
@@ -873,7 +873,7 @@ const Settings: React.FC<SettingsProps> = ({ company, onSaveChanges, onInviteUse
                 <span className="font-bold text-gray-500">Remaining AI Credits:</span>
                 <div className="flex items-center gap-2">
                   <span className="font-mono font-bold text-gray-800">
-                    {subInfo.tier === 'Free' && subInfo.aiUnits === 0 ? '0' : `${subInfo.aiUnits}/${subInfo.tier === 'Free' ? 10 : TIER_LIMITS[subInfo.tier].maxAiUnits}`} credits
+                    {subInfo.tier === 'Free' && subInfo.aiUnits === 0 ? '0' : `${subInfo.aiUnits}/${TIER_LIMITS[subInfo.tier]?.maxAiUnits || 5}`} credits
                   </span>
                   {localStorage.getItem('cravebiz_is_super_admin') === 'true' ? (
                     <button

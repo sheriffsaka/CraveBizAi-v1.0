@@ -279,7 +279,7 @@ const AuthPage: React.FC<AuthPageProps> = ({ onLogin, onSignup, onOpenForgotPass
                                         <p className="text-[9px] text-gray-500 leading-tight mt-1">10 Invoices & Receipts/mo</p>
                                     </div>
                                     <div className="flex flex-col gap-1">
-                                        <p className="text-[8px] text-primary-700 font-bold bg-primary-50 px-1 py-0.5 rounded self-start">10 AI Credits</p>
+                                        <p className="text-[8px] text-primary-700 font-bold bg-primary-50 px-1 py-0.5 rounded self-start">5 AI Credits</p>
                                         <p className="text-[9px] font-bold text-gray-700">₦0.00</p>
                                     </div>
                                 </button>

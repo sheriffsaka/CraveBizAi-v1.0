@@ -26,7 +26,7 @@ import PublicSigningPortal from './components/PublicSigningPortal';
 import ProjectManagement from './components/ProjectManagement';
 import { api, supabase } from './lib/api';
 import { generateRenewalInvoiceSuggestion } from './services/aiGenerationService';
-import { getSubscriptionInfo, setSubscriptionInfo, SubscriptionTier, TIER_LIMITS, syncGlobalPlanSettings, syncSubscriptionInfoFromDb, secureRefillCreditsOnDb, safeFlutterwaveCheckout, getFlutterwavePublicKey, saveSubscriptionInfoToDb, fetchAndCacheFlutterwavePublicKey, incrementInvoiceCount, incrementReceiptCount } from './services/subscriptionService';
+import { getSubscriptionInfo, setSubscriptionInfo, SubscriptionTier, TIER_LIMITS, syncGlobalPlanSettings, syncSubscriptionInfoFromDb, secureRefillCreditsOnDb, safeFlutterwaveCheckout, getFlutterwavePublicKey, saveSubscriptionInfoToDb, fetchAndCacheFlutterwavePublicKey, incrementInvoiceCount, incrementReceiptCount, syncGlobalRefillPacks, REFILL_PACKS } from './services/subscriptionService';
 import { Invoice, Client, Service, Company, User, TenantData, InvoiceStatus, AllTenantsData, GeneratedDocument, DbDocumentSignatory, Project, WorkspaceRole, AuditLog } from './types';
 import Icon from './components/common/Icon';
 
@@ -169,8 +169,9 @@ export default function App() {
     const syncRoleAndLogs = async () => {
       try {
         await syncGlobalPlanSettings();
+        await syncGlobalRefillPacks();
       } catch (ge) {
-        console.warn("Failed to sync global plan limits:", ge);
+        console.warn("Failed to sync global plan limits or refill packs:", ge);
       }
 
       if (activeTenantId && currentUser) {
@@ -202,6 +203,7 @@ export default function App() {
       if (isMounted.current) {
           setTenantData({ invoices: inv, clients: cli, services: srv, generatedDocs: docs, projects: projs });
           setSyncError(null);
+          await syncSubscriptionInfoFromDb(tenantId);
           await loadAuditLogs(tenantId);
       }
     } catch (e) { 
@@ -1186,7 +1188,7 @@ export default function App() {
                       safeFlutterwaveCheckout({
                         public_key: flutterwaveKey,
                         tx_ref: `cravebiz-credits-${Date.now()}-${companyId}`,
-                        amount: 2500,
+                        amount: REFILL_PACKS.pack_300.amount,
                         currency: "NGN",
                         payment_options: "card, banktransfer, ussd",
                         customer: {
@@ -1195,7 +1197,7 @@ export default function App() {
                         },
                         customizations: {
                           title: "CraveBiZ AI Token Refill",
-                          description: "Secure purchase of 50 AI credits for ₦2,500",
+                          description: `Secure purchase of ${REFILL_PACKS.pack_300.credits} AI credits for ₦${REFILL_PACKS.pack_300.amount.toLocaleString()}`,
                           logo: "https://checkout.flutterwave.com/assets/img/flutterwave-logo.svg",
                         },
                         callback: function (data: any) {
@@ -1205,10 +1207,10 @@ export default function App() {
                             const transactionId = data.transaction_id || data.tx_ref || "";
                             
                             // Securely refill credits on backend DB
-                            secureRefillCreditsOnDb(companyId, transactionId)
+                            secureRefillCreditsOnDb(companyId, transactionId, 'pack_300')
                               .then(() => {
                                 setSubErrorMsg(null);
-                                alert("Congratulations! 50 AI credits have been successfully added to your workspace.");
+                                alert(`Congratulations! ${REFILL_PACKS.pack_300.credits} AI credits have been successfully added to your workspace.`);
                               })
                               .catch((err: any) => {
                                 console.error("Backend refill error:", err);
@@ -1228,7 +1230,7 @@ export default function App() {
                     }} 
                     className="w-full px-6 py-3 bg-emerald-600 text-white rounded-xl font-black uppercase tracking-wider text-xs shadow-lg shadow-emerald-200 hover:bg-emerald-700 transition"
                   >
-                    Buy 50 AI Units (₦2,500)
+                    Buy {REFILL_PACKS.pack_300.credits} AI Units (₦{REFILL_PACKS.pack_300.amount.toLocaleString()})
                   </button>
                   <button 
                     onClick={() => {
