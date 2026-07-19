@@ -21,6 +21,7 @@ import SentReceiptsList from './components/SentReceiptsList';
 import ReceiptDetail from './components/ReceiptDetail';
 import AdminDashboard from './components/AdminDashboard';
 import DocumentTransformer from './components/DocumentTransformer';
+import DocSignify from './components/DocSignify';
 import PaymentIntelligence from './components/PaymentIntelligence';
 import PublicSigningPortal from './components/PublicSigningPortal';
 import ProjectManagement from './components/ProjectManagement';
@@ -30,7 +31,7 @@ import { getSubscriptionInfo, setSubscriptionInfo, SubscriptionTier, TIER_LIMITS
 import { Invoice, Client, Service, Company, User, TenantData, InvoiceStatus, AllTenantsData, GeneratedDocument, DbDocumentSignatory, Project, WorkspaceRole, AuditLog } from './types';
 import Icon from './components/common/Icon';
 
-export type Page = 'dashboard' | 'invoices' | 'clients' | 'services' | 'reports' | 'settings' | 'create-invoice' | 'edit-invoice' | 'invoice-detail' | 'receipt-detail' | 'plain-invoice-detail' | 'recurring-invoices' | 'email-verification' | 'sent-receipts' | 'admin-dashboard' | 'document-transformer' | 'payment-intelligence' | 'projects';
+export type Page = 'dashboard' | 'invoices' | 'clients' | 'services' | 'reports' | 'settings' | 'create-invoice' | 'edit-invoice' | 'invoice-detail' | 'receipt-detail' | 'plain-invoice-detail' | 'recurring-invoices' | 'email-verification' | 'sent-receipts' | 'admin-dashboard' | 'document-transformer' | 'payment-intelligence' | 'projects' | 'doc-signify';
 
 const stringifyError = (err: any): string => {
   if (!err) return "An unknown error occurred.";
@@ -80,6 +81,7 @@ export default function App() {
     initialTab?: 'generate' | 'sign' | 'manage' | 'verify';
     prefillProject?: Project;
     prefillClient?: Client;
+    initialFile?: GeneratedDocument | null;
   } | null>(null);
   const isMounted = useRef(true);
   const currentUserIdRef = useRef<string | null>(null);
@@ -135,6 +137,7 @@ export default function App() {
     'email-verification': 'Email Verification', 'sent-receipts': 'Sent Receipts',
     'admin-dashboard': 'System Console', 'document-transformer': 'SmartDocs',
     'payment-intelligence': 'Payment Intelligence Board', projects: 'Project Hub',
+    'doc-signify': 'DocSignify',
   };
 
   const loadAuditLogs = async (tenantId: string) => {
@@ -799,6 +802,14 @@ export default function App() {
 
     switch (activePage) {
       case 'dashboard': return <Dashboard invoices={invoices} clients={clients} setActivePage={navigateTo} onViewInvoice={(id) => { setSelectedInvoiceId(id); navigateTo('invoice-detail'); }} onEditInvoice={handleEditInvoiceAction} onGenerateRenewal={handleGenerateRenewal} />;
+      case 'doc-signify': return <DocSignify 
+          company={activeCompany} 
+          user={currentUser} 
+          prefillProject={docTransformerPrefill?.prefillProject}
+          prefillClient={docTransformerPrefill?.prefillClient}
+          initialFile={docTransformerPrefill?.initialFile}
+          onBackToDashboard={() => navigateTo('dashboard')}
+      />;
       case 'document-transformer': return <DocumentTransformer 
           company={activeCompany} 
           user={currentUser} 
@@ -857,7 +868,15 @@ export default function App() {
               setSyncError(stringifyError(e));
               return undefined;
           }
-      }} onDeleteDoc={async (id) => {
+      }} 
+      onNavigateToSignify={(doc) => {
+          setDocTransformerPrefill({
+              initialFile: doc,
+              initialTab: 'sign'
+          });
+          navigateTo('doc-signify');
+      }}
+      onDeleteDoc={async (id) => {
           try {
               await api.deleteGeneratedDoc(activeTenantId!, id);
               await forceSyncData(activeTenantId!);

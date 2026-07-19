@@ -123,6 +123,7 @@ interface DocumentTransformerProps {
     initialTab?: 'generate' | 'sign' | 'manage' | 'verify';
     prefillProject?: Project;
     prefillClient?: Client;
+    onNavigateToSignify?: (doc: GeneratedDocument) => void;
 }
 
 const TEMPLATES = [
@@ -410,7 +411,8 @@ const DocumentTransformer: React.FC<DocumentTransformerProps> = ({
     onDeleteDoc,
     initialTab,
     prefillProject,
-    prefillClient
+    prefillClient,
+    onNavigateToSignify
 }) => {
     // Filter documents for security compliance: Workspace Owner can access all, others only those they created/own
     const generatedDocs = (rawGeneratedDocs || []).filter(doc => {
@@ -2434,17 +2436,6 @@ ${company?.name || 'CraveBiZ Vendor'}`;
                     <span>DocGenerator</span>
                 </button>
                 <button
-                    onClick={() => { setActiveTab('sign'); setError(null); }}
-                    className={`flex-1 py-3 px-4 text-xs font-black uppercase tracking-widest rounded-lg transition-all flex items-center justify-center gap-2 ${
-                        activeTab === 'sign' 
-                            ? 'bg-white text-primary-900 shadow-sm border border-gray-200/40 font-bold' 
-                            : 'text-gray-600 hover:text-gray-900 hover:bg-gray-50/50'
-                    }`}
-                >
-                    <svg className="w-4 h-4 text-indigo-600" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z"></path></svg>
-                    <span>DocSignify</span>
-                </button>
-                <button
                     onClick={() => { setActiveTab('manage'); setError(null); }}
                     className={`flex-1 py-3 px-4 text-xs font-black uppercase tracking-widest rounded-lg transition-all flex items-center justify-center gap-2 ${
                         activeTab === 'manage' 
@@ -2507,86 +2498,121 @@ ${company?.name || 'CraveBiZ Vendor'}`;
                 
                 {/* LEFT INTERACTIVE PANEL: Column Span 12 when activeTab is sign, otherwise 5 */}
                 <div className={`${activeTab === 'sign' ? 'lg:col-span-12' : 'lg:col-span-5'} space-y-6`}>
-                    
-                    {/* Render Form based on Active Tab */}
-                    {activeTab === 'generate' && (
-                        <div className="bg-white p-5 rounded-2xl border border-gray-200/50 shadow-sm space-y-4">
-                            <h2 className="text-sm font-black text-gray-800 uppercase tracking-wider mb-2 flex items-center gap-2">
-                                <span className="w-2 h-2 rounded-full bg-primary-600"></span>
-                                Purpose-Made Smart Document
-                            </h2>
-                            <p className="text-xs text-gray-500 font-medium mb-4 leading-relaxed">State the nature, parameters or rules for your desired document and let the GenAI architect draft a formatted business copy.</p>
-                            
-                            <textarea
-                                value={documentPurpose}
-                                onChange={(e) => setDocumentPurpose(e.target.value)}
-                                placeholder="Describe your document requirements—such as 'Service agreement with Joe Design Studio for 3 logo packages costing $1200 total, 50% retainer, delivery next month'..."
-                                className="w-full h-44 p-3 border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-primary-500/30 text-xs leading-relaxed font-medium placeholder-gray-400 bg-gray-50/50"
-                                disabled={isLoading}
-                            />
+                               {activeTab === 'generate' && (
+                        <div className="bg-white p-6 rounded-2xl border border-gray-200/60 shadow-sm space-y-6">
+                            <div>
+                                <h2 className="text-base font-bold text-gray-900 tracking-tight flex items-center gap-2">
+                                    <span className="w-2.5 h-2.5 rounded-full bg-primary-600 animate-pulse"></span>
+                                    AI Document Architect (DocGenerator)
+                                </h2>
+                                <p className="text-xs text-gray-500 font-medium mt-1 leading-relaxed">
+                                    Redesigned Jotform-style instant builder. Choose your document type, add key terms, and compile a fully formatted corporate copy instantly.
+                                </p>
+                            </div>
 
-                            {/* Template Suggestions Dropdown */}
-                            <div className="space-y-2 mt-4">
-                                <div className="flex items-center justify-between">
-                                    <label className="text-[10px] font-black uppercase text-gray-400 tracking-wider">Document Type Preset:</label>
-                                    <button 
-                                        type="button" 
-                                        onClick={() => setIsAddingPreset(true)}
-                                        className="text-[10px] text-primary-600 hover:text-primary-700 font-black uppercase tracking-wider flex items-center gap-1"
-                                    >
-                                        <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" className="w-3.5 h-3.5"><path d="M5 12h14" /><path d="M12 5v14" /></svg>
-                                        Add Custom Preset
-                                    </button>
+                            {/* Jotform-style Document Type Grid Selector */}
+                            <div className="space-y-2">
+                                <label className="block text-[10px] font-black uppercase text-gray-400 tracking-wider">
+                                    1. Select Document Type Template
+                                </label>
+                                <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
+                                    {[
+                                        { index: 0, title: "Service Agreement", emoji: "📝" },
+                                        { index: 1, title: "NDA (Disclosure)", emoji: "🔒" },
+                                        { index: 2, title: "Consulting Proposal", emoji: "💼" },
+                                        { index: 4, title: "Employment Contract", emoji: "👥" },
+                                        { index: 6, title: "Statement of Work", emoji: "📋" },
+                                        { index: -1, title: "Custom Document", emoji: "⚙️" },
+                                    ].map((opt) => {
+                                        const isSelected = opt.index === -1 
+                                            ? selectedPresetIndex === -1 || (selectedPresetIndex >= 10)
+                                            : selectedPresetIndex === opt.index;
+                                        return (
+                                            <button
+                                                key={opt.title}
+                                                type="button"
+                                                onClick={() => {
+                                                    if (opt.index === -1) {
+                                                        setSelectedPresetIndex(-1);
+                                                        setDocumentPurpose('');
+                                                    } else {
+                                                        setSelectedPresetIndex(opt.index);
+                                                        if (presets[opt.index]) {
+                                                            setDocumentPurpose(presets[opt.index].prompt);
+                                                        }
+                                                    }
+                                                }}
+                                                className={`p-3 rounded-xl border text-left transition-all flex flex-col justify-between h-20 ${
+                                                    isSelected
+                                                        ? 'border-primary-600 bg-primary-50/40 ring-2 ring-primary-500/15'
+                                                        : 'border-gray-200 hover:border-gray-300 bg-white'
+                                                }`}
+                                            >
+                                                <span className="text-lg">{opt.emoji}</span>
+                                                <span className="text-[11px] font-bold text-gray-800 line-clamp-1">{opt.title}</span>
+                                            </button>
+                                        );
+                                    })}
                                 </div>
-                                <div className="flex gap-2">
-                                    <div className="relative flex-1">
-                                        <select
-                                            value={selectedPresetIndex}
-                                            onChange={(e) => {
-                                                const idx = parseInt(e.target.value, 10);
-                                                setSelectedPresetIndex(idx);
-                                                if (presets[idx]) {
-                                                    setDocumentPurpose(presets[idx].prompt);
-                                                }
-                                            }}
-                                            className="w-full p-3 border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-primary-500/30 text-xs font-bold bg-white text-gray-700 appearance-none pr-8 cursor-pointer"
-                                            disabled={isLoading}
-                                        >
-                                            {presets.map((tmpl, idx) => (
-                                                <option key={idx} value={idx}>
-                                                    {tmpl.title} — {tmpl.desc}
-                                                </option>
-                                            ))}
-                                        </select>
-                                        <div className="absolute inset-y-0 right-3 flex items-center pointer-events-none text-gray-400">
-                                            <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" className="w-4 h-4"><path d="m6 9 6 6 6-6" /></svg>
-                                        </div>
-                                    </div>
-                                    {/* Delete option for custom presets (not default ones, index >= 10) */}
-                                    {selectedPresetIndex >= 10 && (
-                                        <button
-                                            type="button"
-                                            onClick={() => handleDeletePreset(selectedPresetIndex)}
-                                            className="p-3 text-red-600 hover:text-red-700 border border-red-200 hover:bg-red-50 rounded-xl transition-all"
-                                            title="Delete Custom Preset"
-                                        >
-                                            <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="w-4 h-4"><path d="M3 6h18" /><path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6" /><path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2" /><line x1="10" x2="10" y1="11" y2="17" /><line x1="14" x2="14" y1="11" y2="17" /></svg>
-                                        </button>
-                                    )}
-                                </div>
+                            </div>
+
+                            {/* Document terms details */}
+                            <div className="space-y-1.5">
+                                <label className="block text-[10px] font-black uppercase text-gray-400 tracking-wider">
+                                    2. Describe document terms & specific rules
+                                </label>
+                                <textarea
+                                    value={documentPurpose}
+                                    onChange={(e) => setDocumentPurpose(e.target.value)}
+                                    placeholder={
+                                        selectedPresetIndex === -1 
+                                            ? "e.g. Mutual non-compete agreement between Company A and Consultant B capping competition within 5 miles for 2 years..."
+                                            : "Modify the prompt terms here. Describe parties, deliverables, milestones, payment schedules, and any custom rules..."
+                                    }
+                                    className="w-full h-40 p-3 border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-primary-500/20 text-xs leading-relaxed font-medium placeholder-gray-400 bg-gray-50/50"
+                                    disabled={isLoading}
+                                />
                                 {presets[selectedPresetIndex] && (
-                                    <p className="text-[10px] text-gray-500 italic font-medium bg-gray-50/50 p-2.5 rounded-lg border border-gray-100">
-                                        💡 <strong>Prompt Helper:</strong> {presets[selectedPresetIndex].desc}
-                                    </p>
+                                    <div className="flex items-start gap-1.5 p-2.5 bg-primary-50/30 border border-primary-100 rounded-xl text-[10px] text-primary-800 font-medium">
+                                        <span>💡</span>
+                                        <span><strong>Template Prompt Tip:</strong> {presets[selectedPresetIndex].desc}</span>
+                                    </div>
                                 )}
+                            </div>
+
+                            {/* Preset actions */}
+                            <div className="flex items-center justify-between pt-1 border-t border-gray-100">
+                                <span className="text-[10px] font-black uppercase text-gray-400 tracking-wider">
+                                    Want a custom layout?
+                                </span>
+                                <button 
+                                    type="button" 
+                                    onClick={() => setIsAddingPreset(true)}
+                                    className="text-[10px] text-primary-600 hover:text-primary-700 font-black uppercase tracking-wider flex items-center gap-1"
+                                >
+                                    <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" className="w-3.5 h-3.5"><path d="M5 12h14" /><path d="M12 5v14" /></svg>
+                                    Create Saved Preset
+                                </button>
                             </div>
 
                             <button
                                 onClick={handleGenerateByPurpose}
                                 disabled={isLoading || !documentPurpose.trim()}
-                                className="w-full mt-2 py-3.5 bg-primary-600 text-white text-xs font-black uppercase tracking-widest rounded-xl hover:bg-primary-700 active:scale-95 shadow-md shadow-primary-200/50 transition-all disabled:bg-gray-400 disabled:shadow-none"
+                                className="w-full py-4 bg-primary-600 hover:bg-primary-700 active:scale-[0.99] text-white text-xs font-black uppercase tracking-widest rounded-xl shadow-lg shadow-primary-200/50 transition-all disabled:bg-gray-300 disabled:shadow-none flex items-center justify-center gap-2"
                             >
-                                {isLoading ? 'Compiling Document...' : 'DocGenerator'}
+                                {isLoading ? (
+                                    <>
+                                        <svg className="animate-spin h-4 w-4 text-white" fill="none" viewBox="0 0 24 24">
+                                            <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                                            <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                                        </svg>
+                                        <span>Formulating Document Assets...</span>
+                                    </>
+                                ) : (
+                                    <>
+                                        <span>✨ Generate Complete Document</span>
+                                    </>
+                                )}
                             </button>
                         </div>
                     )}
@@ -3856,7 +3882,7 @@ CraveBiZ DocSignify Mail Delivery Agent`}
                                                             .join('\n\n');
                                                         handleAnalyzeText(fullTextLines || doc.documentType);
                                                     }}
-                                                    className="py-2 bg-gray-800 text-white hover:bg-gray-901 text-[10px] font-black uppercase tracking-widest rounded-lg transition-all flex items-center justify-center gap-1 shadow-sm"
+                                                    className="py-2 bg-gray-800 text-white hover:bg-gray-910 text-[10px] font-black uppercase tracking-widest rounded-lg transition-all flex items-center justify-center gap-1 shadow-sm"
                                                 >
                                                     <svg className="w-3.5 h-3.5 text-indigo-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                                         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="1.5" d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z" />
@@ -3883,6 +3909,27 @@ CraveBiZ DocSignify Mail Delivery Agent`}
                                                     Delete
                                                 </button>
                                             </div>
+
+                                            {onNavigateToSignify && (
+                                                <button
+                                                    onClick={() => {
+                                                        const activeDoc = {
+                                                            documentType: doc.documentType,
+                                                            blocks: doc.blocks,
+                                                            projectId: doc.projectId,
+                                                            originalFileUrl: (doc as any).originalFileUrl,
+                                                            originalFileName: (doc as any).originalFileName,
+                                                            originalFileBase64: (doc as any).originalFileBase64,
+                                                            signatures: (doc as any).signatures
+                                                        };
+                                                        onNavigateToSignify(activeDoc as any);
+                                                    }}
+                                                    className="w-full mt-1 bg-indigo-50 hover:bg-indigo-100 text-indigo-700 hover:text-indigo-800 text-[10px] font-bold uppercase tracking-wider py-2 rounded-lg transition-all flex items-center justify-center gap-1.5 shadow-sm"
+                                                >
+                                                    <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth="2.5"><path strokeLinecap="round" strokeLinejoin="round" d="m16.862 4.487 1.687-1.688a1.875 1.875 0 1 1 2.652 2.652L10.582 16.07a4.5 4.5 0 0 1-1.897 1.13L6 18l.8-2.685a4.5 4.5 0 0 1 1.13-1.897l8.932-8.931Zm0 0L19.5 7.125M18 14v4.75A2.25 2.25 0 0 1 15.75 21H5.25A2.25 2.25 0 0 1 3 18.75V8.25A2.25 2.25 0 0 1 5.25 6H10" /></svg>
+                                                    Sign with DocSignify
+                                                </button>
+                                            )}
                                         </div>
                                     );
                                 })}
@@ -4064,6 +4111,17 @@ CraveBiZ DocSignify Mail Delivery Agent`}
                                     <div className="p-3 bg-gray-50 border-b border-gray-100 flex flex-wrap gap-2 justify-between items-center print-hidden">
                                         <span className="text-[10px] font-black text-gray-400 uppercase tracking-widest">{generatedDoc.documentType} Preview Pane</span>
                                         <div className="flex items-center gap-1.5 flex-wrap">
+                                            {/* Sign with DocSignify Standalone Button */}
+                                            {onNavigateToSignify && (
+                                                <button
+                                                    onClick={() => onNavigateToSignify(generatedDoc)}
+                                                    className="px-3 py-1.5 bg-indigo-600 hover:bg-indigo-700 text-white text-[10px] font-black uppercase tracking-wider rounded-lg transition-all flex items-center gap-1.5 shadow-md"
+                                                >
+                                                    <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth="2.5"><path strokeLinecap="round" strokeLinejoin="round" d="m16.862 4.487 1.687-1.688a1.875 1.875 0 1 1 2.652 2.652L10.582 16.07a4.5 4.5 0 0 1-1.897 1.13L6 18l.8-2.685a4.5 4.5 0 0 1 1.13-1.897l8.932-8.931Zm0 0L19.5 7.125M18 14v4.75A2.25 2.25 0 0 1 15.75 21H5.25A2.25 2.25 0 0 1 3 18.75V8.25A2.25 2.25 0 0 1 5.25 6H10" /></svg>
+                                                    Sign with DocSignify
+                                                </button>
+                                            )}
+
                                             {/* Manual Save / Update changes button */}
                                             <button 
                                                 onClick={handleSaveCurrentDocument} 
