@@ -159,6 +159,7 @@ async function verifyTenant(req: any, res: any, next: any) {
         const isAdminEmail = [
             'cravebiz@cloudcraves.com',
             'super@admin.com',
+            'contact@cloudcraves.com',
             'sheriffdeenalade@gmail.com'
         ].includes(user.email?.toLowerCase() || '');
 
@@ -2314,6 +2315,7 @@ app.post("/api/admin/global-pricing-settings", verifyTenant, async (req: any, re
         const isAdmin = [
             'cravebiz@cloudcraves.com',
             'super@admin.com',
+            'contact@cloudcraves.com',
             'sheriffdeenalade@gmail.com'
         ].includes(userEmail.toLowerCase());
 
@@ -2430,6 +2432,7 @@ app.post("/api/admin/global-refill-packs", verifyTenant, async (req: any, res) =
         const isAdmin = [
             'cravebiz@cloudcraves.com',
             'super@admin.com',
+            'contact@cloudcraves.com',
             'sheriffdeenalade@gmail.com'
         ].includes(userEmail.toLowerCase());
 

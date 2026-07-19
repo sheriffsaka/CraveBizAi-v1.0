@@ -138,10 +138,20 @@ class CraveBizApi {
         }
       }
 
+      let resolvedEmail = email || '';
+      if (resolvedEmail) {
+        resolvedEmail = resolvedEmail.trim().toLowerCase();
+        localStorage.setItem(`cravebiz_user_email_${userId}`, resolvedEmail);
+      } else {
+        resolvedEmail = localStorage.getItem(`cravebiz_user_email_${userId}`) || '';
+      }
+
+      const compositeName = resolvedEmail ? `${name || 'User'} ||| ${resolvedEmail}` : (name || 'User');
+
       // Try to insert a brand new profile first (avoids RLS ON CONFLICT SELECT policy requirements of upsert)
       const { error: insertErr } = await supabase.from('profiles').insert({
         id: userId,
-        full_name: name || 'User',
+        full_name: compositeName,
         status: 'Active',
       });
 
@@ -157,7 +167,7 @@ class CraveBizApi {
         const { error: updateErr } = await supabase
           .from('profiles')
           .update({
-            full_name: name || 'User',
+            full_name: compositeName,
             status: 'Active',
           })
           .eq('id', userId);
@@ -182,7 +192,22 @@ class CraveBizApi {
         const { data, error } = await supabase.from('profiles').select('*').eq('id', userId).maybeSingle();
         if (error) throw error;
         if (!data) return null;
-        return { id: data.id, name: data.full_name, email: '', tenantIds: [], isAdmin: data.is_admin || false, status: data.status || 'Active' };
+
+        let name = data.full_name || '';
+        let email = '';
+        if (name.includes(' ||| ')) {
+          const parts = name.split(' ||| ');
+          name = parts[0];
+          email = parts[1];
+        }
+
+        if (!email) {
+          email = localStorage.getItem(`cravebiz_user_email_${userId}`) || '';
+        } else {
+          localStorage.setItem(`cravebiz_user_email_${userId}`, email);
+        }
+
+        return { id: data.id, name: name, email: email, tenantIds: [], isAdmin: data.is_admin || false, status: data.status || 'Active' };
     } catch (e) {
         console.error("Profile Fetch Error:", e);
         return null; 
@@ -196,14 +221,49 @@ class CraveBizApi {
     // We also need to get their tenant associations
     const { data: members } = await supabase.from('company_members').select('*');
     
-    return (data || []).map(p => ({
-      id: p.id,
-      name: p.full_name,
-      email: '', // Email is usually in auth.users, but we can't easily fetch that from client SDK without admin keys
-      tenantIds: (members || []).filter((m: any) => m.user_id === p.id).map((m: any) => m.company_id),
-      isAdmin: p.is_admin || false,
-      status: p.status || 'Active'
-    }));
+    return (data || []).map(p => {
+      let name = p.full_name || '';
+      let email = '';
+      if (name.includes(' ||| ')) {
+        const parts = name.split(' ||| ');
+        name = parts[0];
+        email = parts[1];
+      }
+
+      if (!email) {
+        const directEmail = localStorage.getItem(`cravebiz_user_email_${p.id}`);
+        if (directEmail) {
+          email = directEmail;
+        } else {
+          for (let i = 0; i < localStorage.length; i++) {
+            const key = localStorage.key(i);
+            if (key && key.startsWith('cravebiz_invited_member_info_') && key.endsWith(`_${p.id}`)) {
+              const savedStr = localStorage.getItem(key);
+              if (savedStr) {
+                try {
+                  const saved = JSON.parse(savedStr);
+                  if (saved && saved.email) {
+                    email = saved.email;
+                    break;
+                  }
+                } catch (e) {}
+              }
+            }
+          }
+        }
+      } else {
+        localStorage.setItem(`cravebiz_user_email_${p.id}`, email);
+      }
+
+      return {
+        id: p.id,
+        name: name,
+        email: email,
+        tenantIds: (members || []).filter((m: any) => m.user_id === p.id).map((m: any) => m.company_id),
+        isAdmin: p.is_admin || false,
+        status: p.status || 'Active'
+      };
+    });
   }
 
   async getAllCompanies(): Promise<Company[]> {
@@ -355,7 +415,17 @@ class CraveBizApi {
 
   async updateProfile(userId: string, details: Partial<User>): Promise<void> {
     const updateData: any = {};
-    if (details.name !== undefined) updateData.full_name = details.name;
+    if (details.name !== undefined || details.email !== undefined) {
+      const email = details.email !== undefined ? details.email : (localStorage.getItem(`cravebiz_user_email_${userId}`) || '');
+      const name = details.name !== undefined ? details.name : '';
+      
+      if (email) {
+        updateData.full_name = `${name || 'User'} ||| ${email}`;
+        localStorage.setItem(`cravebiz_user_email_${userId}`, email);
+      } else {
+        updateData.full_name = name || 'User';
+      }
+    }
     if (details.isAdmin !== undefined) updateData.is_admin = details.isAdmin;
     if (details.status !== undefined) updateData.status = details.status;
     

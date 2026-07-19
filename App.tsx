@@ -238,7 +238,7 @@ export default function App() {
         }
 
         let profile = await api.getProfile(user.id);
-        if (!profile && user.email?.toLowerCase() === 'cravebiz@cloudcraves.com') {
+        if (!profile && (user.email?.toLowerCase() === 'cravebiz@cloudcraves.com' || user.email?.toLowerCase() === 'contact@cloudcraves.com')) {
             profile = { id: user.id, name: 'Super Admin', email: user.email, tenantIds: [], isAdmin: true, status: 'Active' };
         }
 
@@ -249,7 +249,7 @@ export default function App() {
                 name: user.user_metadata?.full_name || 'CraveBiZ Member',
                 email: user.email || '',
                 tenantIds: [],
-                isAdmin: user.email?.toLowerCase() === 'cravebiz@cloudcraves.com' || user.email?.toLowerCase() === 'super@admin.com',
+                isAdmin: user.email?.toLowerCase() === 'cravebiz@cloudcraves.com' || user.email?.toLowerCase() === 'contact@cloudcraves.com' || user.email?.toLowerCase() === 'super@admin.com',
                 status: 'Active'
             };
         }
@@ -257,14 +257,16 @@ export default function App() {
         if (profile && isMounted.current) {
             profile.email = user.email || '';
             profile.user_metadata = user.user_metadata || {};
-            if (profile.email.toLowerCase() === 'cravebiz@cloudcraves.com') {
+            if (profile.email.toLowerCase() === 'cravebiz@cloudcraves.com' || profile.email.toLowerCase() === 'contact@cloudcraves.com') {
                 profile.name = 'Super Admin';
                 profile.isAdmin = true;
+                // Proactively ensure they are marked as super admin in DB
+                api.updateProfile(user.id, { isAdmin: true, email: profile.email, name: 'Super Admin' }).catch(console.error);
             }
             setCurrentUser(profile);
             localStorage.setItem('cravebiz_user_id', user.id);
             
-            if (profile.isAdmin || profile.email?.toLowerCase() === 'cravebiz@cloudcraves.com' || profile.email?.toLowerCase() === 'super@admin.com') {
+            if (profile.isAdmin || profile.email?.toLowerCase() === 'cravebiz@cloudcraves.com' || profile.email?.toLowerCase() === 'contact@cloudcraves.com' || profile.email?.toLowerCase() === 'super@admin.com') {
                 localStorage.setItem('cravebiz_is_super_admin', 'true');
             } else {
                 localStorage.removeItem('cravebiz_is_super_admin');

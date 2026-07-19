@@ -108,7 +108,13 @@ const UsersTable: React.FC<{
           {users.map((user) => (
             <tr key={user.id} className="bg-white border-b hover:bg-gray-50">
               <th scope="row" className="px-6 py-4 font-medium text-gray-900 whitespace-nowrap">{user.name}</th>
-              <td className="px-6 py-4">{user.email}</td>
+              <td className="px-6 py-4">
+                {user.email ? (
+                  <span className="font-semibold text-gray-800">{user.email}</span>
+                ) : (
+                  <span className="text-gray-400 italic text-xs">No email (Click Edit to add)</span>
+                )}
+              </td>
               <td className="px-6 py-4">{user.tenantIds?.length || 0}</td>
               <td className="px-6 py-4">
                 <span className={`px-2 py-1 text-xs font-semibold rounded-full ${user.isAdmin ? 'bg-purple-100 text-purple-800' : 'bg-gray-100 text-gray-700'}`}>

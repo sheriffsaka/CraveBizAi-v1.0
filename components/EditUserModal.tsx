@@ -76,12 +76,16 @@ const EditUserModal: React.FC<EditUserModalProps> = ({ isOpen, onClose, user, on
             <input 
               type="email" 
               id="email" 
-              value={formData.email} 
+              value={formData.email || ''} 
               onChange={handleChange} 
-              className="w-full px-4 py-3 border-2 border-gray-100 rounded-xl focus:border-primary-500 outline-none font-medium bg-gray-50" 
-              disabled
+              className={`w-full px-4 py-3 border-2 border-gray-100 rounded-xl focus:border-primary-500 outline-none font-medium ${user.email ? 'bg-gray-50' : ''}`} 
+              disabled={!!user.email}
             />
-            <p className="mt-1 text-[10px] text-gray-400">Email cannot be changed for security reasons.</p>
+            {!user.email ? (
+              <p className="mt-1 text-[10px] text-gray-400">Add an email address to this user profile for easy identification and super admin access.</p>
+            ) : (
+              <p className="mt-1 text-[10px] text-gray-400">Email cannot be changed for security reasons.</p>
+            )}
           </div>
 
           <div className="grid grid-cols-2 gap-4">
