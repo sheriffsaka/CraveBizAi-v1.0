@@ -160,6 +160,14 @@ const Settings: React.FC<SettingsProps> = ({ company, onSaveChanges, onInviteUse
   }, [activeTenantId]);
 
   useEffect(() => {
+    const handleSubChange = () => {
+      setSubInfo(getSubscriptionInfo(activeTenantId));
+    };
+    window.addEventListener('cravebiz_subscription_change', handleSubChange);
+    return () => window.removeEventListener('cravebiz_subscription_change', handleSubChange);
+  }, [activeTenantId]);
+
+  useEffect(() => {
     const handleScrollToSection = () => {
       const hash = window.location.hash;
       if (hash === '#workspace-subscription-section') {

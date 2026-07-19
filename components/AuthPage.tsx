@@ -22,8 +22,13 @@ const AuthPage: React.FC<AuthPageProps> = ({ onLogin, onSignup, onOpenForgotPass
   const [success, setSuccess] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(false);
 
+  const [subTrigger, setSubTrigger] = useState(0);
+
   React.useEffect(() => {
     syncGlobalPlanSettings().catch(err => console.warn("Failed to sync global plan settings in AuthPage:", err));
+    const handleSubChange = () => setSubTrigger(prev => prev + 1);
+    window.addEventListener('cravebiz_subscription_change', handleSubChange);
+    return () => window.removeEventListener('cravebiz_subscription_change', handleSubChange);
   }, []);
 
   const [loginEmail, setLoginEmail] = useState('');

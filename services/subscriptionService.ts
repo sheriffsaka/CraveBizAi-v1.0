@@ -73,6 +73,27 @@ export const TIER_LIMITS: Record<SubscriptionTier, { maxInvoices: number; maxRec
   }
 };
 
+// Initialize TIER_LIMITS from cached values if available in localStorage (immediate sync)
+if (typeof window !== 'undefined') {
+  try {
+    const cached = localStorage.getItem('cravebiz_custom_tier_limits');
+    if (cached) {
+      const parsed = JSON.parse(cached);
+      Object.keys(parsed).forEach((tierKey) => {
+        const tier = tierKey as SubscriptionTier;
+        if (parsed[tier]) {
+          TIER_LIMITS[tier] = {
+            ...TIER_LIMITS[tier],
+            ...parsed[tier]
+          };
+        }
+      });
+    }
+  } catch (err) {
+    console.warn("Failed to load cached TIER_LIMITS:", err);
+  }
+}
+
 /**
  * Helper to get deterministic valid UUID for settings documents
  */
