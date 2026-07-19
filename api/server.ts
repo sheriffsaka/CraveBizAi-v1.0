@@ -599,7 +599,7 @@ async function deductAiUnitServerSide(
     const defaultFreeUnits = (pricing && pricing.Free && pricing.Free.maxAiUnits !== undefined) ? parseInt(String(pricing.Free.maxAiUnits), 10) : 5;
     const defaultEnterpriseUnits = (pricing && pricing.Enterprise && pricing.Enterprise.maxAiUnits !== undefined) ? parseInt(String(pricing.Enterprise.maxAiUnits), 10) : 2500;
     let aiUnits = isCravebizInc ? defaultEnterpriseUnits : defaultFreeUnits;
-    let aiModeEnabled = false;
+    let aiModeEnabled = true;
     let memberPermissions: Record<string, boolean> = {};
 
     if (data && data.content) {
@@ -611,7 +611,7 @@ async function deductAiUnitServerSide(
                 aiUnits = parsedUnits;
             }
         }
-        aiModeEnabled = content.aiModeEnabled !== undefined ? (content.aiModeEnabled === true || content.aiModeEnabled === "true") : aiModeEnabled;
+        aiModeEnabled = content.aiModeEnabled !== undefined ? (content.aiModeEnabled === true || content.aiModeEnabled === "true") : true;
         memberPermissions = content.memberPermissions || {};
     }
 
@@ -637,7 +637,11 @@ async function deductAiUnitServerSide(
     }
 
     if (!aiModeEnabled) {
-        throw new Error("AI Mode is currently turned OFF. Please turn ON AI Mode in the workspace header or settings to use AI features.");
+        if (aiUnits > 0) {
+            aiModeEnabled = true;
+        } else {
+            throw new Error("AI Mode is currently turned OFF. Please turn ON AI Mode in the workspace header or settings to use AI features.");
+        }
     }
 
     // Deduct 1 unit

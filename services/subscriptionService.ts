@@ -564,15 +564,15 @@ export function getSubscriptionInfo(companyId: string): SubscriptionInfo {
   const isActiveSuperAdminTenant = isSuperAdmin && (companyId === activeTenantId || !companyId);
   const defaultTier: SubscriptionTier = (isCravebizInc || isActiveSuperAdminTenant) ? 'Enterprise' : 'Free';
 
-  // Initialize AI Mode to OFF on initial application load exactly once
+  // Initialize AI Mode to ON on initial application load exactly once
   if (companyId && !globalObj.__cravebiz_aimode_initialized) {
     for (let i = 0; i < localStorage.length; i++) {
       const key = localStorage.key(i);
       if (key && key.startsWith('cravebiz_aimode_')) {
-        localStorage.setItem(key, 'false');
+        localStorage.setItem(key, 'true');
       }
     }
-    localStorage.setItem(`cravebiz_aimode_${companyId}`, 'false');
+    localStorage.setItem(`cravebiz_aimode_${companyId}`, 'true');
     globalObj.__cravebiz_aimode_initialized = true;
   }
 
@@ -584,7 +584,7 @@ export function getSubscriptionInfo(companyId: string): SubscriptionInfo {
       maxInvoices: limits.maxInvoices, 
       maxReceipts: limits.maxReceipts,
       maxUsers: limits.maxUsers,
-      aiModeEnabled: false,
+      aiModeEnabled: true,
       invoiceCount: 0,
       receiptCount: 0
     };
@@ -601,10 +601,9 @@ export function getSubscriptionInfo(companyId: string): SubscriptionInfo {
   const savedUnits = localStorage.getItem(`cravebiz_units_${companyId}`);
   const aiUnits = savedUnits !== null ? parseInt(savedUnits, 10) : limits.maxAiUnits;
 
-  // Retrieve AI mode toggle
+  // Retrieve AI mode toggle - default to 'true' if not set
   const savedAiMode = localStorage.getItem(`cravebiz_aimode_${companyId}`);
-  const defaultAiMode = 'false';
-  const aiModeEnabled = (limits.aiAvailable || aiUnits > 0) && (savedAiMode !== null ? savedAiMode === 'true' : false);
+  const aiModeEnabled = (limits.aiAvailable || aiUnits > 0) && (savedAiMode !== null ? savedAiMode === 'true' : true);
 
   const invoiceCount = parseInt(localStorage.getItem(`cravebiz_invoice_count_${companyId}`) || '0', 10);
   const receiptCount = parseInt(localStorage.getItem(`cravebiz_receipt_count_${companyId}`) || '0', 10);
@@ -1107,9 +1106,13 @@ export function ensureAiCreditsOrThrow(companyId: string): void {
 
   // Check if AI mode is turned ON
   if (!sub.aiModeEnabled) {
-    const msg = "AI Mode is currently turned OFF. Please turn ON AI Mode in the top header or Workspace Settings to use AI features.";
-    window.dispatchEvent(new CustomEvent('cravebiz_subscription_error', { detail: { message: msg } }));
-    throw new Error(msg);
+    try {
+      toggleAiMode(companyId, true);
+    } catch (e) {
+      const msg = "AI Mode is currently turned OFF. Please turn ON AI Mode in the top header or Workspace Settings to use AI features.";
+      window.dispatchEvent(new CustomEvent('cravebiz_subscription_error', { detail: { message: msg } }));
+      throw new Error(msg);
+    }
   }
 
   // Check credits
