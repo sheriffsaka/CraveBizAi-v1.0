@@ -58,9 +58,11 @@ function writeLocalCreditCache(cache: Record<string, UserAiCredits>): void {
  * Standard default credit limits by plan
  */
 export const DEFAULT_PLAN_CREDITS: Record<string, number> = {
-  Free: 20,
-  Pro: 500,
-  Business: 1000,
+  Free: 5,
+  Starter: 100,
+  Growth: 300,
+  Pro: 300,
+  Business: 800,
   Enterprise: 2500,
 };
 
@@ -79,6 +81,18 @@ export function getDbKey(userId?: string, tenantId?: string): string {
     return cleanKey;
   }
   return cleanKey;
+}
+
+/**
+ * Helper to get strictly valid UUID for SQL UUID columns (company_id)
+ */
+export function getDbUuidKey(userId?: string, tenantId?: string): string {
+  const key = getDbKey(userId, tenantId);
+  if (key === "00000000-0000-0000-0000-000000000000") return key;
+  if (/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(key)) {
+    return key;
+  }
+  return "11111111-1111-1111-1111-111111111111";
 }
 
 /**
@@ -108,8 +122,8 @@ export async function getUserAiCredits(
       creditsData = {
         userId: data.user_id || key,
         tenantId: data.tenant_id || tenantId,
-        totalCredits: parseInt(String(data.total_credits ?? 20), 10),
-        remainingCredits: parseInt(String(data.remaining_credits ?? 20), 10),
+        totalCredits: parseInt(String(data.total_credits ?? 5), 10),
+        remainingCredits: parseInt(String(data.remaining_credits ?? 5), 10),
         creditsUsed: parseInt(String(data.credits_used ?? 0), 10),
         lastResetDate: data.last_reset_date || new Date().toISOString(),
         subscriptionPlan: data.subscription_plan || "Free",
@@ -137,8 +151,8 @@ export async function getUserAiCredits(
         creditsData = {
           userId: key,
           tenantId: tenantId,
-          totalCredits: parseInt(String(c.totalCredits ?? 20), 10),
-          remainingCredits: parseInt(String(c.remainingCredits ?? 20), 10),
+          totalCredits: parseInt(String(c.totalCredits ?? 5), 10),
+          remainingCredits: parseInt(String(c.remainingCredits ?? 5), 10),
           creditsUsed: parseInt(String(c.creditsUsed ?? 0), 10),
           lastResetDate: c.lastResetDate || new Date().toISOString(),
           subscriptionPlan: c.subscriptionPlan || "Free",
@@ -176,7 +190,7 @@ export async function getUserAiCredits(
 
   const isCravebizInc = tenantId === "cravebiz-inc" || key === "00000000-0000-0000-0000-000000000000";
   const wsTier = wsContent?.tier || (isCravebizInc ? "Enterprise" : "Free");
-  const wsPlanMax = DEFAULT_PLAN_CREDITS[wsTier] || 20;
+  const wsPlanMax = DEFAULT_PLAN_CREDITS[wsTier] || (isCravebizInc ? 2500 : 5);
   const wsPurchased = parseInt(String(wsContent?.purchasedAiUnits ?? 0), 10);
   const wsAiUnits = wsContent?.aiUnits !== undefined ? parseInt(String(wsContent.aiUnits), 10) : wsPlanMax;
   const wsTotal = Math.max(wsPlanMax + wsPurchased, wsAiUnits);
@@ -195,20 +209,18 @@ export async function getUserAiCredits(
 
     saveUserAiCredits(creditsData, token).catch(console.error);
   } else {
-    // If credit record exists, ensure it matches workspace tier & higher available units
-    let shouldUpdate = false;
+    // Correct legacy Free accounts that were wrongly defaulted to 20 total credits
+    if (creditsData.subscriptionPlan === "Free" && creditsData.totalCredits > 5 && wsPurchased === 0) {
+      creditsData.totalCredits = 5;
+      creditsData.remainingCredits = Math.min(creditsData.remainingCredits, 5);
+      saveUserAiCredits(creditsData, token).catch(console.error);
+    }
+
+    // Sync tier upgrades if plan changed
     if (wsTier !== "Free" && creditsData.subscriptionPlan === "Free") {
       creditsData.subscriptionPlan = wsTier;
       creditsData.totalCredits = wsTotal;
       creditsData.remainingCredits = Math.max(creditsData.remainingCredits, wsAiUnits);
-      shouldUpdate = true;
-    } else if (wsAiUnits > creditsData.remainingCredits && wsContent?.aiUnits !== undefined) {
-      creditsData.remainingCredits = wsAiUnits;
-      creditsData.totalCredits = Math.max(creditsData.totalCredits, wsTotal);
-      shouldUpdate = true;
-    }
-
-    if (shouldUpdate) {
       saveUserAiCredits(creditsData, token).catch(console.error);
     } else {
       localCache[key] = creditsData;
@@ -412,7 +424,7 @@ export async function logFailedAiRequest(
 }
 
 /**
- * Writes an entry into Supabase 'ai_credit_logs' table.
+ * Writes an entry into Supabase 'ai_credit_logs', 'ai_usage_logs', and 'audit_logs' tables.
  */
 export async function logAiCreditRequest(
   log: AiCreditLog,
@@ -420,24 +432,85 @@ export async function logAiCreditRequest(
 ): Promise<void> {
   const client = token ? createClient(SUPABASE_URL, SUPABASE_ANON_KEY, { global: { headers: { Authorization: `Bearer ${token}` } } }) : rootSupabase;
 
-  const dbCompanyId = getDbKey(log.userId, log.tenantId);
+  const dbCompanyId = getDbUuidKey(log.userId, log.tenantId);
+  const taskFormatted = `${log.featureUsed} [${log.status}]`;
+  const timestamp = log.timestamp || new Date().toISOString();
 
+  // 1. Write to ai_credit_logs
   try {
-    const taskFormatted = `${log.featureUsed} [${log.status}]`;
     const { error } = await client.from("ai_credit_logs").insert({
       user_id: log.userId,
       company_id: dbCompanyId,
       task_performed: taskFormatted,
       tokens_used: log.tokensUsed || 0,
       credits_used: log.creditsDeducted,
-      timestamp: log.timestamp || new Date().toISOString(),
+      timestamp: timestamp,
     });
-
     if (error) {
-      console.warn("[logAiCreditRequest] Supabase ai_credit_logs insert warning:", error.message);
+      await rootSupabase.from("ai_credit_logs").insert({
+        user_id: log.userId,
+        company_id: dbCompanyId,
+        task_performed: taskFormatted,
+        tokens_used: log.tokensUsed || 0,
+        credits_used: log.creditsDeducted,
+        timestamp: timestamp,
+      });
     }
   } catch (err) {
-    console.warn("[logAiCreditRequest] Exception writing log:", err);
+    console.warn("[logAiCreditRequest] ai_credit_logs error:", err);
+  }
+
+  // 2. Write to ai_usage_logs
+  try {
+    await rootSupabase.from("ai_usage_logs").insert({
+      user_id: log.userId,
+      company_id: dbCompanyId,
+      task_performed: taskFormatted,
+      tokens_used: log.tokensUsed || 0,
+      credits_used: log.creditsDeducted,
+      timestamp: timestamp,
+    });
+  } catch (err) {
+    console.warn("[logAiCreditRequest] ai_usage_logs error:", err);
+  }
+
+  // 3. Write to generated_documents as fallback
+  try {
+    const entryId = `ledger-${Date.now()}-${Math.random().toString(36).substring(2, 11)}`;
+    await rootSupabase.from("generated_documents").insert({
+      id: entryId,
+      company_id: dbCompanyId === "00000000-0000-0000-0000-000000000000" ? null : dbCompanyId,
+      document_type: "cravebiz_ai_ledger_entry",
+      content: {
+        userId: log.userId,
+        tenantId: log.tenantId,
+        featureUsed: log.featureUsed,
+        creditsDeducted: log.creditsDeducted,
+        tokensUsed: log.tokensUsed || 0,
+        status: log.status,
+        timestamp: timestamp,
+        details: log.details
+      }
+    });
+  } catch (err) {
+    console.warn("[logAiCreditRequest] generated_documents fallback error:", err);
+  }
+
+  // 4. ALSO create Workspace Audit Log entry in audit_logs table
+  try {
+    const auditId = `audit-${Date.now()}-${Math.random().toString(36).substring(2, 11)}`;
+    await rootSupabase.from("audit_logs").insert({
+      id: auditId,
+      company_id: dbCompanyId,
+      user_id: log.userId,
+      user_name: log.userId,
+      action: "AI_USAGE",
+      resource: "AI Engine",
+      details: `${log.featureUsed} (${log.status}) - ${log.creditsDeducted} credit(s) deducted.`,
+      created_at: timestamp
+    });
+  } catch (err) {
+    console.warn("[logAiCreditRequest] audit_logs error:", err);
   }
 }
 
@@ -451,48 +524,128 @@ export async function getAiCreditLogs(
   token?: string
 ): Promise<AiCreditLog[]> {
   const client = token ? createClient(SUPABASE_URL, SUPABASE_ANON_KEY, { global: { headers: { Authorization: `Bearer ${token}` } } }) : rootSupabase;
-  const dbCompanyId = getDbKey(userId, tenantId);
+  const dbCompanyId = getDbUuidKey(userId, tenantId);
 
+  const logsMap = new Map<string, AiCreditLog>();
+
+  // 1. Fetch from ai_credit_logs
   try {
-    const { data, error } = await client
+    const { data } = await client
       .from("ai_credit_logs")
       .select("*")
       .or(`company_id.eq.${dbCompanyId},user_id.eq.${userId}`)
       .order("timestamp", { ascending: false })
       .limit(limit);
 
-    if (error) {
-      console.warn("[getAiCreditLogs] Fetch error:", error.message);
-      return [];
+    if (data) {
+      data.forEach((row: any) => {
+        let status: 'Success' | 'Failed' = 'Success';
+        let featureName = row.task_performed || 'AI Service';
+
+        if (featureName.includes('[Failed]')) {
+          status = 'Failed';
+          featureName = featureName.replace('[Failed]', '').trim();
+        } else if (featureName.includes('[Success]')) {
+          status = 'Success';
+          featureName = featureName.replace('[Success]', '').trim();
+        }
+
+        const log: AiCreditLog = {
+          id: row.id,
+          userId: row.user_id,
+          tenantId: row.company_id,
+          featureUsed: featureName,
+          creditsDeducted: row.credits_used ?? 0,
+          timestamp: row.timestamp,
+          status: status,
+          tokensUsed: row.tokens_used,
+        };
+        logsMap.set(row.id || `${row.timestamp}-${row.task_performed}`, log);
+      });
     }
-
-    return (data || []).map((row: any) => {
-      let status: 'Success' | 'Failed' = 'Success';
-      let featureName = row.task_performed || 'AI Service';
-
-      if (featureName.includes('[Failed]')) {
-        status = 'Failed';
-        featureName = featureName.replace('[Failed]', '').trim();
-      } else if (featureName.includes('[Success]')) {
-        status = 'Success';
-        featureName = featureName.replace('[Success]', '').trim();
-      }
-
-      return {
-        id: row.id,
-        userId: row.user_id,
-        tenantId: row.company_id,
-        featureUsed: featureName,
-        creditsDeducted: row.credits_used ?? 0,
-        timestamp: row.timestamp,
-        status: status,
-        tokensUsed: row.tokens_used,
-      };
-    });
   } catch (err) {
-    console.warn("[getAiCreditLogs] Query exception:", err);
-    return [];
+    console.warn("[getAiCreditLogs] ai_credit_logs query exception:", err);
   }
+
+  // 2. Fetch from ai_usage_logs
+  if (logsMap.size < limit) {
+    try {
+      const { data } = await rootSupabase
+        .from("ai_usage_logs")
+        .select("*")
+        .or(`company_id.eq.${dbCompanyId},user_id.eq.${userId}`)
+        .order("timestamp", { ascending: false })
+        .limit(limit);
+
+      if (data) {
+        data.forEach((row: any) => {
+          let status: 'Success' | 'Failed' = 'Success';
+          let featureName = row.task_performed || 'AI Service';
+
+          if (featureName.includes('[Failed]')) {
+            status = 'Failed';
+            featureName = featureName.replace('[Failed]', '').trim();
+          } else if (featureName.includes('[Success]')) {
+            status = 'Success';
+            featureName = featureName.replace('[Success]', '').trim();
+          }
+
+          const key = row.id || `${row.timestamp}-${row.task_performed}`;
+          if (!logsMap.has(key)) {
+            logsMap.set(key, {
+              id: row.id,
+              userId: row.user_id,
+              tenantId: row.company_id,
+              featureUsed: featureName,
+              creditsDeducted: row.credits_used ?? 0,
+              timestamp: row.timestamp,
+              status: status,
+              tokensUsed: row.tokens_used,
+            });
+          }
+        });
+      }
+    } catch (err) {
+      console.warn("[getAiCreditLogs] ai_usage_logs query exception:", err);
+    }
+  }
+
+  // 3. Fallback to generated_documents (document_type = 'cravebiz_ai_ledger_entry')
+  if (logsMap.size < limit) {
+    try {
+      const { data } = await rootSupabase
+        .from("generated_documents")
+        .select("*")
+        .eq("document_type", "cravebiz_ai_ledger_entry")
+        .order("created_at", { ascending: false })
+        .limit(limit);
+
+      if (data) {
+        data.forEach((doc: any) => {
+          const c = doc.content || {};
+          const key = doc.id;
+          if (!logsMap.has(key)) {
+            logsMap.set(key, {
+              id: doc.id,
+              userId: c.userEmail || c.userId || "user",
+              tenantId: doc.company_id || tenantId,
+              featureUsed: c.task || c.featureUsed || "AI Service",
+              creditsDeducted: c.creditsUsed ?? c.creditsDeducted ?? 0,
+              timestamp: c.timestamp || doc.created_at,
+              status: c.status || "Success",
+              tokensUsed: c.tokensUsed,
+            });
+          }
+        });
+      }
+    } catch (err) {
+      console.warn("[getAiCreditLogs] generated_documents query exception:", err);
+    }
+  }
+
+  const result = Array.from(logsMap.values());
+  result.sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());
+  return result.slice(0, limit);
 }
 
 /**
