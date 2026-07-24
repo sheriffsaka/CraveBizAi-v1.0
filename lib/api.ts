@@ -7,6 +7,46 @@ const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBh
 
 export const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 
+export const safeGetUser = async () => {
+  try {
+    const { data, error } = await supabase.auth.getUser();
+    if (error) {
+      if (error.message?.includes('Refresh Token') || error.message?.includes('invalid') || error.message?.includes('not found')) {
+        console.warn("[Auth] Invalid refresh token, clearing session state.");
+        await supabase.auth.signOut().catch(() => {});
+      }
+      return null;
+    }
+    return data?.user || null;
+  } catch (e: any) {
+    console.warn("[Auth] Error getting user:", e?.message || e);
+    if (e?.message?.includes('Refresh Token') || String(e).includes('Refresh Token')) {
+      await supabase.auth.signOut().catch(() => {});
+    }
+    return null;
+  }
+};
+
+export const safeGetSession = async () => {
+  try {
+    const { data, error } = await supabase.auth.getSession();
+    if (error) {
+      if (error.message?.includes('Refresh Token') || error.message?.includes('invalid') || error.message?.includes('not found')) {
+        console.warn("[Auth] Invalid refresh token in session, clearing session state.");
+        await supabase.auth.signOut().catch(() => {});
+      }
+      return null;
+    }
+    return data?.session || null;
+  } catch (e: any) {
+    console.warn("[Auth] Error getting session:", e?.message || e);
+    if (e?.message?.includes('Refresh Token') || String(e).includes('Refresh Token')) {
+      await supabase.auth.signOut().catch(() => {});
+    }
+    return null;
+  }
+};
+
 const safeRandomUUID = (): string => {
   if (typeof window !== 'undefined' && window.crypto && window.crypto.randomUUID) {
     try {
@@ -361,7 +401,7 @@ class CraveBizApi {
   }
 
   async getMyCompanies(): Promise<Company[]> {
-    const { data: { user } } = await supabase.auth.getUser();
+    const user = await safeGetUser();
     if (!user) return [];
     
     try {
@@ -398,7 +438,7 @@ class CraveBizApi {
   }
 
   async createCompany(details: Partial<Company>): Promise<Company> {
-    const { data: { user } } = await supabase.auth.getUser();
+    const user = await safeGetUser();
     if (!user) throw new Error("Authentication Lost");
     
     const { data: company, error } = await supabase.from('companies').insert({
@@ -1095,7 +1135,7 @@ class CraveBizApi {
     
     // Proactively ensure currently logged-in user is mapped in company_members to satisfy membership RLS policy
     try {
-      const { data: { user } } = await supabase.auth.getUser();
+      const user = await safeGetUser();
       if (user) {
         try {
           const { data: existing } = await supabase.from('company_members')
@@ -2018,7 +2058,7 @@ class CraveBizApi {
       }
     }
     try {
-      const { data: { session } } = await supabase.auth.getSession();
+      const session = await safeGetSession();
       if (session?.access_token) {
         headers['Authorization'] = `Bearer ${session.access_token}`;
       }
@@ -2120,6 +2160,14 @@ class CraveBizApi {
       return JSON.parse(localLogs);
     }
     return [];
+  }
+
+  async safeGetUser() {
+    return safeGetUser();
+  }
+
+  async safeGetSession() {
+    return safeGetSession();
   }
 }
 export const api = CraveBizApi.getInstance();

@@ -317,33 +317,44 @@ export default function App() {
             if (hash && (hash.includes('type=recovery') || hash.includes('access_token='))) {
                 setIsResetPasswordOpen(true);
             }
-            const { data } = await supabase.auth.getSession();
-            if (data?.session?.user) {
-                await handleAuthSync(data.session.user);
+            const session = await api.safeGetSession();
+            if (session?.user) {
+                await handleAuthSync(session.user);
                 if (hash && (hash.includes('type=recovery') || hash.includes('access_token='))) {
-                    if (data.session.user.email) {
-                        setResetEmail(data.session.user.email);
+                    if (session.user.email) {
+                        setResetEmail(session.user.email);
                     }
                 }
             }
             else if (isMounted.current) setIsLoading(false);
-        } catch (e) { if (isMounted.current) { setIsLoading(false); setSyncError(stringifyError(e)); } }
+        } catch (e) { 
+            console.warn("[Auth Init] Handled exception:", e);
+            if (isMounted.current) { 
+                setIsLoading(false); 
+                if (!stringifyError(e).includes('Refresh Token')) {
+                    setSyncError(stringifyError(e)); 
+                }
+            } 
+        }
     };
     initAuth();
     const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
+        if (event === 'SIGNED_OUT' || !session) {
+            if (isMounted.current) { 
+                currentUserIdRef.current = null;
+                setCurrentUser(null); setIsLoading(false); setCompanies([]); setActiveTenantId(null); 
+                setTenantData({ invoices: [], clients: [], services: [], generatedDocs: [], projects: [] }); 
+                localStorage.removeItem('cravebiz_tenant'); 
+                localStorage.removeItem('cravebiz_is_super_admin');
+            }
+            return;
+        }
         if (session?.user) {
             handleAuthSync(session.user);
             if (event === 'PASSWORD_RECOVERY') {
                 setIsResetPasswordOpen(true);
                 if (session.user.email) setResetEmail(session.user.email);
             }
-        }
-        else if (event === 'SIGNED_OUT' && isMounted.current) { 
-            currentUserIdRef.current = null;
-            setCurrentUser(null); setIsLoading(false); setCompanies([]); setActiveTenantId(null); 
-            setTenantData({ invoices: [], clients: [], services: [], generatedDocs: [], projects: [] }); 
-            localStorage.removeItem('cravebiz_tenant'); 
-            localStorage.removeItem('cravebiz_is_super_admin');
         }
     });
     return () => { isMounted.current = false; subscription.unsubscribe(); };
