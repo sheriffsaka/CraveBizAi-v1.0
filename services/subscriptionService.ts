@@ -446,25 +446,32 @@ export async function saveGlobalPlanSettings(limits: typeof TIER_LIMITS): Promis
     }
     console.log("Successfully saved global plan settings via backend proxy.");
   } catch (err) {
-    console.warn("Could not save global plans via backend proxy, trying direct Supabase fallback:", err);
+    console.warn("Could not save global plans via backend proxy, saving to local cache fallback:", err);
+    localStorage.setItem('cravebiz_custom_tier_limits', JSON.stringify(limits));
     try {
-      const { error } = await supabase.from('generated_documents').upsert({
-        id: '99999999-9999-9999-9999-999999999999',
-        company_id: null,
-        document_type: 'cravebiz_global_pricing_settings',
-        content: limits
+      const rowsToInsert = Object.keys(limits).map((tierKey) => {
+        const item = limits[tierKey as SubscriptionTier];
+        return {
+          tier: tierKey,
+          price: item.price,
+          max_ai_units: item.maxAiUnits,
+          max_invoices: item.maxInvoices,
+          max_receipts: item.maxReceipts,
+          max_users: item.maxUsers,
+          ai_available: item.aiAvailable !== false,
+          inactive: !!item.inactive,
+          description: item.description || ""
+        };
       });
-      if (error) {
-        console.warn("Direct Supabase save global plans fallback also failed:", error);
-      }
+      await supabase.from('cravebiz_global_pricing_settings').upsert(rowsToInsert);
     } catch (dbErr) {
-      console.warn("Direct Supabase fallback exception:", dbErr);
+      console.warn("Direct Supabase table fallback exception:", dbErr);
     }
   }
 }
 
 /**
- * Syncs customizable TIER_LIMITS from Supabase
+ * Syncs customizable TIER_LIMITS from Supabase / Backend Pricing Service
  */
 export async function syncGlobalPlanSettings(): Promise<void> {
   try {
@@ -491,7 +498,6 @@ export async function syncGlobalPlanSettings(): Promise<void> {
       localStorage.setItem('cravebiz_custom_tier_limits', JSON.stringify(TIER_LIMITS));
       window.dispatchEvent(new Event('cravebiz_subscription_change'));
     } else {
-      // Check if local storage has cached limits
       const cached = localStorage.getItem('cravebiz_custom_tier_limits');
       if (cached) {
         const parsed = JSON.parse(cached);
@@ -505,42 +511,21 @@ export async function syncGlobalPlanSettings(): Promise<void> {
       }
     }
   } catch (err) {
-    console.warn("Could not sync global plans from backend proxy, trying direct Supabase fallback:", err);
-    try {
-      const { data, error } = await supabase
-        .from('generated_documents')
-        .select('content')
-        .eq('id', '99999999-9999-9999-9999-999999999999')
-        .maybeSingle();
-
-      if (data && data.content) {
-        const content = data.content as any;
-        Object.keys(content).forEach((tierKey) => {
+    console.warn("Could not sync global plans from backend proxy, loading cached local pricing:", err);
+    const cached = localStorage.getItem('cravebiz_custom_tier_limits');
+    if (cached) {
+      try {
+        const parsed = JSON.parse(cached);
+        Object.keys(parsed).forEach((tierKey) => {
           const tier = tierKey as SubscriptionTier;
-          if (content[tier]) {
-            TIER_LIMITS[tier] = {
-              ...TIER_LIMITS[tier],
-              ...content[tier]
-            };
-          }
+          TIER_LIMITS[tier] = {
+            ...TIER_LIMITS[tier],
+            ...parsed[tier]
+          };
         });
-        localStorage.setItem('cravebiz_custom_tier_limits', JSON.stringify(TIER_LIMITS));
-        window.dispatchEvent(new Event('cravebiz_subscription_change'));
-      } else {
-        const cached = localStorage.getItem('cravebiz_custom_tier_limits');
-        if (cached) {
-          const parsed = JSON.parse(cached);
-          Object.keys(parsed).forEach((tierKey) => {
-            const tier = tierKey as SubscriptionTier;
-            TIER_LIMITS[tier] = {
-              ...TIER_LIMITS[tier],
-              ...parsed[tier]
-            };
-          });
-        }
+      } catch (e) {
+        // ignore
       }
-    } catch (fallbackErr) {
-      console.warn("Direct Supabase sync fallback failed:", fallbackErr);
     }
   }
 }

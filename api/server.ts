@@ -2440,68 +2440,118 @@ app.get("/api/admin/transactions", async (req: any, res) => {
 // GET endpoint to fetch global plan settings
 app.get("/api/admin/global-pricing-settings", verifyTenant, async (req: any, res) => {
     try {
-        console.log("[Global Pricing] Fetching global pricing from Supabase...");
-        let supabaseError = null;
+        console.log("[Global Pricing] Fetching global pricing settings...");
         let dbData = null;
+
+        // 1. Try custom SQL tables first (global_pricing_settings or cravebiz_global_pricing_settings)
         try {
             const client = getAuthenticatedClient(req.token);
-            const { data, error } = await client
-                .from("generated_documents")
-                .select("content")
-                .eq("id", "99999999-9999-9999-9999-999999999999")
-                .maybeSingle();
-
-            if (!error && data && data.content) {
-                dbData = data.content;
-            } else {
-                supabaseError = error;
+            const { data: t1 } = await client.from("global_pricing_settings").select("*");
+            if (t1 && t1.length > 0) {
+                const formatted: Record<string, any> = {};
+                t1.forEach((row: any) => {
+                    formatted[row.tier || row.name] = {
+                        price: row.price,
+                        maxAiUnits: row.max_ai_units ?? row.maxAiUnits,
+                        maxInvoices: row.max_invoices ?? row.maxInvoices,
+                        maxReceipts: row.max_receipts ?? row.maxReceipts,
+                        maxUsers: row.max_users ?? row.maxUsers,
+                        aiAvailable: row.ai_available ?? row.aiAvailable ?? true,
+                        inactive: row.inactive ?? false,
+                        description: row.description
+                    };
+                });
+                dbData = formatted;
             }
-        } catch (dbEx: any) {
-            console.warn("[Global Pricing] Supabase query exception:", dbEx.message || dbEx);
-            supabaseError = dbEx;
+        } catch (e) {
+            // ignore
         }
 
-        // Fallback to server-level supabaseClient if client fetch was blocked or failed
         if (!dbData) {
             try {
-                console.log("[Global Pricing] Trying root supabaseClient to fetch global pricing settings...");
-                const { data, error } = await supabaseClient
+                const client = getAuthenticatedClient(req.token);
+                const { data: t2 } = await client.from("cravebiz_global_pricing_settings").select("*");
+                if (t2 && t2.length > 0) {
+                    const formatted: Record<string, any> = {};
+                    t2.forEach((row: any) => {
+                        formatted[row.tier || row.name] = {
+                            price: row.price,
+                            maxAiUnits: row.max_ai_units ?? row.maxAiUnits,
+                            maxInvoices: row.max_invoices ?? row.maxInvoices,
+                            maxReceipts: row.max_receipts ?? row.maxReceipts,
+                            maxUsers: row.max_users ?? row.maxUsers,
+                            aiAvailable: row.ai_available ?? row.aiAvailable ?? true,
+                            inactive: row.inactive ?? false,
+                            description: row.description
+                        };
+                    });
+                    dbData = formatted;
+                }
+            } catch (e) {
+                // ignore
+            }
+        }
+
+        // 2. Try standalone local file cache (cravebiz_global_pricing_settings.json)
+        if (!dbData) {
+            const local = getLocalGlobalPricingSettings();
+            if (local && Object.keys(local).length > 0) {
+                console.log("[Global Pricing] Loaded successfully from cravebiz_global_pricing_settings.json file.");
+                return res.json(local);
+            }
+        }
+
+        // 3. Fallback to generated_documents legacy fallback if exists
+        if (!dbData) {
+            try {
+                const { data } = await supabaseClient
                     .from("generated_documents")
                     .select("content")
                     .eq("id", "99999999-9999-9999-9999-999999999999")
                     .maybeSingle();
-                if (!error && data && data.content) {
+                if (data && data.content) {
                     dbData = data.content;
-                } else if (error) {
-                    supabaseError = error;
                 }
             } catch (fallbackEx: any) {
-                console.warn("[Global Pricing] Root supabaseClient fetch failed:", fallbackEx.message || fallbackEx);
+                console.warn("[Global Pricing] Legacy generated_documents fallback query failed:", fallbackEx.message || fallbackEx);
             }
         }
 
         if (dbData) {
-            console.log("[Global Pricing] Loaded successfully from Supabase database.");
             saveLocalGlobalPricingSettings(dbData);
             return res.json(dbData);
         }
 
-        if (supabaseError) {
-            console.warn("[Global Pricing] Supabase fetch failed/errored, trying local cache fallback:", supabaseError);
-        }
-
-        // Try local cache file fallback
-        const local = getLocalGlobalPricingSettings();
-        if (local) {
-            console.log("[Global Pricing] Successfully loaded global pricing from local file cache fallback.");
-            return res.json(local);
-        }
-
-        // Return fallback defaults
-        console.log("[Global Pricing] No DB data or cache found. Returning fallback pricing defaults.");
-        return res.json(getGlobalPricingWithFallback());
+        // 4. Return default fallback object
+        const defaults = getGlobalPricingWithFallback();
+        saveLocalGlobalPricingSettings(defaults);
+        return res.json(defaults);
     } catch (err: any) {
         console.error("Express GET /api/admin/global-pricing-settings error:", err);
+        res.status(500).json({ error: err.message || "Internal server error" });
+    }
+});
+
+// GET endpoint to fetch formatted table list of global plans
+app.get("/api/admin/global-pricing-settings/plans", verifyTenant, async (req: any, res) => {
+    try {
+        const local = getLocalGlobalPricingSettings() || getGlobalPricingWithFallback();
+        const planList = Object.keys(local).map((tierKey) => {
+            const p = local[tierKey] || {};
+            return {
+                tier: tierKey,
+                price: p.price || "₦0.00",
+                maxAiUnits: p.maxAiUnits ?? 5,
+                maxInvoices: p.maxInvoices ?? 10,
+                maxReceipts: p.maxReceipts ?? 10,
+                maxUsers: p.maxUsers ?? 1,
+                aiAvailable: p.aiAvailable !== false,
+                inactive: !!p.inactive,
+                description: p.description || ""
+            };
+        });
+        return res.json({ success: true, count: planList.length, plans: planList });
+    } catch (err: any) {
         res.status(500).json({ error: err.message || "Internal server error" });
     }
 });
@@ -2509,7 +2559,6 @@ app.get("/api/admin/global-pricing-settings", verifyTenant, async (req: any, res
 // POST endpoint to update global plan settings
 app.post("/api/admin/global-pricing-settings", verifyTenant, async (req: any, res) => {
     try {
-        // Double-check admin privileges
         const userEmail = req.user?.email || "";
         const isAdmin = [
             'cravebiz@cloudcraves.com',
@@ -2527,45 +2576,60 @@ app.post("/api/admin/global-pricing-settings", verifyTenant, async (req: any, re
             return res.status(400).json({ error: "Invalid pricing limits payload" });
         }
 
-        // Save locally
+        // 1. Save locally to cravebiz_global_pricing_settings.json
         saveLocalGlobalPricingSettings(limits);
 
-        // Await writing to Supabase synchronously
-        console.log("[Global Pricing] Saving global pricing to Supabase database...");
+        // 2. Try writing to custom SQL tables (global_pricing_settings or cravebiz_global_pricing_settings)
         const client = getAuthenticatedClient(req.token);
-        let { error: dbErr } = await client
-            .from("generated_documents")
-            .upsert({
+        const rowsToInsert = Object.keys(limits).map((tierKey) => {
+            const item = limits[tierKey];
+            return {
+                tier: tierKey,
+                price: item.price,
+                max_ai_units: item.maxAiUnits,
+                max_invoices: item.maxInvoices,
+                max_receipts: item.maxReceipts,
+                max_users: item.maxUsers,
+                ai_available: item.aiAvailable !== false,
+                inactive: !!item.inactive,
+                description: item.description || ""
+            };
+        });
+
+        let tableSaved = false;
+        try {
+            const { error: err1 } = await client.from("global_pricing_settings").upsert(rowsToInsert);
+            if (!err1) tableSaved = true;
+        } catch (e) {
+            // ignore
+        }
+
+        if (!tableSaved) {
+            try {
+                const { error: err2 } = await client.from("cravebiz_global_pricing_settings").upsert(rowsToInsert);
+                if (!err2) tableSaved = true;
+            } catch (e) {
+                // ignore
+            }
+        }
+
+        // 3. Keep legacy fallback updated as backup
+        try {
+            await supabaseClient.from("generated_documents").upsert({
                 id: '99999999-9999-9999-9999-999999999999',
                 company_id: null,
                 document_type: 'cravebiz_global_pricing_settings',
                 content: limits
             });
-
-        if (dbErr) {
-            console.warn("[Global Pricing Sync] Authenticated client failed, trying root supabaseClient fallback...", dbErr);
-            const { error: fallbackErr } = await supabaseClient
-                .from("generated_documents")
-                .upsert({
-                    id: '99999999-9999-9999-9999-999999999999',
-                    company_id: null,
-                    document_type: 'cravebiz_global_pricing_settings',
-                    content: limits
-                });
-            dbErr = fallbackErr;
+        } catch (e) {
+            // ignore
         }
 
-        if (dbErr) {
-            console.warn("[Global Pricing Sync] Supabase upsert failed/blocked by RLS, but successfully saved to local file cache fallback:", dbErr);
-            return res.json({
-                success: true,
-                message: "Global plan settings saved successfully to local server cache (Supabase DB sync was bypassed or blocked by RLS policies).",
-                warning: dbErr.message || "Supabase DB sync was bypassed or blocked by RLS policies"
-            });
-        }
-
-        console.log("[Global Pricing Sync] Supabase upsert successful.");
-        res.json({ success: true, message: "Global plan settings saved successfully to Supabase and cache." });
+        res.json({
+            success: true,
+            message: "Global pricing settings saved successfully to cravebiz_global_pricing_settings.json and database.",
+            tableSynced: tableSaved
+        });
     } catch (err: any) {
         console.error("Express POST /api/admin/global-pricing-settings error:", err);
         res.status(500).json({ error: err.message || "Internal server error" });

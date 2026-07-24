@@ -752,9 +752,65 @@ Admin Query: ${activePrompt}
         <div className="bg-white p-8 rounded-[3rem] shadow-2xl border border-gray-100 mt-8">
           <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 mb-6">
             <div>
-              <h3 className="text-lg font-black text-gray-800 uppercase tracking-tight">Standard Plan Limits & Pricing Settings</h3>
-              <p className="text-xs text-gray-400 font-medium">Configure global subscription plan prices, credit allowance limits, and other tier features</p>
+              <h3 className="text-lg font-black text-gray-800 uppercase tracking-tight">Standard Plan Limits & Global Pricing Table</h3>
+              <p className="text-xs text-gray-400 font-medium">Standalone global pricing configuration decoupled into structured database settings</p>
             </div>
+            {savePricingSuccess && (
+              <span className="text-xs font-black text-emerald-600 bg-emerald-50 px-4 py-2 rounded-xl border border-emerald-100 animate-in fade-in">
+                ✓ Global Pricing Settings Saved!
+              </span>
+            )}
+          </div>
+
+          {/* Structured Table Summary */}
+          <div className="mb-8 overflow-x-auto rounded-2xl border border-gray-200 bg-gray-50/30">
+            <table className="w-full text-left border-collapse">
+              <thead>
+                <tr className="bg-slate-900 text-white text-[10px] font-black uppercase tracking-widest">
+                  <th className="py-3 px-4">Plan Tier</th>
+                  <th className="py-3 px-4">Price (NGN)</th>
+                  <th className="py-3 px-4">Max AI Credits</th>
+                  <th className="py-3 px-4">Invoice Limit</th>
+                  <th className="py-3 px-4">Receipt Limit</th>
+                  <th className="py-3 px-4">Max Users</th>
+                  <th className="py-3 px-4">AI Feature</th>
+                  <th className="py-3 px-4 text-right">Tier Status</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-gray-200 text-xs font-bold text-gray-700">
+                {(Object.keys(editableLimits) as SubscriptionTier[]).map((tier) => {
+                  const limit = editableLimits[tier];
+                  const isInactive = !!limit.inactive;
+                  return (
+                    <tr key={tier} className={isInactive ? "opacity-50 bg-gray-100/50" : "hover:bg-white transition-colors"}>
+                      <td className="py-3.5 px-4 font-black text-gray-900 flex items-center gap-2">
+                        <span className={`w-2.5 h-2.5 rounded-full ${isInactive ? 'bg-gray-400' : 'bg-primary-600'}`}></span>
+                        {tier}
+                      </td>
+                      <td className="py-3.5 px-4 text-emerald-700 font-black">{limit.price || 'Free'}</td>
+                      <td className="py-3.5 px-4">{limit.maxAiUnits} credits / mo</td>
+                      <td className="py-3.5 px-4">{limit.maxInvoices >= 999999 ? 'Unlimited' : limit.maxInvoices}</td>
+                      <td className="py-3.5 px-4">{limit.maxReceipts >= 999999 ? 'Unlimited' : limit.maxReceipts}</td>
+                      <td className="py-3.5 px-4">{limit.maxUsers} user{limit.maxUsers > 1 ? 's' : ''}</td>
+                      <td className="py-3.5 px-4">
+                        {limit.aiAvailable !== false ? (
+                          <span className="text-[10px] font-black px-2.5 py-1 bg-emerald-100 text-emerald-800 rounded-lg uppercase">Enabled</span>
+                        ) : (
+                          <span className="text-[10px] font-black px-2.5 py-1 bg-red-100 text-red-800 rounded-lg uppercase">Disabled</span>
+                        )}
+                      </td>
+                      <td className="py-3.5 px-4 text-right">
+                        {!isInactive ? (
+                          <span className="text-[10px] font-black px-2.5 py-1 bg-blue-100 text-blue-800 rounded-lg uppercase">Active</span>
+                        ) : (
+                          <span className="text-[10px] font-black px-2.5 py-1 bg-gray-200 text-gray-600 rounded-lg uppercase">Hidden</span>
+                        )}
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
           </div>
 
           <form onSubmit={handleSavePricingLimits} className="space-y-6">
