@@ -1,7 +1,6 @@
 
 import React, { useState, useMemo, useEffect } from 'react';
 import { Client, Service, Invoice, InvoiceStatus, InvoiceItem, Company, InvoiceFrequency } from '../types';
-import { generateTextResponse } from '../services/aiGenerationService';
 import { getSubscriptionInfo } from '../services/subscriptionService';
 import Icon from './common/Icon';
 import InvoiceDetail from './InvoiceDetail';
@@ -49,7 +48,6 @@ const InvoiceForm: React.FC<InvoiceFormProps> = ({ initialInvoice, clients, serv
   const [manualAccountNumber, setManualAccountNumber] = useState('');
   const [paymentTerms, setPaymentTerms] = useState('');
   const [discount, setDiscount] = useState<number>(0);
-  const [isLoadingDescription, setIsLoadingDescription] = useState<boolean[]>([]);
   const [frequency, setFrequency] = useState<InvoiceFrequency>('one-time');
   const [nextRecurrenceDate, setNextRecurrenceDate] = useState<string>('');
   const [isPreviewOpen, setIsPreviewOpen] = useState(false);
@@ -109,7 +107,6 @@ const InvoiceForm: React.FC<InvoiceFormProps> = ({ initialInvoice, clients, serv
       setDiscount(initialInvoice.discount || 0);
       setFrequency(initialInvoice.frequency || 'one-time');
       setNextRecurrenceDate(initialInvoice.nextRecurrenceDate || '');
-      setIsLoadingDescription(initialInvoice.items.map(() => false));
     } else {
       setProjectId(undefined);
         if (company?.bankAccounts && company.bankAccounts.length > 0) {
@@ -120,32 +117,14 @@ const InvoiceForm: React.FC<InvoiceFormProps> = ({ initialInvoice, clients, serv
     }
   }, [initialInvoice, company]);
 
-  const handleGenerateDescription = async (index: number, serviceName: string, serviceCategory: string) => {
-    setIsLoadingDescription(prev => { const n = [...prev]; n[index] = true; return n; });
-    try {
-        const prompt = `Generate a professional 1-sentence description for '${serviceName}' in the category '${serviceCategory}'.`;
-        const description = await generateTextResponse(prompt, 'gemini-3-flash-preview', "Expert invoice writer.");
-        const newItems = [...items];
-        newItems[index].description = description;
-        setItems(newItems);
-    } catch (e) { console.error("AI error."); } finally {
-        setIsLoadingDescription(prev => { const n = [...prev]; n[index] = false; return n; });
-    }
-  };
-
-  const handleItemChange = async (index: number, field: keyof InvoiceItem, value: any) => {
+  const handleItemChange = (index: number, field: keyof InvoiceItem, value: any) => {
     const newItems = [...items];
     (newItems[index] as any)[field] = value;
     if (field === 'serviceId') {
         const s = services.find(srv => srv.id === value);
         if (s) {
             newItems[index].price = s.price;
-            const sub = getSubscriptionInfo(company?.id || '');
-            if (sub && sub.aiModeEnabled) {
-                await handleGenerateDescription(index, s.name, s.category);
-            } else {
-                newItems[index].description = s.description || '';
-            }
+            newItems[index].description = s.description || '';
         }
     }
     setItems(newItems);
@@ -162,12 +141,10 @@ const InvoiceForm: React.FC<InvoiceFormProps> = ({ initialInvoice, clients, serv
         autoRenew: false,
         renewalReminderDaysBefore: 7
       }]); 
-      setIsLoadingDescription(p => [...p, false]); 
   };
   
   const removeItem = (index: number) => { 
       setItems(items.filter((_, i) => i !== index)); 
-      setIsLoadingDescription(p => p.filter((_, i) => i !== index)); 
   };
 
   const handleCancel = () => {
@@ -309,7 +286,6 @@ const InvoiceForm: React.FC<InvoiceFormProps> = ({ initialInvoice, clients, serv
                     <div>
                         <div className="flex justify-between items-center mb-1">
                             <label className="block text-[10px] font-black text-gray-400 uppercase">Description</label>
-                            {isLoadingDescription[index] && <span className="text-[10px] font-black text-primary-600 animate-pulse">AI ANALYZING...</span>}
                         </div>
                         <textarea value={item.description} onChange={e => handleItemChange(index, 'description', e.target.value)} className="w-full p-4 border rounded-2xl text-sm bg-gray-50 text-gray-900 outline-none focus:ring-2 focus:ring-primary-500 font-medium" rows={2}></textarea>
                     </div>
@@ -332,67 +308,6 @@ const InvoiceForm: React.FC<InvoiceFormProps> = ({ initialInvoice, clients, serv
                         </div>
                     </div>
 
-                    <div className="pt-4 border-t border-gray-50">
-                        <div className="flex items-center justify-between mb-4">
-                            <h4 className="text-[10px] font-black text-gray-400 uppercase tracking-widest">Recurring Billing Intelligence</h4>
-                            <div className="flex items-center gap-2">
-                                <input 
-                                    type="checkbox" 
-                                    checked={!!item.billingCycle} 
-                                    onChange={e => handleItemChange(index, 'billingCycle', e.target.checked ? 'monthly' : undefined)}
-                                    className="w-4 h-4 text-primary-600 rounded focus:ring-primary-500"
-                                />
-                                <span className="text-[10px] font-black text-gray-500 uppercase">Enable Tracking</span>
-                            </div>
-                        </div>
-
-                        {item.billingCycle && (
-                            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 animate-in fade-in slide-in-from-top-2">
-                                <div>
-                                    <label className="block text-[10px] font-black text-gray-400 uppercase mb-1">Cycle</label>
-                                    <select 
-                                        value={item.billingCycle} 
-                                        onChange={e => handleItemChange(index, 'billingCycle', e.target.value)}
-                                        className="w-full p-2.5 border rounded-xl bg-gray-50 text-xs font-bold outline-none focus:ring-2 focus:ring-primary-500"
-                                    >
-                                        <option value="monthly">Monthly</option>
-                                        <option value="quarterly">Quarterly</option>
-                                        <option value="annually">Annually</option>
-                                        <option value="custom">Custom</option>
-                                    </select>
-                                </div>
-                                <div>
-                                    <label className="block text-[10px] font-black text-gray-400 uppercase mb-1">Start Date</label>
-                                    <input 
-                                        type="date" 
-                                        value={item.periodStartDate || ''} 
-                                        onChange={e => handleItemChange(index, 'periodStartDate', e.target.value)}
-                                        className="w-full p-2.5 border rounded-xl bg-gray-50 text-xs font-bold outline-none focus:ring-2 focus:ring-primary-500"
-                                    />
-                                </div>
-                                <div>
-                                    <label className="block text-[10px] font-black text-gray-400 uppercase mb-1">End Date</label>
-                                    <input 
-                                        type="date" 
-                                        value={item.periodEndDate || ''} 
-                                        onChange={e => handleItemChange(index, 'periodEndDate', e.target.value)}
-                                        className="w-full p-2.5 border rounded-xl bg-gray-50 text-xs font-bold outline-none focus:ring-2 focus:ring-primary-500"
-                                    />
-                                </div>
-                                <div className="flex items-center gap-4 pt-5">
-                                    <div className="flex items-center gap-2">
-                                        <input 
-                                            type="checkbox" 
-                                            checked={!!item.autoRenew} 
-                                            onChange={e => handleItemChange(index, 'autoRenew', e.target.checked)}
-                                            className="w-4 h-4 text-primary-600 rounded focus:ring-primary-500"
-                                        />
-                                        <span className="text-[10px] font-black text-gray-500 uppercase">Auto-Renew</span>
-                                    </div>
-                                </div>
-                            </div>
-                        )}
-                    </div>
                 </div>
             ))}
             <button type="button" onClick={addItem} className="w-full py-5 border-2 border-dashed border-gray-200 rounded-3xl text-gray-400 font-black uppercase tracking-widest text-xs hover:border-primary-400 hover:text-primary-600 transition-all flex items-center justify-center gap-3">

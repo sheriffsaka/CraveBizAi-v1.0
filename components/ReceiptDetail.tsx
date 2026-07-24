@@ -9,12 +9,50 @@ interface ReceiptDetailProps {
   services: Service[];
   company: Company;
   onBack: () => void;
+  onSendReceipt?: (invoiceId: string) => Promise<void>;
 }
 
-const ReceiptDetail: React.FC<ReceiptDetailProps> = ({ invoice, client, services, company, onBack }) => {
+const ReceiptDetail: React.FC<ReceiptDetailProps> = ({ invoice, client, services, company, onBack, onSendReceipt }) => {
+    const [isSendingEmail, setIsSendingEmail] = React.useState(false);
     
     const getServiceName = (serviceId: string) => {
         return services.find(s => s.id === serviceId)?.name || 'Custom Item';
+    };
+
+    const handleSendEmail = async () => {
+        if (!client.email) {
+            alert("This client does not have an email address configured.");
+            return;
+        }
+
+        setIsSendingEmail(true);
+        try {
+            if (onSendReceipt) {
+                await onSendReceipt(invoice.id);
+            }
+
+            const subject = `Payment Receipt ${invoice.invoiceNumber} from ${company.name}`;
+            const body = `Dear ${client.name},
+
+Thank you for your business. This is your official receipt for payment on invoice #${invoice.invoiceNumber}.
+
+Received From: ${client.companyName || client.name}
+Total Paid: ₦${invoice.total.toLocaleString()}
+Payment Date: ${invoice.issueDate}
+
+Status: PAID
+
+Best regards,
+${company.name}
+${company.email || ''}`;
+
+            const mailtoLink = `mailto:${client.email}?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`;
+            setTimeout(() => { window.location.href = mailtoLink; }, 300);
+        } catch (e) {
+            console.error("Failed to process send receipt:", e);
+        } finally {
+            setIsSendingEmail(false);
+        }
     };
 
     const subtotal = invoice.items.reduce((sum, item) => sum + item.price * item.quantity, 0);
@@ -203,7 +241,15 @@ const ReceiptDetail: React.FC<ReceiptDetailProps> = ({ invoice, client, services
         >
           <Icon name="reports" className="w-4 h-4 mr-2" /> Back
         </button>
-        <div className="flex space-x-4">
+        <div className="flex space-x-3">
+          <button 
+            onClick={handleSendEmail} 
+            disabled={isSendingEmail}
+            className="flex items-center px-4 py-2 bg-emerald-600 text-white rounded shadow hover:bg-emerald-700 font-bold text-sm disabled:opacity-50"
+          >
+            <Icon name="send" className="w-4 h-4 mr-2" />
+            {isSendingEmail ? 'Sending...' : 'Send Receipt via E-mail'}
+          </button>
           <button 
             onClick={handlePdfExport} 
             className="flex items-center px-4 py-2 bg-green-700 text-white rounded shadow hover:bg-green-800 font-bold text-sm"

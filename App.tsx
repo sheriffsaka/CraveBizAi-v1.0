@@ -896,6 +896,7 @@ export default function App() {
         return <ReceiptDetail 
             invoice={inv} client={cli} services={services} company={activeCompany!} 
             onBack={() => navigateTo('sent-receipts')}
+            onSendReceipt={handleSendReceipt}
         />;
       }
       case 'create-invoice': {

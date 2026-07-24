@@ -194,8 +194,8 @@ const Header: React.FC<HeaderProps> = ({
                         )}
                     </div>
                 )}
-                <button onClick={onCreateInvoice} className="hidden sm:flex px-5 py-2.5 bg-primary-600 text-white rounded-xl hover:bg-primary-700 font-bold shadow-lg shadow-primary-200 transition-all transform hover:-translate-y-0.5 items-center">
-                    <span className="mr-2 text-lg leading-none">+</span> New Invoice
+                <button onClick={onCreateInvoice} className="flex px-2.5 py-1.5 sm:px-5 sm:py-2.5 bg-primary-600 text-white rounded-xl hover:bg-primary-700 font-bold shadow-md sm:shadow-lg shadow-primary-200 transition-all transform active:scale-95 items-center text-xs sm:text-sm whitespace-nowrap">
+                    <span className="mr-1 sm:mr-2 text-base sm:text-lg leading-none">+</span> <span className="hidden xs:inline">New Invoice</span><span className="xs:hidden">Invoice</span>
                 </button>
                 {user && <UserAvatar user={user} onOpenUserProfile={onOpenUserProfile} onLogout={onLogout} />}
             </div>

@@ -2,7 +2,6 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { Invoice, Client, Service, InvoiceStatus, Company, BankAccount } from '../types';
 import InvoiceStatusBadge from './InvoiceStatusBadge';
-import { generateTextResponse } from '../services/aiGenerationService';
 import Icon from './common/Icon';
 import PaymentModal from './PaymentModal';
 
@@ -23,8 +22,6 @@ interface InvoiceDetailProps {
 }
 
 const InvoiceDetail: React.FC<InvoiceDetailProps> = ({ invoice, client, services, company, onUpdateStatus, onViewPlainInvoice, onSendInvoice, onEditInvoice, onRecordPayment, onGenerateReceipt, onSendReceipt }) => {
-    const [invoiceSummary, setInvoiceSummary] = useState<string | null>(null);
-    const [isLoadingSummary, setIsLoadingSummary] = useState(false);
     const [isSending, setIsSending] = useState(false);
     const [isPaymentModalOpen, setIsPaymentModalOpen] = useState(false);
 
@@ -36,19 +33,6 @@ const InvoiceDetail: React.FC<InvoiceDetailProps> = ({ invoice, client, services
     // Payment breakdown logic
     const hasPayment = (invoice.amountPaid || 0) > 0;
     const balanceDue = invoice.total - (invoice.amountPaid || 0);
-
-    useEffect(() => {
-        const generateSummary = async () => {
-            setIsLoadingSummary(true);
-            try {
-                const prompt = `Invoice Summary for ${client.companyName}. Amount: ₦${invoice.total.toLocaleString()}. Provide a concise professional analysis in 2 sentences.`;
-                const summary = await generateTextResponse(prompt, 'gemini-3.5-flash', "Financial Assistant.");
-                setInvoiceSummary(summary);
-            } catch { setInvoiceSummary("AI summary unavailable."); }
-            finally { setIsLoadingSummary(false); }
-        };
-        if (!invoice.isRecurringTemplate && invoice.id !== 'preview') generateSummary();
-    }, [invoice.id, invoice.total]);
 
     const handleSend = async () => {
         if (isSending || invoice.id === 'preview') return;
@@ -170,16 +154,6 @@ ${company?.name || 'The Team'}`;
             <div className="mt-3"><InvoiceStatusBadge status={invoice.status} /></div>
           </div>
         </header>
-        
-        <section className="my-8 p-5 bg-gray-50 rounded-2xl border border-gray-100 flex items-start">
-            <div className="bg-primary-100 p-2 rounded-lg mr-4">
-                <svg className="w-5 h-5 text-primary-600" fill="currentColor" viewBox="0 0 20 20"><path d="M11 3a1 1 0 10-2 0v1a1 1 0 102 0V3zM15.657 5.757a1 1 0 00-1.414-1.414l-.707.707a1 1 0 001.414 1.414l.707-.707zM18 10a1 1 0 01-1 1h-1a1 1 0 110-2h1a1 1 0 011 1zM5.05 6.464A1 1 0 106.464 5.05l-.707-.707a1 1 0 00-1.414 1.414l.707.707zM5 10a1 1 0 01-1 1H3a1 1 0 110-2h1a1 1 0 011 1zM8 16v-1a1 1 0 112 0v1a1 1 0 11-2 0zM13 16V5a1 1 0 112 0v11a1 1 0 11-2 0zM6 16V8a1 1 0 112 0v8a1 1 0 11-2 0z" /></svg>
-            </div>
-            <div>
-                <h3 className="text-[10px] font-black text-primary-600 uppercase tracking-widest mb-1">CraveBiZ AI Insights</h3>
-                <p className="text-sm text-gray-700 italic leading-relaxed">{isLoadingSummary ? 'Analyzing financial metadata...' : (invoiceSummary || 'Awaiting analysis of commitment data...')}</p>
-            </div>
-        </section>
 
         <div className="grid grid-cols-2 gap-12 my-10">
           <div>
