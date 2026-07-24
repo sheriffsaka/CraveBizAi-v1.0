@@ -3,6 +3,7 @@ import { Company, BankAccount, User, WorkspaceRole, AuditLog, Invoice } from '..
 import { supabase, api } from '../lib/api';
 import ImageCropperModal from './ImageCropperModal';
 import Icon from './common/Icon';
+import { AiCreditDashboard } from './AiCreditDashboard.tsx';
 import { getSubscriptionInfo, setSubscriptionInfo, SubscriptionTier, TIER_LIMITS, saveSubscriptionInfoToDb, secureUpgradeSubscriptionOnDb, secureRefillCreditsOnDb, safeFlutterwaveCheckout, getFlutterwavePublicKey, REFILL_PACKS, syncGlobalRefillPacks } from '../services/subscriptionService';
 
 const getPlanActionLabel = (targetTier: string, currentTier: string): string => {
@@ -898,6 +899,9 @@ const Settings: React.FC<SettingsProps> = ({ company, onSaveChanges, onInviteUse
             </div>
           )}
         </div>
+
+        {/* AI Credit Depletion System & Audit Logs Dashboard */}
+        <AiCreditDashboard companyId={activeTenantId} />
       </div>
 
       {/* Credits Refill Selection Overlay Modal */}

@@ -177,3 +177,78 @@ export async function reviewDocumentContent(
         throw error;
     }
 }
+
+export async function generateServiceDescription(
+    serviceName: string,
+    targetAudience?: string,
+    industry?: string
+): Promise<string> {
+    try {
+        const companyId = localStorage.getItem('cravebiz_tenant') || '';
+        ensureAiCreditsOrThrow(companyId);
+        const headers = await api.getAuthHeaders(companyId);
+        const response = await fetch("/api/ai/service-description", {
+            method: "POST",
+            headers,
+            body: JSON.stringify({ serviceName, targetAudience, industry })
+        });
+        if (!response.ok) {
+            const errData = await response.json().catch(() => ({}));
+            throw new Error(errData.error || `HTTP error! status: ${response.status}`);
+        }
+        const data = await response.json();
+        if (companyId) {
+            handleAiResponseUnits(companyId, data);
+        }
+        return data.description || "";
+    } catch (error: any) {
+        console.error("Client Error calling generateServiceDescription API:", error);
+        throw error;
+    }
+}
+
+export async function analyzeReceiptAi(
+    receiptData: any
+): Promise<string> {
+    try {
+        const companyId = localStorage.getItem('cravebiz_tenant') || '';
+        ensureAiCreditsOrThrow(companyId);
+        const headers = await api.getAuthHeaders(companyId);
+        const response = await fetch("/api/ai/receipt-ai", {
+            method: "POST",
+            headers,
+            body: JSON.stringify({ receiptData })
+        });
+        if (!response.ok) {
+            const errData = await response.json().catch(() => ({}));
+            throw new Error(errData.error || `HTTP error! status: ${response.status}`);
+        }
+        const data = await response.json();
+        if (companyId) {
+            handleAiResponseUnits(companyId, data);
+        }
+        return data.formattedReceipt || "";
+    } catch (error: any) {
+        console.error("Client Error calling analyzeReceiptAi API:", error);
+        throw error;
+    }
+}
+
+export async function fetchAiCreditsInfo(): Promise<any> {
+    try {
+        const companyId = localStorage.getItem('cravebiz_tenant') || '';
+        const headers = await api.getAuthHeaders(companyId);
+        const response = await fetch("/api/ai/credits", {
+            method: "GET",
+            headers
+        });
+        if (!response.ok) {
+            const errData = await response.json().catch(() => ({}));
+            throw new Error(errData.error || `HTTP error! status: ${response.status}`);
+        }
+        return await response.json();
+    } catch (error: any) {
+        console.error("Client Error calling fetchAiCreditsInfo API:", error);
+        return null;
+    }
+}

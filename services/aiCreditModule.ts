@@ -1,0 +1,517 @@
+import { createClient } from "@supabase/supabase-js";
+import fs from "fs";
+import path from "path";
+
+const SUPABASE_URL = process.env.SUPABASE_URL || "https://dfqvgezjhudmnlyeycju.supabase.co";
+const SUPABASE_ANON_KEY = process.env.SUPABASE_ANON_KEY || "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImRmcXZnZXpqaHVkbW5seWV5Y2p1Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjYyNDAyOTMsImV4cCI6MjA4MTgxNjI5M30.8VsHsDpychdSMJmrfnmkxi5ed8CygwErX3-RkVPXkUI";
+
+const rootSupabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+
+export interface UserAiCredits {
+  userId: string;
+  tenantId: string;
+  totalCredits: number;
+  remainingCredits: number;
+  creditsUsed: number;
+  lastResetDate: string;
+  subscriptionPlan: string;
+  createdAt?: string;
+  updatedAt?: string;
+}
+
+export interface AiCreditLog {
+  id?: string;
+  userId: string;
+  tenantId: string;
+  featureUsed: string;
+  creditsDeducted: number;
+  timestamp: string;
+  status: 'Success' | 'Failed';
+  details?: string;
+  tokensUsed?: number;
+}
+
+// File-based resilient local persistence cache
+const CACHE_FILE = path.join(process.cwd(), "user_ai_credits_cache.json");
+
+function readLocalCreditCache(): Record<string, UserAiCredits> {
+  try {
+    if (fs.existsSync(CACHE_FILE)) {
+      const content = fs.readFileSync(CACHE_FILE, "utf-8");
+      return JSON.parse(content) || {};
+    }
+  } catch (e) {
+    console.warn("[AI Credits Cache] Error reading local credit cache:", e);
+  }
+  return {};
+}
+
+function writeLocalCreditCache(cache: Record<string, UserAiCredits>): void {
+  try {
+    fs.writeFileSync(CACHE_FILE, JSON.stringify(cache, null, 2), "utf-8");
+  } catch (e) {
+    console.warn("[AI Credits Cache] Error writing local credit cache:", e);
+  }
+}
+
+/**
+ * Standard default credit limits by plan
+ */
+export const DEFAULT_PLAN_CREDITS: Record<string, number> = {
+  Free: 20,
+  Pro: 500,
+  Business: 1000,
+  Enterprise: 2500,
+};
+
+/**
+ * Helper to get clean database key for user/tenant
+ */
+export function getDbKey(userId?: string, tenantId?: string): string {
+  const target = tenantId || userId || "default-user";
+  let cleanKey = target;
+  if (target.startsWith("ws-personal-")) cleanKey = target.replace("ws-personal-", "");
+  else if (target.startsWith("ws-legal-")) cleanKey = target.replace("ws-legal-", "");
+  else if (target.startsWith("ws-sales-")) cleanKey = target.replace("ws-sales-", "");
+
+  if (cleanKey === "cravebiz-inc") return "00000000-0000-0000-0000-000000000000";
+  if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(cleanKey)) {
+    return cleanKey;
+  }
+  return cleanKey;
+}
+
+/**
+ * Retrieves a user's AI credits profile from Supabase DB or cache.
+ * Initializes the record if it does not exist yet.
+ */
+export async function getUserAiCredits(
+  userId: string,
+  tenantId: string,
+  token?: string
+): Promise<UserAiCredits> {
+  const key = getDbKey(userId, tenantId);
+  const localCache = readLocalCreditCache();
+
+  let creditsData: UserAiCredits | null = null;
+
+  // 1. Try fetching from Supabase 'user_ai_credits' table first
+  try {
+    const client = token ? createClient(SUPABASE_URL, SUPABASE_ANON_KEY, { global: { headers: { Authorization: `Bearer ${token}` } } }) : rootSupabase;
+    const { data, error } = await client
+      .from("user_ai_credits")
+      .select("*")
+      .eq("user_id", key)
+      .maybeSingle();
+
+    if (data && !error) {
+      creditsData = {
+        userId: data.user_id || key,
+        tenantId: data.tenant_id || tenantId,
+        totalCredits: parseInt(String(data.total_credits ?? 20), 10),
+        remainingCredits: parseInt(String(data.remaining_credits ?? 20), 10),
+        creditsUsed: parseInt(String(data.credits_used ?? 0), 10),
+        lastResetDate: data.last_reset_date || new Date().toISOString(),
+        subscriptionPlan: data.subscription_plan || "Free",
+        createdAt: data.created_at,
+        updatedAt: data.updated_at,
+      };
+    }
+  } catch (dbErr) {
+    console.warn("[getUserAiCredits] Supabase table query failed, falling back to document store/cache:", dbErr);
+  }
+
+  // 2. Fallback to Supabase 'generated_documents' table (document_type = 'user_ai_credits')
+  if (!creditsData) {
+    try {
+      const client = token ? createClient(SUPABASE_URL, SUPABASE_ANON_KEY, { global: { headers: { Authorization: `Bearer ${token}` } } }) : rootSupabase;
+      const { data } = await client
+        .from("generated_documents")
+        .select("*")
+        .eq("id", key)
+        .eq("document_type", "user_ai_credits")
+        .maybeSingle();
+
+      if (data && data.content) {
+        const c = data.content;
+        creditsData = {
+          userId: key,
+          tenantId: tenantId,
+          totalCredits: parseInt(String(c.totalCredits ?? 20), 10),
+          remainingCredits: parseInt(String(c.remainingCredits ?? 20), 10),
+          creditsUsed: parseInt(String(c.creditsUsed ?? 0), 10),
+          lastResetDate: c.lastResetDate || new Date().toISOString(),
+          subscriptionPlan: c.subscriptionPlan || "Free",
+        };
+      }
+    } catch (docErr) {
+      console.warn("[getUserAiCredits] Document store fetch failed:", docErr);
+    }
+  }
+
+  // 3. Fallback to local file cache
+  if (!creditsData && localCache[key]) {
+    creditsData = localCache[key];
+  }
+
+  // 4. Default initialization if user has no record
+  if (!creditsData) {
+    const isCravebizInc = tenantId === "cravebiz-inc" || key === "00000000-0000-0000-0000-000000000000";
+    const plan = isCravebizInc ? "Enterprise" : "Free";
+    const total = DEFAULT_PLAN_CREDITS[plan] || 20;
+
+    creditsData = {
+      userId: key,
+      tenantId: tenantId || key,
+      totalCredits: total,
+      remainingCredits: total,
+      creditsUsed: 0,
+      lastResetDate: new Date().toISOString(),
+      subscriptionPlan: plan,
+    };
+
+    // Save initial state to local cache & Supabase
+    saveUserAiCredits(creditsData, token).catch(console.error);
+  } else {
+    // Keep local cache warm
+    localCache[key] = creditsData;
+    writeLocalCreditCache(localCache);
+  }
+
+  return creditsData;
+}
+
+/**
+ * Persists user AI credits profile to database and local cache.
+ */
+export async function saveUserAiCredits(
+  credits: UserAiCredits,
+  token?: string
+): Promise<void> {
+  const key = getDbKey(credits.userId, credits.tenantId);
+  credits.userId = key;
+  credits.updatedAt = new Date().toISOString();
+
+  // 1. Save to local file cache first (guarantees zero data loss in runtime container)
+  const localCache = readLocalCreditCache();
+  localCache[key] = credits;
+  writeLocalCreditCache(localCache);
+
+  // 2. Try saving to Supabase 'user_ai_credits' table
+  const client = token ? createClient(SUPABASE_URL, SUPABASE_ANON_KEY, { global: { headers: { Authorization: `Bearer ${token}` } } }) : rootSupabase;
+
+  try {
+    const { error } = await client.from("user_ai_credits").upsert({
+      user_id: key,
+      tenant_id: credits.tenantId,
+      total_credits: credits.totalCredits,
+      remaining_credits: credits.remainingCredits,
+      credits_used: credits.creditsUsed,
+      last_reset_date: credits.lastResetDate,
+      subscription_plan: credits.subscriptionPlan,
+      updated_at: credits.updatedAt,
+    });
+
+    if (error) {
+      console.warn("[saveUserAiCredits] Could not upsert into user_ai_credits table (may not exist in schema cache), syncing to generated_documents:", error.message);
+    }
+  } catch (err) {
+    console.warn("[saveUserAiCredits] Supabase table upsert exception:", err);
+  }
+
+  // 3. Always save to Supabase 'generated_documents' (document_type = 'user_ai_credits') as single source of truth fallback
+  try {
+    await client.from("generated_documents").upsert({
+      id: key,
+      company_id: key.includes("-") && key.length === 36 ? key : null,
+      document_type: "user_ai_credits",
+      content: {
+        totalCredits: credits.totalCredits,
+        remainingCredits: credits.remainingCredits,
+        creditsUsed: credits.creditsUsed,
+        lastResetDate: credits.lastResetDate,
+        subscriptionPlan: credits.subscriptionPlan,
+        updatedAt: credits.updatedAt,
+      },
+    });
+  } catch (docErr) {
+    console.warn("[saveUserAiCredits] Generated documents upsert exception:", docErr);
+  }
+}
+
+/**
+ * Check if the user has enough AI credits before executing an AI request.
+ */
+export async function checkUserAiCredits(
+  userId: string,
+  tenantId: string,
+  creditsRequired: number = 1,
+  token?: string
+): Promise<{
+  allowed: boolean;
+  remainingCredits: number;
+  totalCredits: number;
+  subscriptionPlan: string;
+  errorMessage?: string;
+}> {
+  const credits = await getUserAiCredits(userId, tenantId, token);
+
+  if (credits.remainingCredits < creditsRequired || credits.remainingCredits <= 0) {
+    const msg = `Insufficient AI credits! You have ${credits.remainingCredits} remaining AI credits on your ${credits.subscriptionPlan} plan (Required: ${creditsRequired}). Please upgrade your subscription tier or refill AI credits to generate content.`;
+    return {
+      allowed: false,
+      remainingCredits: credits.remainingCredits,
+      totalCredits: credits.totalCredits,
+      subscriptionPlan: credits.subscriptionPlan,
+      errorMessage: msg,
+    };
+  }
+
+  return {
+    allowed: true,
+    remainingCredits: credits.remainingCredits,
+    totalCredits: credits.totalCredits,
+    subscriptionPlan: credits.subscriptionPlan,
+  };
+}
+
+/**
+ * Deduct credits ONLY AFTER a successful AI response.
+ * Updates user_ai_credits and writes a 'Success' log to ai_credit_logs.
+ */
+export async function deductUserAiCredits(
+  userId: string,
+  tenantId: string,
+  featureUsed: string,
+  creditsToDeduct: number = 1,
+  tokensUsed: number = 0,
+  userEmail?: string,
+  userName?: string,
+  token?: string
+): Promise<{
+  remainingCredits: number;
+  totalCredits: number;
+  creditsUsed: number;
+}> {
+  const credits = await getUserAiCredits(userId, tenantId, token);
+
+  const newRemaining = Math.max(0, credits.remainingCredits - creditsToDeduct);
+  const newUsed = credits.creditsUsed + creditsToDeduct;
+
+  credits.remainingCredits = newRemaining;
+  credits.creditsUsed = newUsed;
+
+  // Persist updated credit balance
+  await saveUserAiCredits(credits, token);
+
+  // Log successful transaction
+  await logAiCreditRequest({
+    userId: userEmail || userId,
+    tenantId: tenantId || userId,
+    featureUsed: featureUsed,
+    creditsDeducted: creditsToDeduct,
+    timestamp: new Date().toISOString(),
+    status: "Success",
+    tokensUsed: tokensUsed,
+    details: `Successfully generated response using ${featureUsed}`,
+  }, token);
+
+  return {
+    remainingCredits: newRemaining,
+    totalCredits: credits.totalCredits,
+    creditsUsed: newUsed,
+  };
+}
+
+/**
+ * Log a failed AI request (0 credits deducted, status: "Failed").
+ */
+export async function logFailedAiRequest(
+  userId: string,
+  tenantId: string,
+  featureUsed: string,
+  errorMessage: string,
+  userEmail?: string,
+  token?: string
+): Promise<void> {
+  await logAiCreditRequest({
+    userId: userEmail || userId,
+    tenantId: tenantId || userId,
+    featureUsed: featureUsed,
+    creditsDeducted: 0,
+    timestamp: new Date().toISOString(),
+    status: "Failed",
+    details: errorMessage,
+  }, token);
+}
+
+/**
+ * Writes an entry into Supabase 'ai_credit_logs' table.
+ */
+export async function logAiCreditRequest(
+  log: AiCreditLog,
+  token?: string
+): Promise<void> {
+  const client = token ? createClient(SUPABASE_URL, SUPABASE_ANON_KEY, { global: { headers: { Authorization: `Bearer ${token}` } } }) : rootSupabase;
+
+  const dbCompanyId = getDbKey(log.userId, log.tenantId);
+
+  try {
+    const taskFormatted = `${log.featureUsed} [${log.status}]`;
+    const { error } = await client.from("ai_credit_logs").insert({
+      user_id: log.userId,
+      company_id: dbCompanyId,
+      task_performed: taskFormatted,
+      tokens_used: log.tokensUsed || 0,
+      credits_used: log.creditsDeducted,
+      timestamp: log.timestamp || new Date().toISOString(),
+    });
+
+    if (error) {
+      console.warn("[logAiCreditRequest] Supabase ai_credit_logs insert warning:", error.message);
+    }
+  } catch (err) {
+    console.warn("[logAiCreditRequest] Exception writing log:", err);
+  }
+}
+
+/**
+ * Fetch AI request log history for a user/tenant.
+ */
+export async function getAiCreditLogs(
+  userId: string,
+  tenantId: string,
+  limit: number = 50,
+  token?: string
+): Promise<AiCreditLog[]> {
+  const client = token ? createClient(SUPABASE_URL, SUPABASE_ANON_KEY, { global: { headers: { Authorization: `Bearer ${token}` } } }) : rootSupabase;
+  const dbCompanyId = getDbKey(userId, tenantId);
+
+  try {
+    const { data, error } = await client
+      .from("ai_credit_logs")
+      .select("*")
+      .or(`company_id.eq.${dbCompanyId},user_id.eq.${userId}`)
+      .order("timestamp", { ascending: false })
+      .limit(limit);
+
+    if (error) {
+      console.warn("[getAiCreditLogs] Fetch error:", error.message);
+      return [];
+    }
+
+    return (data || []).map((row: any) => {
+      let status: 'Success' | 'Failed' = 'Success';
+      let featureName = row.task_performed || 'AI Service';
+
+      if (featureName.includes('[Failed]')) {
+        status = 'Failed';
+        featureName = featureName.replace('[Failed]', '').trim();
+      } else if (featureName.includes('[Success]')) {
+        status = 'Success';
+        featureName = featureName.replace('[Success]', '').trim();
+      }
+
+      return {
+        id: row.id,
+        userId: row.user_id,
+        tenantId: row.company_id,
+        featureUsed: featureName,
+        creditsDeducted: row.credits_used ?? 0,
+        timestamp: row.timestamp,
+        status: status,
+        tokensUsed: row.tokens_used,
+      };
+    });
+  } catch (err) {
+    console.warn("[getAiCreditLogs] Query exception:", err);
+    return [];
+  }
+}
+
+/**
+ * Resets or recharges user AI credits (e.g. for subscription renewal or manual refill).
+ */
+export async function resetUserAiCredits(
+  userId: string,
+  tenantId: string,
+  newTotalCredits?: number,
+  newPlan?: string,
+  token?: string
+): Promise<UserAiCredits> {
+  const current = await getUserAiCredits(userId, tenantId, token);
+
+  const plan = newPlan || current.subscriptionPlan;
+  const total = newTotalCredits !== undefined ? newTotalCredits : (DEFAULT_PLAN_CREDITS[plan] || current.totalCredits);
+
+  const updated: UserAiCredits = {
+    ...current,
+    totalCredits: total,
+    remainingCredits: total,
+    creditsUsed: 0,
+    lastResetDate: new Date().toISOString(),
+    subscriptionPlan: plan,
+  };
+
+  await saveUserAiCredits(updated, token);
+  return updated;
+}
+
+/**
+ * REUSABLE WRAPPER FUNCTION FOR ALL AI REQUESTS
+ *
+ * 1. Checks user credits FIRST. If exhausted, throws a friendly error BEFORE calling Gemini.
+ * 2. Executes the AI action (`action()`).
+ * 3. On success: Deducts credits and logs status "Success". Returns the AI result.
+ * 4. On failure: Logs status "Failed" with 0 credits deducted, then rethrows the error.
+ */
+export async function executeAiRequestWithCredits<T>(params: {
+  userId: string;
+  tenantId: string;
+  featureUsed: string;
+  creditsRequired?: number;
+  userEmail?: string;
+  userName?: string;
+  token?: string;
+  action: () => Promise<T>;
+}): Promise<{ result: T; remainingCredits: number; totalCredits: number }> {
+  const creditsRequired = params.creditsRequired || 1;
+
+  // STEP 1: Pre-execution Credit Check
+  const check = await checkUserAiCredits(params.userId, params.tenantId, creditsRequired, params.token);
+  if (!check.allowed) {
+    const errorMsg = check.errorMessage || "Insufficient AI credits.";
+    // Log blocked/failed attempt
+    await logFailedAiRequest(params.userId, params.tenantId, params.featureUsed, errorMsg, params.userEmail, params.token);
+    throw new Error(errorMsg);
+  }
+
+  // STEP 2: Execute the AI Request
+  let result: T;
+  try {
+    result = await params.action();
+  } catch (aiError: any) {
+    // STEP 3A: On Failure -> Log failure, DO NOT deduct credits
+    const errorMsg = aiError.message || "AI Request Execution Failed";
+    await logFailedAiRequest(params.userId, params.tenantId, params.featureUsed, errorMsg, params.userEmail, params.token);
+    throw aiError;
+  }
+
+  // STEP 3B: On Success -> Deduct credits after successful response
+  const deduction = await deductUserAiCredits(
+    params.userId,
+    params.tenantId,
+    params.featureUsed,
+    creditsRequired,
+    0,
+    params.userEmail,
+    params.userName,
+    params.token
+  );
+
+  return {
+    result,
+    remainingCredits: deduction.remainingCredits,
+    totalCredits: deduction.totalCredits,
+  };
+}

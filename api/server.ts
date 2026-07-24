@@ -14,6 +14,13 @@ import {
     generateInvoiceInsight,
     checkApiKeyStatus
 } from "../services/serverAiService.js";
+import {
+    executeAiRequestWithCredits,
+    getUserAiCredits,
+    getAiCreditLogs,
+    resetUserAiCredits,
+    checkUserAiCredits
+} from "../services/aiCreditModule.js";
 import { SignifyService } from "../services/signifyService.js";
 
 const SUPABASE_URL = "https://dfqvgezjhudmnlyeycju.supabase.co";
@@ -1416,94 +1423,286 @@ app.post("/api/signify/workspaces/:tenantId", verifyTenant, (req, res) => {
 });
 
 
+// AI CREDIT MANAGEMENT ENDPOINTS
+app.get("/api/ai/credits", verifyTenant, async (req: any, res) => {
+    try {
+        const userId = req.user?.email || req.user?.id || req.tenantId;
+        const tenantId = req.tenantId;
+        const credits = await getUserAiCredits(userId, tenantId, req.token);
+        const logs = await getAiCreditLogs(userId, tenantId, 50, req.token);
+        res.json({
+            ...credits,
+            logs
+        });
+    } catch (err: any) {
+        console.error("GET /api/ai/credits error:", err);
+        res.status(500).json({ error: err.message || "Failed to fetch AI credits" });
+    }
+});
+
+app.post("/api/ai/credits/check", verifyTenant, async (req: any, res) => {
+    try {
+        const userId = req.user?.email || req.user?.id || req.tenantId;
+        const tenantId = req.tenantId;
+        const creditsRequired = parseInt(req.body.creditsRequired || 1, 10);
+        const check = await checkUserAiCredits(userId, tenantId, creditsRequired, req.token);
+        res.json(check);
+    } catch (err: any) {
+        console.error("POST /api/ai/credits/check error:", err);
+        res.status(500).json({ error: err.message || "Failed to check AI credits" });
+    }
+});
+
+app.post("/api/ai/credits/reset", verifyTenant, async (req: any, res) => {
+    try {
+        const userId = req.user?.email || req.user?.id || req.tenantId;
+        const tenantId = req.tenantId;
+        const { totalCredits, plan } = req.body;
+        const updated = await resetUserAiCredits(userId, tenantId, totalCredits, plan, req.token);
+        res.json(updated);
+    } catch (err: any) {
+        console.error("POST /api/ai/credits/reset error:", err);
+        res.status(500).json({ error: err.message || "Failed to reset AI credits" });
+    }
+});
+
+// CORE AI ENDPOINTS WITH REUSABLE CREDIT DEPLETION ENFORCEMENT
+
 app.post("/api/ai/text-response", verifyTenant, async (req: any, res) => {
     try {
         const { prompt, model, systemInstruction } = req.body;
-        const text = await generateTextResponse(prompt, model, systemInstruction);
-        const tokens = Math.max(25, Math.ceil((JSON.stringify(req.body).length + (text || "").length) * 0.26));
-        const newUnits = await deductAiUnitServerSide(req.tenantId, req.token, req.user?.email, req.headers["x-ai-mode-enabled"] === "true", req.user?.name, "General AI Assistant Interaction", tokens);
-        res.json({ text, newAiUnits: newUnits });
+        const userId = req.user?.email || req.user?.id || req.tenantId;
+        const tenantId = req.tenantId;
+
+        const { result: text, remainingCredits, totalCredits } = await executeAiRequestWithCredits({
+            userId,
+            tenantId,
+            featureUsed: "General AI Assistant",
+            creditsRequired: 1,
+            userEmail: req.user?.email,
+            userName: req.user?.name,
+            token: req.token,
+            action: async () => {
+                return await generateTextResponse(prompt, model, systemInstruction);
+            }
+        });
+
+        res.json({ text, newAiUnits: remainingCredits, remainingCredits, totalCredits });
     } catch (err: any) {
         console.error("Express /api/ai/text-response error:", err);
-        res.status(500).json({ error: err.message || "Internal server error" });
+        res.status(400).json({ error: err.message || "Internal server error" });
     }
 });
 
 app.post("/api/ai/transform-document", verifyTenant, async (req: any, res) => {
     try {
         const { rawContent, companyContext } = req.body;
-        const doc = await transformDocument(rawContent, companyContext);
-        const tokens = Math.max(25, Math.ceil((JSON.stringify(req.body).length + JSON.stringify(doc).length) * 0.26));
-        const newUnits = await deductAiUnitServerSide(req.tenantId, req.token, req.user?.email, req.headers["x-ai-mode-enabled"] === "true", req.user?.name, "AI Document Transformation", tokens);
-        res.json({ ...doc, newAiUnits: newUnits });
+        const userId = req.user?.email || req.user?.id || req.tenantId;
+        const tenantId = req.tenantId;
+
+        const { result: doc, remainingCredits, totalCredits } = await executeAiRequestWithCredits({
+            userId,
+            tenantId,
+            featureUsed: "Document Generator",
+            creditsRequired: 1,
+            userEmail: req.user?.email,
+            userName: req.user?.name,
+            token: req.token,
+            action: async () => {
+                return await transformDocument(rawContent, companyContext);
+            }
+        });
+
+        res.json({ ...doc, newAiUnits: remainingCredits, remainingCredits, totalCredits });
     } catch (err: any) {
         console.error("Express /api/ai/transform-document error:", err);
-        res.status(500).json({ error: err.message || "Internal server error" });
+        res.status(400).json({ error: err.message || "Internal server error" });
     }
 });
 
 app.post("/api/ai/renewal-suggestion", verifyTenant, async (req: any, res) => {
     try {
         const { clientId, expiringItems } = req.body;
-        const suggestion = await generateRenewalInvoiceSuggestion(clientId, expiringItems);
-        const tokens = Math.max(25, Math.ceil((JSON.stringify(req.body).length + JSON.stringify(suggestion).length) * 0.26));
-        const newUnits = await deductAiUnitServerSide(req.tenantId, req.token, req.user?.email, req.headers["x-ai-mode-enabled"] === "true", req.user?.name, "AI Invoice Renewal Suggestion", tokens);
-        res.json({ ...suggestion, newAiUnits: newUnits });
+        const userId = req.user?.email || req.user?.id || req.tenantId;
+        const tenantId = req.tenantId;
+
+        const { result: suggestion, remainingCredits, totalCredits } = await executeAiRequestWithCredits({
+            userId,
+            tenantId,
+            featureUsed: "Renewal Suggestion",
+            creditsRequired: 1,
+            userEmail: req.user?.email,
+            userName: req.user?.name,
+            token: req.token,
+            action: async () => {
+                return await generateRenewalInvoiceSuggestion(clientId, expiringItems);
+            }
+        });
+
+        res.json({ ...suggestion, newAiUnits: remainingCredits, remainingCredits, totalCredits });
     } catch (err: any) {
         console.error("Express /api/ai/renewal-suggestion error:", err);
-        res.status(500).json({ error: err.message || "Internal server error" });
+        res.status(400).json({ error: err.message || "Internal server error" });
     }
 });
 
 app.post("/api/ai/client-payment-health-report", verifyTenant, async (req: any, res) => {
     try {
         const { clientId, paymentHistory } = req.body;
-        const text = await generateClientPaymentHealthReport(clientId, paymentHistory);
-        const tokens = Math.max(25, Math.ceil((JSON.stringify(req.body).length + (text || "").length) * 0.26));
-        const newUnits = await deductAiUnitServerSide(req.tenantId, req.token, req.user?.email, req.headers["x-ai-mode-enabled"] === "true", req.user?.name, "AI Client Payment Health Analysis", tokens);
-        res.json({ text, newAiUnits: newUnits });
+        const userId = req.user?.email || req.user?.id || req.tenantId;
+        const tenantId = req.tenantId;
+
+        const { result: text, remainingCredits, totalCredits } = await executeAiRequestWithCredits({
+            userId,
+            tenantId,
+            featureUsed: "Payment Health Report",
+            creditsRequired: 1,
+            userEmail: req.user?.email,
+            userName: req.user?.name,
+            token: req.token,
+            action: async () => {
+                return await generateClientPaymentHealthReport(clientId, paymentHistory);
+            }
+        });
+
+        res.json({ text, newAiUnits: remainingCredits, remainingCredits, totalCredits });
     } catch (err: any) {
         console.error("Express /api/ai/client-payment-health-report error:", err);
-        res.status(500).json({ error: err.message || "Internal server error" });
+        res.status(400).json({ error: err.message || "Internal server error" });
     }
 });
 
 app.post("/api/ai/generate-document-from-purpose", verifyTenant, async (req: any, res) => {
     try {
         const { purpose, companyContext, selectedPreset } = req.body;
-        const doc = await generateDocumentFromPurpose(purpose, companyContext, selectedPreset);
-        const tokens = Math.max(25, Math.ceil((JSON.stringify(req.body).length + JSON.stringify(doc).length) * 0.26));
-        const newUnits = await deductAiUnitServerSide(req.tenantId, req.token, req.user?.email, req.headers["x-ai-mode-enabled"] === "true", req.user?.name, "AI Document Generation", tokens);
-        res.json({ ...doc, newAiUnits: newUnits });
+        const userId = req.user?.email || req.user?.id || req.tenantId;
+        const tenantId = req.tenantId;
+
+        const { result: doc, remainingCredits, totalCredits } = await executeAiRequestWithCredits({
+            userId,
+            tenantId,
+            featureUsed: "Document Generator",
+            creditsRequired: 1,
+            userEmail: req.user?.email,
+            userName: req.user?.name,
+            token: req.token,
+            action: async () => {
+                return await generateDocumentFromPurpose(purpose, companyContext, selectedPreset);
+            }
+        });
+
+        res.json({ ...doc, newAiUnits: remainingCredits, remainingCredits, totalCredits });
     } catch (err: any) {
         console.error("Express /api/ai/generate-document-from-purpose error:", err);
-        res.status(500).json({ error: err.message || "Internal server error" });
+        res.status(400).json({ error: err.message || "Internal server error" });
     }
 });
 
 app.post("/api/ai/review-document-content", verifyTenant, async (req: any, res) => {
     try {
         const { documentText } = req.body;
-        const report = await reviewDocumentContent(documentText);
-        const tokens = Math.max(25, Math.ceil((JSON.stringify(req.body).length + JSON.stringify(report).length) * 0.26));
-        const newUnits = await deductAiUnitServerSide(req.tenantId, req.token, req.user?.email, req.headers["x-ai-mode-enabled"] === "true", req.user?.name, "AI Document Compliance Review", tokens);
-        res.json({ ...report, newAiUnits: newUnits });
+        const userId = req.user?.email || req.user?.id || req.tenantId;
+        const tenantId = req.tenantId;
+
+        const { result: report, remainingCredits, totalCredits } = await executeAiRequestWithCredits({
+            userId,
+            tenantId,
+            featureUsed: "Document Review",
+            creditsRequired: 1,
+            userEmail: req.user?.email,
+            userName: req.user?.name,
+            token: req.token,
+            action: async () => {
+                return await reviewDocumentContent(documentText);
+            }
+        });
+
+        res.json({ ...report, newAiUnits: remainingCredits, remainingCredits, totalCredits });
     } catch (err: any) {
         console.error("Express /api/ai/review-document-content error:", err);
-        res.status(500).json({ error: err.message || "Internal server error" });
+        res.status(400).json({ error: err.message || "Internal server error" });
     }
 });
 
 app.post("/api/ai/invoice-insight", verifyTenant, async (req: any, res) => {
     try {
         const { prompt, complex } = req.body;
-        const text = await generateInvoiceInsight(prompt, complex);
-        const tokens = Math.max(25, Math.ceil((JSON.stringify(req.body).length + (text || "").length) * 0.26));
-        const newUnits = await deductAiUnitServerSide(req.tenantId, req.token, req.user?.email, req.headers["x-ai-mode-enabled"] === "true", req.user?.name, "AI Financial Insights", tokens);
-        res.json({ text, newAiUnits: newUnits });
+        const userId = req.user?.email || req.user?.id || req.tenantId;
+        const tenantId = req.tenantId;
+
+        const { result: text, remainingCredits, totalCredits } = await executeAiRequestWithCredits({
+            userId,
+            tenantId,
+            featureUsed: "Invoice Insight",
+            creditsRequired: 1,
+            userEmail: req.user?.email,
+            userName: req.user?.name,
+            token: req.token,
+            action: async () => {
+                return await generateInvoiceInsight(prompt, complex);
+            }
+        });
+
+        res.json({ text, newAiUnits: remainingCredits, remainingCredits, totalCredits });
     } catch (err: any) {
         console.error("Express /api/ai/invoice-insight error:", err);
-        res.status(500).json({ error: err.message || "Internal server error" });
+        res.status(400).json({ error: err.message || "Internal server error" });
+    }
+});
+
+app.post("/api/ai/service-description", verifyTenant, async (req: any, res) => {
+    try {
+        const { serviceName, targetAudience, industry } = req.body;
+        const userId = req.user?.email || req.user?.id || req.tenantId;
+        const tenantId = req.tenantId;
+
+        const prompt = `Generate a professional, compelling service description for a service named "${serviceName}". Target audience: ${targetAudience || 'General Clients'}, Industry: ${industry || 'Business Services'}. Provide a clear overview, key deliverables bullet points, and pricing recommendation.`;
+
+        const { result: text, remainingCredits, totalCredits } = await executeAiRequestWithCredits({
+            userId,
+            tenantId,
+            featureUsed: "Service Description",
+            creditsRequired: 1,
+            userEmail: req.user?.email,
+            userName: req.user?.name,
+            token: req.token,
+            action: async () => {
+                return await generateTextResponse(prompt, "gemini-2.5-flash");
+            }
+        });
+
+        res.json({ description: text, newAiUnits: remainingCredits, remainingCredits, totalCredits });
+    } catch (err: any) {
+        console.error("Express /api/ai/service-description error:", err);
+        res.status(400).json({ error: err.message || "Internal server error" });
+    }
+});
+
+app.post("/api/ai/receipt-ai", verifyTenant, async (req: any, res) => {
+    try {
+        const { receiptData } = req.body;
+        const userId = req.user?.email || req.user?.id || req.tenantId;
+        const tenantId = req.tenantId;
+
+        const prompt = `Analyze and format this receipt information for professional audit compliance and financial record keeping: ${JSON.stringify(receiptData)}`;
+
+        const { result: text, remainingCredits, totalCredits } = await executeAiRequestWithCredits({
+            userId,
+            tenantId,
+            featureUsed: "Receipt AI",
+            creditsRequired: 1,
+            userEmail: req.user?.email,
+            userName: req.user?.name,
+            token: req.token,
+            action: async () => {
+                return await generateTextResponse(prompt, "gemini-2.5-flash");
+            }
+        });
+
+        res.json({ formattedReceipt: text, newAiUnits: remainingCredits, remainingCredits, totalCredits });
+    } catch (err: any) {
+        console.error("Express /api/ai/receipt-ai error:", err);
+        res.status(400).json({ error: err.message || "Internal server error" });
     }
 });
 
