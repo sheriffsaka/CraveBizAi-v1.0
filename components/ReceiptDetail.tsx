@@ -31,23 +31,32 @@ const ReceiptDetail: React.FC<ReceiptDetailProps> = ({ invoice, client, services
                 await onSendReceipt(invoice.id);
             }
 
+            // Auto-trigger PDF receipt download
+            handlePdfExport();
+
+            const fileName = `Receipt_${invoice.invoiceNumber}.pdf`;
             const subject = `Payment Receipt ${invoice.invoiceNumber} from ${company.name}`;
             const body = `Dear ${client.name},
 
-Thank you for your business. This is your official receipt for payment on invoice #${invoice.invoiceNumber}.
+Thank you for your business. Please find your official payment receipt for invoice #${invoice.invoiceNumber}.
 
 Received From: ${client.companyName || client.name}
 Total Paid: ₦${invoice.total.toLocaleString()}
 Payment Date: ${invoice.issueDate}
-
 Status: PAID
+
+--------------------------------------------------
+ATTACHMENT:
+The official PDF receipt ('${fileName}') has been generated and saved to your Downloads folder. Please attach it to this email.
+--------------------------------------------------
 
 Best regards,
 ${company.name}
 ${company.email || ''}`;
 
             const mailtoLink = `mailto:${client.email}?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`;
-            setTimeout(() => { window.location.href = mailtoLink; }, 300);
+            alert(`Official Receipt PDF ('${fileName}') has been generated and saved to your Downloads!\n\nOpening your email application now — please attach the downloaded receipt PDF file.`);
+            setTimeout(() => { window.location.href = mailtoLink; }, 400);
         } catch (e) {
             console.error("Failed to process send receipt:", e);
         } finally {

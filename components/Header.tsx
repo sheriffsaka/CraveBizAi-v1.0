@@ -81,16 +81,20 @@ const Header: React.FC<HeaderProps> = ({
     const subInfo = getSubscriptionInfo(activeTenantId || '');
 
     return (
-        <header className="flex justify-between items-center p-4 h-20 bg-white border-b shadow-sm relative z-40">
-            <div className="flex items-center space-x-2">
-                <button onClick={onToggleMobileMenu} className="p-2 mr-1 text-gray-600 md:hidden hover:bg-gray-100 rounded-lg">
-                    <Icon name="menu" className="w-6 h-6"/>
+        <header className="flex justify-between items-center px-2.5 sm:px-4 py-2 sm:py-3 min-h-[4rem] sm:h-20 bg-white border-b shadow-sm relative z-40 gap-1.5 sm:gap-3">
+            <div className="flex items-center space-x-1 sm:space-x-2 min-w-0 shrink">
+                <button 
+                    onClick={onToggleMobileMenu} 
+                    className="p-1.5 sm:p-2 text-gray-600 md:hidden hover:bg-gray-100 rounded-lg shrink-0"
+                    aria-label="Open mobile menu"
+                >
+                    <Icon name="menu" className="w-5 h-5 sm:w-6 sm:h-6"/>
                 </button>
                 
                 {onToggleSidebar && (
                     <button 
                         onClick={onToggleSidebar} 
-                        className="hidden md:flex p-2 text-gray-500 hover:text-primary-600 hover:bg-primary-50 rounded-xl transition-all shadow-sm border border-gray-100"
+                        className="hidden md:flex p-2 text-gray-500 hover:text-primary-600 hover:bg-primary-50 rounded-xl transition-all shadow-sm border border-gray-100 shrink-0"
                         title={isSidebarCollapsed ? "Expand Sidebar (Standard Screen)" : "Collapse Sidebar (Full Screen Workspace)"}
                     >
                         <svg className="w-5 h-5" fill="none" stroke="currentColor" strokeWidth="2.5" viewBox="0 0 24 24">
@@ -103,15 +107,15 @@ const Header: React.FC<HeaderProps> = ({
                     </button>
                 )}
                 
-                <h2 className="text-xl font-bold text-gray-800 tracking-tight mr-4">{pageTitle}</h2>
+                <h2 className="text-sm sm:text-xl font-bold text-gray-800 tracking-tight truncate max-w-[80px] min-[380px]:max-w-[120px] sm:max-w-none shrink-0">{pageTitle}</h2>
 
                 {companies && companies.length > 0 && (
-                    <div className="relative">
+                    <div className="relative shrink-0">
                         <button 
                             onClick={() => setIsWorkspaceOpen(!isWorkspaceOpen)}
-                            className="flex items-center gap-2 px-3.5 py-1.5 bg-gray-50 border border-gray-200 rounded-xl text-xs font-bold text-gray-700 hover:bg-gray-100 transition shadow-sm outline-none"
+                            className="flex items-center gap-1 sm:gap-2 px-2 py-1 sm:px-3.5 sm:py-1.5 bg-gray-50 border border-gray-200 rounded-xl text-[10px] sm:text-xs font-bold text-gray-700 hover:bg-gray-100 transition shadow-sm outline-none"
                         >
-                            <span className="max-w-[140px] truncate">{activeCompany?.name || 'My Workspace'}</span>
+                            <span className="max-w-[65px] min-[380px]:max-w-[90px] sm:max-w-[140px] truncate">{activeCompany?.name || 'Workspace'}</span>
                             <svg className={`w-3 h-3 text-gray-500 transition-transform ${isWorkspaceOpen ? 'rotate-180' : ''}`} fill="none" stroke="currentColor" strokeWidth="2.5" viewBox="0 0 24 24">
                                 <path strokeLinecap="round" strokeLinejoin="round" d="M19 9l-7 7-7-7" />
                             </svg>
@@ -140,10 +144,10 @@ const Header: React.FC<HeaderProps> = ({
                     </div>
                 )}
             </div>
-            <div className="flex items-center space-x-3">
+            <div className="flex items-center space-x-1.5 sm:space-x-3 shrink-0">
                 {activeTenantId && (
-                    <div className="flex items-center space-x-1.5 sm:space-x-2 bg-gray-50 border border-gray-100 rounded-xl px-2 py-1 sm:px-3 sm:py-1.5 shadow-sm">
-                        <span className={`text-[9px] sm:text-[10px] font-black uppercase tracking-wider px-1.5 py-0.5 rounded-full ${
+                    <div className="hidden min-[480px]:flex items-center space-x-1 sm:space-x-2 bg-gray-50 border border-gray-100 rounded-xl px-1.5 py-0.5 sm:px-3 sm:py-1.5 shadow-sm">
+                        <span className={`text-[8px] sm:text-[10px] font-black uppercase tracking-wider px-1 py-0.5 sm:px-1.5 rounded-full ${
                             subInfo.tier === 'Free' ? 'bg-red-50 text-red-600 border border-red-100' :
                             subInfo.tier === 'Starter' ? 'bg-blue-50 text-blue-700 border border-blue-100' :
                             subInfo.tier === 'Growth' ? 'bg-purple-50 text-purple-700 border border-purple-100' :
@@ -153,8 +157,8 @@ const Header: React.FC<HeaderProps> = ({
                         </span>
                         
                         {(subInfo.tier !== 'Free' || subInfo.aiUnits > 0) ? (
-                            <div className="flex items-center space-x-1.5 sm:space-x-2 border-l border-gray-200 pl-1.5 sm:pl-2">
-                                <span className="text-[9px] sm:text-[10px] font-bold text-gray-500 hidden xs:inline">AI:</span>
+                            <div className="hidden sm:flex items-center space-x-1.5 border-l border-gray-200 pl-1.5">
+                                <span className="text-[9px] font-bold text-gray-500">AI:</span>
                                 <button
                                     onClick={() => {
                                         try {
@@ -173,10 +177,9 @@ const Header: React.FC<HeaderProps> = ({
                                         window.location.hash = '#workspace-subscription-section';
                                         onNavigate?.('settings');
                                     }}
-                                    className="flex items-center hover:bg-primary-50 text-gray-500 hover:text-primary-600 px-1.5 py-0.5 rounded transition-colors text-[8px] sm:text-[9px] font-black cursor-pointer bg-white border border-gray-100 shadow-3xs"
+                                    className="flex items-center hover:bg-primary-50 text-gray-500 hover:text-primary-600 px-1 py-0.5 rounded transition-colors text-[8px] font-black cursor-pointer bg-white border border-gray-100"
                                     title="Click to view subscription & buy credits"
                                 >
-                                    <span className="uppercase tracking-wider mr-1 text-[7.5px] sm:text-[8px] font-bold text-gray-400">AI Credit</span>
                                     <span className="text-primary-600 font-black font-mono">({subInfo.aiUnits})</span>
                                 </button>
                             </div>
@@ -186,18 +189,22 @@ const Header: React.FC<HeaderProps> = ({
                                     window.location.hash = '#workspace-subscription-section';
                                     onNavigate?.('settings');
                                 }}
-                                className="text-[8px] sm:text-[9px] font-bold text-red-500 bg-red-50 px-1.5 py-0.5 rounded ml-1 border border-red-100 hover:bg-red-100 transition-colors cursor-pointer"
-                                title="Click to upgrade subscription & buy credits"
+                                className="hidden sm:inline-block text-[8px] font-bold text-red-500 bg-red-50 px-1 py-0.5 rounded border border-red-100 hover:bg-red-100 transition-colors"
                             >
                                 No AI Credit
                             </button>
                         )}
                     </div>
                 )}
-                <button onClick={onCreateInvoice} className="flex px-2.5 py-1.5 sm:px-5 sm:py-2.5 bg-primary-600 text-white rounded-xl hover:bg-primary-700 font-bold shadow-md sm:shadow-lg shadow-primary-200 transition-all transform active:scale-95 items-center text-xs sm:text-sm whitespace-nowrap">
-                    <span className="mr-1 sm:mr-2 text-base sm:text-lg leading-none">+</span> <span className="hidden xs:inline">New Invoice</span><span className="xs:hidden">Invoice</span>
+                <button 
+                    onClick={onCreateInvoice} 
+                    className="flex px-2 py-1.5 sm:px-4 sm:py-2 bg-primary-600 text-white rounded-xl hover:bg-primary-700 font-bold shadow-md shadow-primary-200 transition-all transform active:scale-95 items-center text-xs sm:text-sm whitespace-nowrap shrink-0"
+                    title="Create New Invoice"
+                >
+                    <span className="mr-1 text-sm sm:text-base leading-none font-bold">+</span>
+                    <span>New Invoice</span>
                 </button>
-                {user && <UserAvatar user={user} onOpenUserProfile={onOpenUserProfile} onLogout={onLogout} />}
+                {user && <div className="shrink-0"><UserAvatar user={user} onOpenUserProfile={onOpenUserProfile} onLogout={onLogout} /></div>}
             </div>
         </header>
     );
