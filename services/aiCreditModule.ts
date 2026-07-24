@@ -154,28 +154,66 @@ export async function getUserAiCredits(
     creditsData = localCache[key];
   }
 
-  // 4. Default initialization if user has no record
-  if (!creditsData) {
-    const isCravebizInc = tenantId === "cravebiz-inc" || key === "00000000-0000-0000-0000-000000000000";
-    const plan = isCravebizInc ? "Enterprise" : "Free";
-    const total = DEFAULT_PLAN_CREDITS[plan] || 20;
+  // 4. Sync / check workspace settings (cravebiz_workspace_settings) for accurate subscription tier & units
+  let wsContent: any = null;
+  try {
+    const client = token ? createClient(SUPABASE_URL, SUPABASE_ANON_KEY, { global: { headers: { Authorization: `Bearer ${token}` } } }) : rootSupabase;
+    const targetCompanyId = tenantId || key;
+    const { data: wsDoc } = await client
+      .from("generated_documents")
+      .select("content")
+      .or(`id.eq.${targetCompanyId},company_id.eq.${targetCompanyId}`)
+      .eq("document_type", "cravebiz_workspace_settings")
+      .limit(1)
+      .maybeSingle();
 
+    if (wsDoc && wsDoc.content) {
+      wsContent = wsDoc.content;
+    }
+  } catch (wsErr) {
+    console.warn("[getUserAiCredits] Could not fetch workspace settings:", wsErr);
+  }
+
+  const isCravebizInc = tenantId === "cravebiz-inc" || key === "00000000-0000-0000-0000-000000000000";
+  const wsTier = wsContent?.tier || (isCravebizInc ? "Enterprise" : "Free");
+  const wsPlanMax = DEFAULT_PLAN_CREDITS[wsTier] || 20;
+  const wsPurchased = parseInt(String(wsContent?.purchasedAiUnits ?? 0), 10);
+  const wsAiUnits = wsContent?.aiUnits !== undefined ? parseInt(String(wsContent.aiUnits), 10) : wsPlanMax;
+  const wsTotal = Math.max(wsPlanMax + wsPurchased, wsAiUnits);
+
+  // If no credit record exists yet, initialize from workspace settings
+  if (!creditsData) {
     creditsData = {
       userId: key,
       tenantId: tenantId || key,
-      totalCredits: total,
-      remainingCredits: total,
+      totalCredits: wsTotal,
+      remainingCredits: wsAiUnits,
       creditsUsed: 0,
       lastResetDate: new Date().toISOString(),
-      subscriptionPlan: plan,
+      subscriptionPlan: wsTier,
     };
 
-    // Save initial state to local cache & Supabase
     saveUserAiCredits(creditsData, token).catch(console.error);
   } else {
-    // Keep local cache warm
-    localCache[key] = creditsData;
-    writeLocalCreditCache(localCache);
+    // If credit record exists, ensure it matches workspace tier & higher available units
+    let shouldUpdate = false;
+    if (wsTier !== "Free" && creditsData.subscriptionPlan === "Free") {
+      creditsData.subscriptionPlan = wsTier;
+      creditsData.totalCredits = wsTotal;
+      creditsData.remainingCredits = Math.max(creditsData.remainingCredits, wsAiUnits);
+      shouldUpdate = true;
+    } else if (wsAiUnits > creditsData.remainingCredits && wsContent?.aiUnits !== undefined) {
+      creditsData.remainingCredits = wsAiUnits;
+      creditsData.totalCredits = Math.max(creditsData.totalCredits, wsTotal);
+      shouldUpdate = true;
+    }
+
+    if (shouldUpdate) {
+      saveUserAiCredits(creditsData, token).catch(console.error);
+    } else {
+      localCache[key] = creditsData;
+      writeLocalCreditCache(localCache);
+    }
   }
 
   return creditsData;
@@ -219,7 +257,7 @@ export async function saveUserAiCredits(
     console.warn("[saveUserAiCredits] Supabase table upsert exception:", err);
   }
 
-  // 3. Always save to Supabase 'generated_documents' (document_type = 'user_ai_credits') as single source of truth fallback
+  // 3. Always save to Supabase 'generated_documents' (document_type = 'user_ai_credits')
   try {
     await client.from("generated_documents").upsert({
       id: key,
@@ -236,6 +274,34 @@ export async function saveUserAiCredits(
     });
   } catch (docErr) {
     console.warn("[saveUserAiCredits] Generated documents upsert exception:", docErr);
+  }
+
+  // 4. Sync back to 'cravebiz_workspace_settings' so subscription settings & AI credits stay 100% in sync
+  try {
+    const targetCompanyId = credits.tenantId || key;
+    const { data: wsDoc } = await client
+      .from("generated_documents")
+      .select("content")
+      .or(`id.eq.${targetCompanyId},company_id.eq.${targetCompanyId}`)
+      .eq("document_type", "cravebiz_workspace_settings")
+      .limit(1)
+      .maybeSingle();
+
+    if (wsDoc && wsDoc.content) {
+      const updatedContent = {
+        ...wsDoc.content,
+        tier: credits.subscriptionPlan,
+        aiUnits: credits.remainingCredits,
+      };
+      await client.from("generated_documents").upsert({
+        id: targetCompanyId,
+        company_id: targetCompanyId.includes("-") && targetCompanyId.length === 36 ? targetCompanyId : null,
+        document_type: "cravebiz_workspace_settings",
+        content: updatedContent,
+      });
+    }
+  } catch (wsSyncErr) {
+    console.warn("[saveUserAiCredits] Error syncing workspace settings aiUnits:", wsSyncErr);
   }
 }
 

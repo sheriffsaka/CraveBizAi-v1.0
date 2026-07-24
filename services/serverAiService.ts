@@ -96,17 +96,17 @@ async function callGeminiWithFallback(
         return response;
     } catch (err: any) {
         console.warn(`Preferred model ${preferredModel} failed or quota exceeded:`, err.message || err);
-        if (preferredModel !== 'gemini-3.5-flash') {
-            console.info(`Attempting fallback to free tier model 'gemini-3.5-flash'...`);
+        if (preferredModel !== 'gemini-2.5-flash') {
+            console.info(`Attempting fallback to free tier model 'gemini-2.5-flash'...`);
             try {
                 const response = await ai.models.generateContent({
-                    model: 'gemini-3.5-flash',
+                    model: 'gemini-2.5-flash',
                     contents: prompt,
                     config: config
                 });
                 return response;
             } catch (fallbackErr: any) {
-                console.error("Fallback to 'gemini-3.5-flash' failed as well:", fallbackErr.message || fallbackErr);
+                console.error("Fallback to 'gemini-2.5-flash' failed as well:", fallbackErr.message || fallbackErr);
                 throw fallbackErr;
             }
         }
@@ -350,13 +350,13 @@ export async function generateTextResponse(
     try {
         const response = await callGeminiWithFallback(
             prompt,
-            model || 'gemini-3.5-flash',
+            model || 'gemini-2.5-flash',
             systemInstruction
         );
         return response.text || "";
     } catch (error) {
         console.error(`Error calling Gemini API with model ${model}:`, error);
-        return "Sorry, I encountered an error while processing your request.";
+        throw error;
     }
 }
 
@@ -368,7 +368,7 @@ export async function transformDocument(rawContent: string, companyContext: any)
     }
 
     const ai = getGeminiClient();
-    const model = 'gemini-3.5-flash'; // Optimized to ensure fast responsive delivery
+    const model = 'gemini-2.5-flash'; // Optimized to ensure fast responsive delivery
 
     const systemInstruction = `You are an intelligent document transformation engine. Your task is to analyze raw, unstructured text and reformat it into a professional, structured business document in JSON format based on the provided schema.
     - Automatically detect the document type (e.g., Invoice, Receipt, Proposal, Report).
@@ -487,7 +487,7 @@ export async function generateRenewalInvoiceSuggestion(clientId: string, expirin
     }
 
     const ai = getGeminiClient();
-    const model = 'gemini-3.5-flash';
+    const model = 'gemini-2.5-flash';
 
     const systemInstruction = `You are an intelligent billing assistant. Your task is to analyze expiring service items for a client and suggest a renewal invoice.
     - Pre-fill the same service items.
@@ -537,7 +537,7 @@ export async function generateRenewalInvoiceSuggestion(clientId: string, expirin
         return JSON.parse(response.text.trim());
     } catch (error) {
         console.error("Gemini AI Error during renewal suggestion:", error);
-        return programmaticSuggestion; // Safe fallback
+        throw error;
     }
 }
 
@@ -569,7 +569,7 @@ ${latePayments > 0 ? `- **Action Required**: Historical invoices show delayed pa
     }
 
     const ai = getGeminiClient();
-    const model = 'gemini-3.5-flash';
+    const model = 'gemini-2.5-flash';
 
     const systemInstruction = `You are a financial analyst. Analyze the client's payment history and service coverage.
     - Detect trends (e.g., always pays late, pays ahead).
@@ -589,7 +589,7 @@ ${latePayments > 0 ? `- **Action Required**: Historical invoices show delayed pa
         return response.text || "";
     } catch (error) {
         console.error("Gemini AI Error during health report:", error);
-        return "Failed to generate health report.";
+        throw error;
     }
 }
 
@@ -601,7 +601,7 @@ export async function generateDocumentFromPurpose(purpose: string, companyContex
     }
 
     const ai = getGeminiClient();
-    const model = 'gemini-3.5-flash';
+    const model = 'gemini-2.5-flash';
 
     const systemInstruction = `You are an expert corporate lawyer and document preparer. Your task is to generate a professional business document based entirely on the user's stated purpose/requirements.
     Your output MUST be a structured business document in JSON format matching the schema.
@@ -741,7 +741,7 @@ export async function reviewDocumentContent(documentText: string): Promise<Docum
     }
 
     const ai = getGeminiClient();
-    const model = 'gemini-3.5-flash';
+    const model = 'gemini-2.5-flash';
 
     const systemInstruction = `You are an elite legal and compliance officer. Review the provided business document or text and deliver a structured compliance analysis.
     - Provide an overall health/safety score strictly between 0 and 100 representing how complete and low-risk the document is.
@@ -809,7 +809,7 @@ This document exhibits well-structured invoicing elements with standard payment 
 3. **Connect Gemini API Key**: Go to Settings in the AI Studio sidebar and supply a valid \`GEMINI_API_KEY\` to enable high-fidelity automated analysis powered by **Gemini 3.5 Pro / Flash** LLMs.`;
     }
 
-    const modelName = complex ? 'gemini-3.1-pro-preview' : 'gemini-3.5-flash';
+    const modelName = complex ? 'gemini-2.5-pro' : 'gemini-2.5-flash';
 
     try {
         const response = await callGeminiWithFallback(
@@ -824,6 +824,6 @@ This document exhibits well-structured invoicing elements with standard payment 
         return response.text || "I'm sorry, I couldn't generate an insight for this invoice at the moment.";
     } catch (error) {
         console.error("Gemini AI Error:", error);
-        return "The AI consultant is currently unavailable. Please check your network connection.";
+        throw error;
     }
 }
