@@ -38,17 +38,24 @@ const ReceiptDetail: React.FC<ReceiptDetailProps> = ({ invoice, client, services
             const subject = `Payment Receipt ${invoice.invoiceNumber} from ${company.name}`;
             const body = `Dear ${client.name},
 
-Thank you for your business. Please find your official payment receipt for invoice #${invoice.invoiceNumber}.
+Thank you for your patronage. Please find your official payment receipt for invoice #${invoice.invoiceNumber}.
 
 Received From: ${client.companyName || client.name}
 Total Paid: ₦${invoice.total.toLocaleString()}
 Payment Date: ${invoice.issueDate}
 Status: PAID
 
---------------------------------------------------
-ATTACHMENT:
-The official PDF receipt ('${fileName}') has been generated and saved to your Downloads folder. Please attach it to this email.
---------------------------------------------------
+
+Please find your receipt attached to this email for your records. If you have any questions or need further assistance, feel free to reply to this email.
+
+
+
+
+// --------------------------------------------------
+// ATTACHMENT:
+// The official PDF receipt ('${fileName}') has been generated and saved to your Downloads folder. Please attach it to this email.
+// The official PDF receipt ('${fileName}') has been generated and saved to your Downloads folder. Please attach it to this email.
+// --------------------------------------------------
 
 Best regards,
 ${company.name}
