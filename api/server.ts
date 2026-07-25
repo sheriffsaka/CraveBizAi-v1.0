@@ -1376,7 +1376,7 @@ Respond ONLY with a valid JSON string containing the fields. Do not include mark
 Document Content:
 ${textContent.substring(0, 8000)}`;
 
-        const responseText = await generateTextResponse(prompt, "gemini-3.5-flash", "You are an expert AI Legal Document Counsel. Return ONLY valid JSON.");
+        const responseText = await generateTextResponse(prompt, "gemini-3.6-flash", "You are an expert AI Legal Document Counsel. Return ONLY valid JSON.");
         
         // Strip markdown backticks if returned by the model
         const cleanJson = responseText.replace(/```json/gi, "").replace(/```/g, "").trim();
@@ -1768,7 +1768,7 @@ app.post("/api/ai/service-description", verifyTenant, async (req: any, res) => {
             userName: req.user?.name,
             token: req.token,
             action: async () => {
-                return await generateTextResponse(prompt, "gemini-2.5-flash");
+                return await generateTextResponse(prompt, "gemini-3.6-flash");
             }
         });
 
@@ -1796,7 +1796,7 @@ app.post("/api/ai/receipt-ai", verifyTenant, async (req: any, res) => {
             userName: req.user?.name,
             token: req.token,
             action: async () => {
-                return await generateTextResponse(prompt, "gemini-2.5-flash");
+                return await generateTextResponse(prompt, "gemini-3.6-flash");
             }
         });
 

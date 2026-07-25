@@ -34,7 +34,7 @@ function loadEnvFiles() {
 loadEnvFiles();
 
 function getApiKey(): string {
-    let key = process.env.GEMINI_API_KEY || process.env.API_KEY;
+    let key = process.env.GEMINI_API_KEY || process.env.API_KEY || "";
     if (!key) {
         console.warn("WARNING: Neither GEMINI_API_KEY nor API_KEY is set in environment.");
         return "";
@@ -43,6 +43,11 @@ function getApiKey(): string {
     // Strip wrapping quotes if present (common issue in custom environments)
     if ((key.startsWith('"') && key.endsWith('"')) || (key.startsWith("'") && key.endsWith("'"))) {
         key = key.substring(1, key.length - 1).trim();
+    }
+    // Ignore invalid placeholder key from example
+    if (key.startsWith("AQ.Ab8RN6")) {
+        console.warn("WARNING: GEMINI_API_KEY is using a placeholder string from .env.example.");
+        return "";
     }
     return key;
 }
@@ -80,6 +85,11 @@ async function callGeminiWithFallback(
     responseMimeType?: string,
     temperature?: number
 ) {
+    const apiKey = getApiKey();
+    if (!apiKey) {
+        throw new Error("Gemini API key is missing or invalid. Please configure GEMINI_API_KEY in Environment Settings.");
+    }
+
     const ai = getGeminiClient();
     const config: any = {};
     if (systemInstruction) config.systemInstruction = systemInstruction;
@@ -87,31 +97,53 @@ async function callGeminiWithFallback(
     if (responseSchema) config.responseSchema = responseSchema;
     if (temperature !== undefined) config.temperature = temperature;
 
-    try {
-        const response = await ai.models.generateContent({
-            model: preferredModel,
-            contents: prompt,
-            config: config
-        });
-        return response;
-    } catch (err: any) {
-        console.warn(`Preferred model ${preferredModel} failed or quota exceeded:`, err.message || err);
-        if (preferredModel !== 'gemini-2.5-flash') {
-            console.info(`Attempting fallback to free tier model 'gemini-2.5-flash'...`);
-            try {
-                const response = await ai.models.generateContent({
-                    model: 'gemini-2.5-flash',
-                    contents: prompt,
-                    config: config
-                });
-                return response;
-            } catch (fallbackErr: any) {
-                console.error("Fallback to 'gemini-2.5-flash' failed as well:", fallbackErr.message || fallbackErr);
-                throw fallbackErr;
-            }
+    // Helper to map obsolete or non-standard models to valid high-performance models
+    const normalizeModel = (m: string) => {
+        if (!m || m.includes('2.5') || m.includes('1.5') || m.includes('2.0') || m === 'gemini-pro') {
+            return 'gemini-3.6-flash';
         }
-        throw err;
+        if (m === 'gemini-3-flash-preview' || m === 'gemini-3.5-flash') {
+            return 'gemini-3.6-flash';
+        }
+        if (m === 'gemini-3-pro-preview') {
+            return 'gemini-3.1-pro-preview';
+        }
+        return m;
+    };
+
+    const primaryModel = normalizeModel(preferredModel);
+
+    // Sequence of models to try in order of efficiency & availability
+    const modelsToTry = [
+        primaryModel,
+        'gemini-3.6-flash',
+        'gemini-flash-latest'
+    ];
+
+    const uniqueModels = Array.from(new Set(modelsToTry.filter(Boolean)));
+
+    let lastError: any = null;
+    for (const modelName of uniqueModels) {
+        try {
+            const response = await ai.models.generateContent({
+                model: modelName,
+                contents: prompt,
+                config: config
+            });
+            return response;
+        } catch (err: any) {
+            lastError = err;
+            const errMsg = err.message || String(err);
+            console.warn(`Gemini call with model '${modelName}' failed (${errMsg}). Trying next model...`);
+        }
     }
+
+    const errMessage = lastError?.message || String(lastError);
+    if (errMessage.includes("429") || errMessage.includes("RESOURCE_EXHAUSTED") || errMessage.includes("prepayment credits")) {
+        throw new Error("Gemini API quota exceeded or model prepayment credits required. Switching to standard response fallback.");
+    }
+
+    throw lastError;
 }
 
 function compileMockDocument(text: string, companyContext: any, selectedPreset?: string): GeneratedDocument {
@@ -350,7 +382,7 @@ export async function generateTextResponse(
     try {
         const response = await callGeminiWithFallback(
             prompt,
-            model || 'gemini-2.5-flash',
+            model || 'gemini-3.6-flash',
             systemInstruction
         );
         return response.text || "";
@@ -368,7 +400,7 @@ export async function transformDocument(rawContent: string, companyContext: any)
     }
 
     const ai = getGeminiClient();
-    const model = 'gemini-2.5-flash'; // Optimized to ensure fast responsive delivery
+    const model = 'gemini-3.6-flash'; // Optimized to ensure fast responsive delivery
 
     const systemInstruction = `You are an intelligent document transformation engine. Your task is to analyze raw, unstructured text and reformat it into a professional, structured business document in JSON format based on the provided schema.
     - Automatically detect the document type (e.g., Invoice, Receipt, Proposal, Report).
@@ -486,9 +518,6 @@ export async function generateRenewalInvoiceSuggestion(clientId: string, expirin
         return programmaticSuggestion;
     }
 
-    const ai = getGeminiClient();
-    const model = 'gemini-2.5-flash';
-
     const systemInstruction = `You are an intelligent billing assistant. Your task is to analyze expiring service items for a client and suggest a renewal invoice.
     - Pre-fill the same service items.
     - Adjust the periodStartDate to the day after the current periodEndDate.
@@ -528,7 +557,7 @@ export async function generateRenewalInvoiceSuggestion(clientId: string, expirin
     try {
         const response = await callGeminiWithFallback(
             prompt,
-            model,
+            'gemini-3.6-flash',
             systemInstruction,
             schema,
             "application/json"
@@ -568,8 +597,7 @@ ${latePayments > 0 ? `- **Action Required**: Historical invoices show delayed pa
 2. **Transition Option**: Move client onto automatic credit pre-authorizations or monthly retainers.`;
     }
 
-    const ai = getGeminiClient();
-    const model = 'gemini-2.5-flash';
+    const model = 'gemini-3.6-flash';
 
     const systemInstruction = `You are a financial analyst. Analyze the client's payment history and service coverage.
     - Detect trends (e.g., always pays late, pays ahead).
@@ -600,8 +628,7 @@ export async function generateDocumentFromPurpose(purpose: string, companyContex
         return compileMockDocument(purpose, ctx, selectedPreset);
     }
 
-    const ai = getGeminiClient();
-    const model = 'gemini-2.5-flash';
+    const model = 'gemini-3.6-flash';
 
     const systemInstruction = `You are an expert corporate lawyer and document preparer. Your task is to generate a professional business document based entirely on the user's stated purpose/requirements.
     Your output MUST be a structured business document in JSON format matching the schema.
@@ -740,8 +767,7 @@ export async function reviewDocumentContent(documentText: string): Promise<Docum
         };
     }
 
-    const ai = getGeminiClient();
-    const model = 'gemini-2.5-flash';
+    const model = 'gemini-3.6-flash';
 
     const systemInstruction = `You are an elite legal and compliance officer. Review the provided business document or text and deliver a structured compliance analysis.
     - Provide an overall health/safety score strictly between 0 and 100 representing how complete and low-risk the document is.
@@ -809,7 +835,7 @@ This document exhibits well-structured invoicing elements with standard payment 
 3. **Connect Gemini API Key**: Go to Settings in the AI Studio sidebar and supply a valid \`GEMINI_API_KEY\` to enable high-fidelity automated analysis powered by **Gemini 3.5 Pro / Flash** LLMs.`;
     }
 
-    const modelName = complex ? 'gemini-2.5-pro' : 'gemini-2.5-flash';
+    const modelName = 'gemini-3.6-flash';
 
     try {
         const response = await callGeminiWithFallback(

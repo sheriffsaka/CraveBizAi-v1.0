@@ -91,7 +91,7 @@ Ensure the description clearly outlines the core deliverables, client benefits, 
 
       const systemInstruction = "You are an expert commercial copywriter creating professional, clean service descriptions for business invoices and catalog proposals.";
 
-      const generated = await generateTextResponse(prompt, "gemini-2.5-flash", systemInstruction);
+      const generated = await generateTextResponse(prompt, "gemini-3.6-flash", systemInstruction);
       if (generated && !generated.includes("Sorry, I encountered an error")) {
         setDescription(generated.trim());
       } else {

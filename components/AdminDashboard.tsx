@@ -446,7 +446,7 @@ Admin Query: ${activePrompt}
     try {
       const insight = await generateTextResponse(
         contextStr, 
-        'gemini-3-flash-preview', 
+        'gemini-3.6-flash', 
         "You are the senior CraveBiZ Platform Compliance Auditor and Risk Intelligence Analyst. Respond with a formal, professional, bulleted audit report specifying observations, identified risks, satisfaction reviews, and technical retention compliance recommendations."
       );
       setAiResponse(insight);
@@ -499,7 +499,7 @@ Admin Query: ${activePrompt}
     if (!query.trim()) return;
     setLoading(true);
     try {
-      const insight = await generateTextResponse(`Admin Query: ${query}. Context: ${companies.length} companies, ${users.length} users, ${stats.totalInvoices} invoices, Total Revenue: ₦${stats.totalRevenue}.`, 'gemini-3-flash-preview', "You are a Platform Admin Analyst.");
+      const insight = await generateTextResponse(`Admin Query: ${query}. Context: ${companies.length} companies, ${users.length} users, ${stats.totalInvoices} invoices, Total Revenue: ₦${stats.totalRevenue}.`, 'gemini-3.6-flash', "You are a Platform Admin Analyst.");
       setResponse(insight);
     } catch (err) {
       setResponse("Analysis failed.");

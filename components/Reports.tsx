@@ -271,7 +271,7 @@ Avoid informal jargon, conversational filler, or leaking raw prompt details. Foc
 Inquiry: "${reportQuery}"
 Operational Dataset: ${dataDump}`;
 
-            const response = await generateTextResponse(prompt, 'gemini-3-pro-preview', systemInstruction);
+            const response = await generateTextResponse(prompt, 'gemini-3.6-flash', systemInstruction);
             setAiReportResponse(response);
         } catch (error) {
             setAiReportResponse("AI service disrupted. Please retry.");
