@@ -276,7 +276,11 @@ const InvoiceForm: React.FC<InvoiceFormProps> = ({ initialInvoice, clients, serv
                             <label className="block text-[10px] font-black text-gray-400 uppercase mb-1">Service</label>
                             <select value={item.serviceId} onChange={e => handleItemChange(index, 'serviceId', e.target.value)} className="w-full p-3.5 border rounded-2xl bg-gray-50 text-gray-900 font-bold outline-none focus:ring-2 focus:ring-primary-500">
                                 <option value="" disabled>Select service...</option>
-                                {services.map(s => <option key={s.id} value={s.id}>{s.name} - ₦{s.price.toLocaleString()}</option>)}
+                                {services.map(s => (
+                                  <option key={s.id} value={s.id}>
+                                    {s.name}{s.packageName ? ` (${s.packageName})` : ''} - ₦{s.price.toLocaleString()}
+                                  </option>
+                                ))}
                             </select>
                         </div>
                         <button type="button" onClick={() => removeItem(index)} className="self-end mb-1 p-3 text-red-400 hover:bg-red-50 hover:text-red-600 rounded-2xl transition-all">

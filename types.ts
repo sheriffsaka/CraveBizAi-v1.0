@@ -58,6 +58,7 @@ export interface Service {
   id: string;
   companyId: string;
   name: string;
+  packageName?: string;
   category: string;
   description: string;
   price: number;

@@ -44,7 +44,13 @@ const ServicesTable: React.FC<{
           {services.map((service) => (
             <tr key={service.id} className="bg-white border-b hover:bg-gray-50">
               <th scope="row" className="px-6 py-4 font-semibold text-gray-900 whitespace-nowrap">
-                {service.name}
+                <div className="text-sm font-bold text-gray-900">{service.name}</div>
+                {service.packageName && (
+                  <div className="text-[10px] font-semibold text-purple-700 bg-purple-50 border border-purple-200 inline-flex items-center space-x-1 px-2 py-0.5 rounded-md mt-0.5">
+                    <span>📦</span>
+                    <span>{service.packageName}</span>
+                  </div>
+                )}
               </th>
               <td className="px-6 py-4">
                 <span className="px-2.5 py-1 bg-gray-100 text-gray-600 rounded-full font-bold uppercase text-[9px] tracking-wider">

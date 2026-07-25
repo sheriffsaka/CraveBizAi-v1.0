@@ -843,29 +843,75 @@ class CraveBizApi {
   async fetchServices(companyId: string): Promise<Service[]> {
     const { data, error } = await supabase.from('services').select('*').eq('company_id', cleanCompanyId(companyId));
     if (error) throw error;
-    return (data || []).map(s => ({ id: s.id, companyId: s.company_id, name: s.name, category: s.category, description: s.description, price: Number(s.price) }));
+    return (data || []).map(s => ({
+      id: s.id,
+      companyId: s.company_id,
+      name: s.name,
+      packageName: s.package_name || s.packageName || '',
+      category: s.category,
+      description: s.description,
+      price: Number(s.price)
+    }));
   }
 
   async createService(service: Omit<Service, 'id'>): Promise<Service> {
-    const { data, error } = await supabase.from('services').insert({
-        id: generateId(),
-        company_id: cleanCompanyId(service.companyId),
-        name: service.name,
-        category: service.category,
-        description: service.description,
-        price: service.price
-    }).select().maybeSingle();
+    const newId = generateId();
+    const payload: any = {
+      id: newId,
+      company_id: cleanCompanyId(service.companyId),
+      name: service.name,
+      package_name: service.packageName || '',
+      category: service.category,
+      description: service.description,
+      price: service.price
+    };
+    try {
+      const { data, error } = await supabase.from('services').insert(payload).select().maybeSingle();
+      if (!error && data) {
+        return {
+          id: data.id,
+          companyId: data.company_id,
+          name: data.name,
+          packageName: data.package_name || service.packageName || '',
+          category: data.category,
+          description: data.description,
+          price: Number(data.price)
+        };
+      }
+    } catch (dbErr) {
+      console.warn("createService with package_name column failed, trying fallback:", dbErr);
+    }
+    // Fallback if package_name column is missing in DB schema
+    delete payload.package_name;
+    const { data, error } = await supabase.from('services').insert(payload).select().maybeSingle();
     if (error) throw error;
-    return data;
+    return {
+      id: data?.id || newId,
+      companyId: service.companyId,
+      name: service.name,
+      packageName: service.packageName || '',
+      category: service.category,
+      description: service.description,
+      price: service.price
+    };
   }
 
   async updateService(service: Service): Promise<void> {
-    const { error } = await supabase.from('services').update({
-        name: service.name,
-        category: service.category,
-        description: service.description,
-        price: service.price
-    }).eq('id', service.id);
+    const updateData: any = {
+      name: service.name,
+      package_name: service.packageName || '',
+      category: service.category,
+      description: service.description,
+      price: service.price
+    };
+    try {
+      const { error } = await supabase.from('services').update(updateData).eq('id', service.id);
+      if (!error) return;
+    } catch (dbErr) {
+      console.warn("updateService with package_name column failed, trying fallback:", dbErr);
+    }
+    delete updateData.package_name;
+    const { error } = await supabase.from('services').update(updateData).eq('id', service.id);
     if (error) throw error;
   }
 

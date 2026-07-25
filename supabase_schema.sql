@@ -57,3 +57,6 @@ WITH CHECK (true);
 -- 3. Grant table permissions to anon and authenticated roles
 GRANT ALL ON public.user_ai_credits TO anon, authenticated, service_role;
 GRANT ALL ON public.ai_credit_logs TO anon, authenticated, service_role;
+
+-- 4. Ensure services table has package_name column
+ALTER TABLE IF EXISTS public.services ADD COLUMN IF NOT EXISTS package_name TEXT;
