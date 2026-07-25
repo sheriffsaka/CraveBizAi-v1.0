@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import Modal from './Modal';
 import { User } from '../types';
-import { supabase } from '../lib/api';
+import { supabase, api } from '../lib/api';
 import Icon from './common/Icon';
 
 interface UserProfileModalProps {
@@ -34,7 +34,23 @@ const UserProfileModal: React.FC<UserProfileModalProps> = ({ isOpen, onClose, us
       if (!isOpen || !user?.id) return;
       setIsLoadingUsage(true);
       try {
-        // Fetch latest user usage values directly from Supabase database (never default/hardcode)
+        const activeTenantId = localStorage.getItem('cravebiz_tenant') || '';
+
+        // Fetch canonical AI credits directly from Supabase via backend API
+        try {
+          const headers = await api.getAuthHeaders(activeTenantId);
+          const creditsRes = await fetch('/api/ai/credits', { headers });
+          if (creditsRes.ok) {
+            const creditsData = await creditsRes.json();
+            if (typeof creditsData.remainingCredits === 'number') {
+              setRemainingAiCredits(creditsData.remainingCredits);
+            }
+          }
+        } catch (cErr) {
+          console.warn("Could not fetch AI credits in UserProfileModal:", cErr);
+        }
+
+        // Fetch invoices and receipts count directly from Supabase
         const { data, error } = await supabase
           .from('generated_documents')
           .select('content')
@@ -42,37 +58,15 @@ const UserProfileModal: React.FC<UserProfileModalProps> = ({ isOpen, onClose, us
           .eq('document_type', 'cravebiz_user_usage')
           .maybeSingle();
 
-        if (error) {
-          throw error;
-        }
-
         if (data && data.content) {
           const content = data.content as any;
           setInvoicesCreated(content.invoicesCreated ?? 0);
           setReceiptsCreated(content.receiptsCreated ?? 0);
-          setRemainingAiCredits(content.remainingAiCredits ?? 0);
-        } else {
-          // Fallback: If no record has been created in the DB yet, read current workspace counts directly
-          const activeTenantId = localStorage.getItem('cravebiz_tenant') || '';
-          if (activeTenantId) {
-            const invCount = parseInt(localStorage.getItem(`cravebiz_invoice_count_${activeTenantId}`) || '0', 10);
-            const recCount = parseInt(localStorage.getItem(`cravebiz_receipt_count_${activeTenantId}`) || '0', 10);
-            
-            const unitsKey = `cravebiz_units_${activeTenantId}`;
-            const storedUnits = localStorage.getItem(unitsKey);
-            let aiUnits = 5; // Default for Free plan fallback
-            if (storedUnits !== null) {
-              aiUnits = parseInt(storedUnits, 10);
-            }
-            
-            setInvoicesCreated(invCount);
-            setReceiptsCreated(recCount);
-            setRemainingAiCredits(aiUnits);
-          } else {
-            setInvoicesCreated(0);
-            setReceiptsCreated(0);
-            setRemainingAiCredits(0);
-          }
+        } else if (activeTenantId) {
+          const invCount = parseInt(localStorage.getItem(`cravebiz_invoice_count_${activeTenantId}`) || '0', 10);
+          const recCount = parseInt(localStorage.getItem(`cravebiz_receipt_count_${activeTenantId}`) || '0', 10);
+          setInvoicesCreated(invCount);
+          setReceiptsCreated(recCount);
         }
       } catch (err) {
         console.error("Failed to load user usage from Supabase:", err);

@@ -1,7 +1,8 @@
 
-import React from 'react';
+import React, { useState } from 'react';
 import { Invoice, Client, Service, Company, BankAccount } from '../types';
 import Icon from './common/Icon';
+import { api } from '../lib/api';
 
 interface ReceiptDetailProps {
   invoice: Invoice;
@@ -13,7 +14,8 @@ interface ReceiptDetailProps {
 }
 
 const ReceiptDetail: React.FC<ReceiptDetailProps> = ({ invoice, client, services, company, onBack, onSendReceipt }) => {
-    const [isSendingEmail, setIsSendingEmail] = React.useState(false);
+    const [isSendingEmail, setIsSendingEmail] = useState(false);
+    const [sendStatus, setSendStatus] = useState<{ type: 'success' | 'error'; message: string } | null>(null);
     
     const getServiceName = (serviceId: string) => {
         return services.find(s => s.id === serviceId)?.name || 'Custom Item';
@@ -21,44 +23,68 @@ const ReceiptDetail: React.FC<ReceiptDetailProps> = ({ invoice, client, services
 
     const handleSendEmail = async () => {
         if (!client.email) {
-            alert("This client does not have an email address configured.");
+            alert("This client does not have an email address configured. Please add an email address to this client first.");
             return;
         }
 
         setIsSendingEmail(true);
+        setSendStatus(null);
         try {
             if (onSendReceipt) {
                 await onSendReceipt(invoice.id);
             }
 
-            // Auto-trigger PDF receipt download
-            handlePdfExport();
+            // Prepare item details for the rich HTML receipt
+            const itemsPayload = invoice.items.map(item => ({
+                name: getServiceName(item.serviceId),
+                description: item.description,
+                quantity: item.quantity,
+                price: item.price
+            }));
 
-            const fileName = `Receipt_${invoice.invoiceNumber}.pdf`;
+            // Call backend API to dispatch direct HTML email
+            const response = await api.sendReceiptEmailDirect({
+                recipientEmail: client.email,
+                recipientName: client.name || "Valued Customer",
+                recipientCompany: client.companyName,
+                invoiceNumber: invoice.invoiceNumber,
+                issueDate: invoice.issueDate,
+                paymentDate: invoice.issueDate,
+                totalAmount: invoice.total,
+                amountPaid: invoice.amountPaid || invoice.total,
+                currencySymbol: "₦",
+                items: itemsPayload,
+                company: {
+                    name: company.name,
+                    email: company.email,
+                    phone: company.phone,
+                    address: company.address,
+                    logoUrl: company.logoUrl,
+                    taxId: (company as any).taxId
+                },
+                paymentMethod: (invoice as any).paymentMethod || "Bank Transfer / Electronic Payment",
+                paymentNotes: (invoice as any).paymentNotes || invoice.paymentTerms
+            });
+
+            setSendStatus({
+                type: 'success',
+                message: response.message || `Receipt #${invoice.invoiceNumber} delivered directly to ${client.email}'s inbox!`
+            });
+
+        } catch (e: any) {
+            console.error("Failed to send receipt email directly:", e);
+            
+            // Fallback to mailto link if direct endpoint hits an unexpected issue
             const subject = `Payment Receipt ${invoice.invoiceNumber} from ${company.name}`;
-            const body = `Dear ${client.name},
-
-Thank you for your patronage. Please find your official payment receipt for invoice #${invoice.invoiceNumber}.
-
-Received From: ${client.companyName || client.name}
-Total Paid: ₦${invoice.total.toLocaleString()}
-Payment Date: ${invoice.issueDate}
-Status: PAID
-
-
-Please find your receipt attached to this email for your records. If you have any questions or need further assistance, feel free to reply to this email.
-
-
-
-Best regards,
-${company.name}
-${company.email || ''}`;
-
+            const body = `Dear ${client.name},\n\nThank you for your patronage. Please find your official payment receipt for invoice #${invoice.invoiceNumber}.\n\nReceived From: ${client.companyName || client.name}\nTotal Paid: ₦${invoice.total.toLocaleString()}\nPayment Date: ${invoice.issueDate}\nStatus: PAID IN FULL\n\nBest regards,\n${company.name}\n${company.email || ''}`;
             const mailtoLink = `mailto:${client.email}?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`;
-            alert(`Official Receipt PDF ('${fileName}') has been generated and saved to your Downloads!\n\nOpening your email application now — please attach the downloaded receipt PDF file.`);
-            setTimeout(() => { window.location.href = mailtoLink; }, 400);
-        } catch (e) {
-            console.error("Failed to process send receipt:", e);
+            
+            setSendStatus({
+                type: 'error',
+                message: `Direct dispatch encountered an issue (${e.message || 'Server network'}). Opening default mail client as fallback.`
+            });
+            
+            setTimeout(() => { window.location.href = mailtoLink; }, 1000);
         } finally {
             setIsSendingEmail(false);
         }
@@ -242,6 +268,24 @@ ${company.email || ''}`;
 
   return (
     <div className="min-h-screen bg-gray-700 flex flex-col items-center py-10 overflow-auto">
+      {/* Status Notification */}
+      {sendStatus && (
+        <div className={`w-[210mm] mb-4 p-4 rounded-xl shadow-lg border flex items-center justify-between transition-all ${
+          sendStatus.type === 'success' ? 'bg-emerald-900/90 text-emerald-100 border-emerald-500' : 'bg-red-900/90 text-red-100 border-red-500'
+        }`}>
+          <div className="flex items-center gap-3">
+            <span className="text-xl">{sendStatus.type === 'success' ? '🚀' : '⚠️'}</span>
+            <p className="text-sm font-semibold">{sendStatus.message}</p>
+          </div>
+          <button 
+            onClick={() => setSendStatus(null)}
+            className="text-xs font-bold px-2 py-1 rounded bg-white/10 hover:bg-white/20 transition"
+          >
+            Dismiss
+          </button>
+        </div>
+      )}
+
       {/* Action Buttons */}
       <div className="w-[210mm] flex justify-between items-center mb-6 print-hidden">
         <button 
@@ -255,9 +299,10 @@ ${company.email || ''}`;
             onClick={handleSendEmail} 
             disabled={isSendingEmail}
             className="flex items-center px-4 py-2 bg-emerald-600 text-white rounded shadow hover:bg-emerald-700 font-bold text-sm disabled:opacity-50"
+            title="Sends HTML receipt directly to recipient inbox"
           >
             <Icon name="send" className="w-4 h-4 mr-2" />
-            {isSendingEmail ? 'Sending...' : 'Send Receipt via E-mail'}
+            {isSendingEmail ? 'Sending Direct Email...' : 'Send Receipt to Inbox'}
           </button>
           <button 
             onClick={handlePdfExport} 

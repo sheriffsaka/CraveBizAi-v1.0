@@ -96,8 +96,8 @@ export function getDbUuidKey(userId?: string, tenantId?: string): string {
 }
 
 /**
- * Retrieves a user's AI credits profile from Supabase DB or cache.
- * Initializes the record if it does not exist yet.
+ * Retrieves a user's AI credits profile directly from Supabase DB.
+ * Initializes the record ONLY if it does not exist yet.
  */
 export async function getUserAiCredits(
   userId: string,
@@ -105,13 +105,12 @@ export async function getUserAiCredits(
   token?: string
 ): Promise<UserAiCredits> {
   const key = getDbKey(userId, tenantId);
-  const localCache = readLocalCreditCache();
+  const client = token ? createClient(SUPABASE_URL, SUPABASE_ANON_KEY, { global: { headers: { Authorization: `Bearer ${token}` } } }) : rootSupabase;
 
   let creditsData: UserAiCredits | null = null;
 
-  // 1. Try fetching from Supabase 'user_ai_credits' table first
+  // 1. Try fetching from Supabase 'user_ai_credits' table
   try {
-    const client = token ? createClient(SUPABASE_URL, SUPABASE_ANON_KEY, { global: { headers: { Authorization: `Bearer ${token}` } } }) : rootSupabase;
     const { data, error } = await client
       .from("user_ai_credits")
       .select("*")
@@ -132,13 +131,12 @@ export async function getUserAiCredits(
       };
     }
   } catch (dbErr) {
-    console.warn("[getUserAiCredits] Supabase table query failed, falling back to document store/cache:", dbErr);
+    console.warn("[getUserAiCredits] user_ai_credits query failed, checking generated_documents:", dbErr);
   }
 
-  // 2. Fallback to Supabase 'generated_documents' table (document_type = 'user_ai_credits')
+  // 2. Try fetching from Supabase 'generated_documents' (document_type = 'user_ai_credits')
   if (!creditsData) {
     try {
-      const client = token ? createClient(SUPABASE_URL, SUPABASE_ANON_KEY, { global: { headers: { Authorization: `Bearer ${token}` } } }) : rootSupabase;
       const { data } = await client
         .from("generated_documents")
         .select("*")
@@ -159,20 +157,14 @@ export async function getUserAiCredits(
         };
       }
     } catch (docErr) {
-      console.warn("[getUserAiCredits] Document store fetch failed:", docErr);
+      console.warn("[getUserAiCredits] generated_documents user_ai_credits fetch failed:", docErr);
     }
   }
 
-  // 3. Fallback to local file cache
-  if (!creditsData && localCache[key]) {
-    creditsData = localCache[key];
-  }
-
-  // 4. Sync / check workspace settings (cravebiz_workspace_settings) for accurate subscription tier & units
+  // 3. Fallback: check workspace settings ('cravebiz_workspace_settings') in Supabase
   let wsContent: any = null;
+  const targetCompanyId = tenantId || key;
   try {
-    const client = token ? createClient(SUPABASE_URL, SUPABASE_ANON_KEY, { global: { headers: { Authorization: `Bearer ${token}` } } }) : rootSupabase;
-    const targetCompanyId = tenantId || key;
     const { data: wsDoc } = await client
       .from("generated_documents")
       .select("content")
@@ -192,11 +184,11 @@ export async function getUserAiCredits(
   const wsTier = wsContent?.tier || (isCravebizInc ? "Enterprise" : "Free");
   const wsPlanMax = DEFAULT_PLAN_CREDITS[wsTier] || (isCravebizInc ? 2500 : 5);
   const wsPurchased = parseInt(String(wsContent?.purchasedAiUnits ?? 0), 10);
-  const wsAiUnits = wsContent?.aiUnits !== undefined ? parseInt(String(wsContent.aiUnits), 10) : wsPlanMax;
-  const wsTotal = Math.max(wsPlanMax + wsPurchased, wsAiUnits);
+  const wsTotal = wsPlanMax + wsPurchased;
 
-  // If no credit record exists yet, initialize from workspace settings
+  // If NO credit record exists anywhere in Supabase yet, create initial balance from workspace settings or defaults
   if (!creditsData) {
+    const wsAiUnits = wsContent?.aiUnits !== undefined ? parseInt(String(wsContent.aiUnits), 10) : wsTotal;
     creditsData = {
       userId: key,
       tenantId: tenantId || key,
@@ -207,26 +199,25 @@ export async function getUserAiCredits(
       subscriptionPlan: wsTier,
     };
 
-    saveUserAiCredits(creditsData, token).catch(console.error);
+    await saveUserAiCredits(creditsData, token);
   } else {
-    // Correct legacy Free accounts that were wrongly defaulted to 20 total credits
-    if (creditsData.subscriptionPlan === "Free" && creditsData.totalCredits > 5 && wsPurchased === 0) {
-      creditsData.totalCredits = 5;
-      creditsData.remainingCredits = Math.min(creditsData.remainingCredits, 5);
-      saveUserAiCredits(creditsData, token).catch(console.error);
-    }
-
-    // Sync tier upgrades if plan changed
-    if (wsTier !== "Free" && creditsData.subscriptionPlan === "Free") {
+    // If workspace tier upgraded, update subscription plan and credit total without overriding deducted balance
+    if (wsTier !== creditsData.subscriptionPlan) {
+      const oldPlanMax = DEFAULT_PLAN_CREDITS[creditsData.subscriptionPlan] || 5;
+      const creditDiff = wsPlanMax - oldPlanMax;
       creditsData.subscriptionPlan = wsTier;
       creditsData.totalCredits = wsTotal;
-      creditsData.remainingCredits = Math.max(creditsData.remainingCredits, wsAiUnits);
-      saveUserAiCredits(creditsData, token).catch(console.error);
-    } else {
-      localCache[key] = creditsData;
-      writeLocalCreditCache(localCache);
+      if (creditDiff > 0) {
+        creditsData.remainingCredits += creditDiff;
+      }
+      await saveUserAiCredits(creditsData, token);
     }
   }
+
+  // Update local file cache for background sync reference
+  const localCache = readLocalCreditCache();
+  localCache[key] = creditsData;
+  writeLocalCreditCache(localCache);
 
   return creditsData;
 }
@@ -460,7 +451,7 @@ export async function logAiCreditRequest(
     console.warn("[logAiCreditRequest] ai_credit_logs error:", err);
   }
 
-  // 2. Write to ai_usage_logs
+  // 2. Write to ai_usage_logs and ai_usage tables
   try {
     await rootSupabase.from("ai_usage_logs").insert({
       user_id: log.userId,
@@ -472,6 +463,20 @@ export async function logAiCreditRequest(
     });
   } catch (err) {
     console.warn("[logAiCreditRequest] ai_usage_logs error:", err);
+  }
+
+  try {
+    await rootSupabase.from("ai_usage").insert({
+      user_id: log.userId,
+      company_id: dbCompanyId,
+      feature_used: log.featureUsed,
+      credits_used: log.creditsDeducted,
+      tokens_used: log.tokensUsed || 0,
+      status: log.status,
+      created_at: timestamp,
+    });
+  } catch (err) {
+    console.warn("[logAiCreditRequest] ai_usage table insert exception:", err);
   }
 
   // 3. Write to generated_documents as fallback

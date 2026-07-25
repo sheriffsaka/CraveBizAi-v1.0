@@ -22,6 +22,7 @@ import {
     checkUserAiCredits
 } from "../services/aiCreditModule.js";
 import { SignifyService } from "../services/signifyService.js";
+import { sendReceiptEmailDirect, sendInvoiceEmailDirect } from "../services/emailService.js";
 
 const SUPABASE_URL = "https://dfqvgezjhudmnlyeycju.supabase.co";
 const SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImRmcXZnZXpqaHVkbW5seWV5Y2p1Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjYyNDAyOTMsImV4cCI6MjA4MTgxNjI5M30.8VsHsDpychdSMJmrfnmkxi5ed8CygwErX3-RkVPXkUI";
@@ -1198,6 +1199,104 @@ CraveBiZ Document Team
     } catch (err: any) {
         console.error("Error dispatching emails on backend:", err);
         res.status(500).json({ error: err.message || "Failed to dispatch email invitations" });
+    }
+});
+
+// Dispatch Rich HTML Payment Receipt Directly to Recipient Inbox
+app.post("/api/send-receipt-email", async (req, res) => {
+    try {
+        const {
+            recipientEmail,
+            recipientName,
+            recipientCompany,
+            invoiceNumber,
+            issueDate,
+            paymentDate,
+            totalAmount,
+            amountPaid,
+            currencySymbol,
+            items,
+            company,
+            paymentMethod,
+            paymentNotes
+        } = req.body;
+
+        if (!recipientEmail || !invoiceNumber) {
+            return res.status(400).json({ error: "recipientEmail and invoiceNumber are required" });
+        }
+
+        const result = await sendReceiptEmailDirect({
+            recipientEmail,
+            recipientName: recipientName || "Valued Client",
+            recipientCompany,
+            invoiceNumber,
+            issueDate: issueDate || new Date().toLocaleDateString(),
+            paymentDate: paymentDate || new Date().toLocaleDateString(),
+            totalAmount: Number(totalAmount || 0),
+            amountPaid: Number(amountPaid || totalAmount || 0),
+            currencySymbol: currencySymbol || "₦",
+            items: Array.isArray(items) ? items : [],
+            company: company || { name: "CraveBiZ Merchant" },
+            paymentMethod: paymentMethod || "Bank Transfer / Online Payment",
+            paymentNotes
+        });
+
+        if (result.success) {
+            res.json(result);
+        } else {
+            res.status(500).json({ error: result.message || "Failed to dispatch email directly." });
+        }
+    } catch (err: any) {
+        console.error("Error in /api/send-receipt-email:", err);
+        res.status(500).json({ error: err.message || "Failed to dispatch payment receipt email" });
+    }
+});
+
+// Dispatch Rich HTML Invoice Directly to Recipient Inbox
+app.post("/api/send-invoice-email", async (req, res) => {
+    try {
+        const {
+            recipientEmail,
+            recipientName,
+            recipientCompany,
+            invoiceNumber,
+            issueDate,
+            dueDate,
+            totalAmount,
+            amountPaid,
+            currencySymbol,
+            items,
+            company,
+            notes
+        } = req.body;
+
+        if (!recipientEmail || !invoiceNumber) {
+            return res.status(400).json({ error: "recipientEmail and invoiceNumber are required" });
+        }
+
+        const result = await sendInvoiceEmailDirect({
+            recipientEmail,
+            recipientName: recipientName || "Valued Client",
+            recipientCompany,
+            invoiceNumber,
+            issueDate: issueDate || new Date().toLocaleDateString(),
+            dueDate: dueDate || new Date().toLocaleDateString(),
+            totalAmount: Number(totalAmount || 0),
+            amountPaid: Number(amountPaid || 0),
+            currencySymbol: currencySymbol || "₦",
+            items: Array.isArray(items) ? items : [],
+            company: company || { name: "CraveBiZ Merchant" },
+            notes
+        });
+
+        if (result.success) {
+            res.json(result);
+        } else {
+            res.status(500).json({ error: result.message || "Failed to dispatch invoice email directly." });
+        }
+    } catch (err: any) {
+        console.error("Error in /api/send-invoice-email:", err);
+        res.status(500).json({ error: err.message || "Failed to dispatch invoice email" });
     }
 });
 

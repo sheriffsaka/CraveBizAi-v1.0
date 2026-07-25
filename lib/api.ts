@@ -2169,6 +2169,69 @@ class CraveBizApi {
   async safeGetSession() {
     return safeGetSession();
   }
+
+  async sendReceiptEmailDirect(payload: {
+    recipientEmail: string;
+    recipientName: string;
+    recipientCompany?: string;
+    invoiceNumber: string;
+    issueDate?: string;
+    paymentDate?: string;
+    totalAmount: number;
+    amountPaid?: number;
+    currencySymbol?: string;
+    items: Array<{ name: string; description?: string; quantity: number; price: number }>;
+    company: { name: string; email?: string; phone?: string; address?: string; logoUrl?: string; taxId?: string };
+    paymentMethod?: string;
+    paymentNotes?: string;
+  }): Promise<{ success: boolean; message: string }> {
+    try {
+      const response = await fetch('/api/send-receipt-email', {
+        method: 'POST',
+        headers: await this.getAuthHeaders(),
+        body: JSON.stringify(payload)
+      });
+      if (!response.ok) {
+        const errData = await response.json().catch(() => ({}));
+        throw new Error(errData.error || 'Failed to dispatch email directly.');
+      }
+      return await response.json();
+    } catch (err: any) {
+      console.error("sendReceiptEmailDirect error:", err);
+      throw err;
+    }
+  }
+
+  async sendInvoiceEmailDirect(payload: {
+    recipientEmail: string;
+    recipientName: string;
+    recipientCompany?: string;
+    invoiceNumber: string;
+    issueDate?: string;
+    dueDate?: string;
+    totalAmount: number;
+    amountPaid?: number;
+    currencySymbol?: string;
+    items: Array<{ name: string; description?: string; quantity: number; price: number }>;
+    company: { name: string; email?: string; phone?: string; address?: string; logoUrl?: string; bankAccounts?: any[] };
+    notes?: string;
+  }): Promise<{ success: boolean; message: string }> {
+    try {
+      const response = await fetch('/api/send-invoice-email', {
+        method: 'POST',
+        headers: await this.getAuthHeaders(),
+        body: JSON.stringify(payload)
+      });
+      if (!response.ok) {
+        const errData = await response.json().catch(() => ({}));
+        throw new Error(errData.error || 'Failed to dispatch invoice email directly.');
+      }
+      return await response.json();
+    } catch (err: any) {
+      console.error("sendInvoiceEmailDirect error:", err);
+      throw err;
+    }
+  }
 }
 export const api = CraveBizApi.getInstance();
 

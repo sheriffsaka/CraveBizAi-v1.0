@@ -4,6 +4,7 @@ import { Invoice, Client, Service, InvoiceStatus, Company, BankAccount } from '.
 import InvoiceStatusBadge from './InvoiceStatusBadge';
 import Icon from './common/Icon';
 import PaymentModal from './PaymentModal';
+import { api } from '../lib/api';
 
 interface InvoiceDetailProps {
   invoice: Invoice;
@@ -23,6 +24,7 @@ interface InvoiceDetailProps {
 
 const InvoiceDetail: React.FC<InvoiceDetailProps> = ({ invoice, client, services, company, onUpdateStatus, onViewPlainInvoice, onSendInvoice, onEditInvoice, onRecordPayment, onGenerateReceipt, onSendReceipt }) => {
     const [isSending, setIsSending] = useState(false);
+    const [sendFeedback, setSendFeedback] = useState<string | null>(null);
     const [isPaymentModalOpen, setIsPaymentModalOpen] = useState(false);
 
     const getServiceName = (serviceId: string) => services.find(s => s.id === serviceId)?.name || 'Service Item';
@@ -43,25 +45,47 @@ const InvoiceDetail: React.FC<InvoiceDetailProps> = ({ invoice, client, services
         }
 
         setIsSending(true);
+        setSendFeedback(null);
         try {
             await onSendInvoice(invoice.id);
+
+            const itemsPayload = invoice.items.map(item => ({
+                name: getServiceName(item.serviceId),
+                description: item.description,
+                quantity: item.quantity,
+                price: item.price
+            }));
+
+            const response = await api.sendInvoiceEmailDirect({
+                recipientEmail: client.email,
+                recipientName: client.name || "Valued Client",
+                recipientCompany: client.companyName,
+                invoiceNumber: invoice.invoiceNumber,
+                issueDate: invoice.issueDate,
+                dueDate: invoice.dueDate,
+                totalAmount: invoice.total,
+                amountPaid: invoice.amountPaid || 0,
+                currencySymbol: "₦",
+                items: itemsPayload,
+                company: {
+                    name: company?.name || "CraveBiZ Workspace",
+                    email: company?.email,
+                    phone: company?.phone,
+                    address: company?.address,
+                    logoUrl: company?.logoUrl,
+                    bankAccounts: company?.bankAccounts
+                },
+                notes: (invoice as any).notes || invoice.paymentTerms
+            });
+
+            setSendFeedback(response.message || `Invoice #${invoice.invoiceNumber} delivered directly to ${client.email}'s inbox!`);
+        } catch (e: any) {
+            console.error("Failed to send invoice email directly:", e);
             const subject = `Invoice ${invoice.invoiceNumber} from ${company?.name || 'Us'}`;
-            const body = `Dear ${client.name},
-
-Please find attached invoice #${invoice.invoiceNumber} for ${client.companyName}.
-
-Amount Due: ₦${balanceDue.toLocaleString()}
-Due Date: ${invoice.dueDate}
-
-Thank you for your business.
-
-Best regards,
-${company?.name || 'The Team'}`;
-
+            const body = `Dear ${client.name},\n\nPlease find details for invoice #${invoice.invoiceNumber}.\n\nAmount Due: ₦${balanceDue.toLocaleString()}\nDue Date: ${invoice.dueDate}\n\nThank you for your business.\n\nBest regards,\n${company?.name || 'The Team'}`;
             const mailtoLink = `mailto:${client.email}?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`;
-            setTimeout(() => { window.location.href = mailtoLink; }, 500);
-        } catch (e) {
-            console.error(e);
+            setSendFeedback(`Notice: Opening mail client as fallback (${e.message || 'Server error'}).`);
+            setTimeout(() => { window.location.href = mailtoLink; }, 800);
         } finally {
             setIsSending(false);
         }
@@ -83,6 +107,21 @@ ${company?.name || 'The Team'}`;
 
   return (
     <div className="pb-12">
+      {sendFeedback && (
+        <div className="max-w-4xl mx-auto mb-6 p-4 bg-primary-900 text-primary-50 rounded-xl shadow-lg border border-primary-500 flex items-center justify-between">
+          <div className="flex items-center gap-3">
+            <span className="text-xl">📧</span>
+            <p className="text-sm font-semibold">{sendFeedback}</p>
+          </div>
+          <button 
+            onClick={() => setSendFeedback(null)}
+            className="text-xs font-bold px-2 py-1 rounded bg-white/10 hover:bg-white/20 transition"
+          >
+            Dismiss
+          </button>
+        </div>
+      )}
+
       <div className="flex flex-wrap justify-center gap-3 mb-8 print-hidden">
         <button 
             onClick={() => onEditInvoice(invoice.id)}

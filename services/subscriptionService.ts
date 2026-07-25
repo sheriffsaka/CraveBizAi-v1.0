@@ -190,9 +190,11 @@ export async function saveSubscriptionInfoToDb(companyId: string): Promise<void>
   const lastFreeUnitsReset = localStorage.getItem(`cravebiz_last_free_units_reset_${companyId}`) || '';
   const purchasedAiUnits = parseInt(localStorage.getItem(`cravebiz_purchased_units_${companyId}`) || '0', 10);
 
-  const payload = {
+  const storedUnits = localStorage.getItem(`cravebiz_units_${companyId}`);
+  const aiUnitsToSave = storedUnits !== null ? parseInt(storedUnits, 10) : undefined;
+
+  const payload: any = {
     tier: sub.tier,
-    aiUnits: sub.aiUnits,
     aiModeEnabled: sub.aiModeEnabled,
     memberPermissions,
     invitedMembers,
@@ -201,6 +203,10 @@ export async function saveSubscriptionInfoToDb(companyId: string): Promise<void>
     lastFreeUnitsReset,
     purchasedAiUnits
   };
+
+  if (aiUnitsToSave !== undefined) {
+    payload.aiUnits = aiUnitsToSave;
+  }
 
   try {
     const headers = await api.getAuthHeaders(companyId);
@@ -244,15 +250,12 @@ export function checkAndEnforceMonthlyCreditReset(companyId: string, currentCont
   const lastResetKey = `cravebiz_last_free_units_reset_${companyId}`;
   const lastReset = localStorage.getItem(lastResetKey) || (currentContent?.lastFreeUnitsReset) || '';
   
-  if (lastReset !== currentMonthStr) {
-    // Current month is different! Reset free credits
-    // Read current tier
+  // Only trigger reset if lastReset was previously set AND is from an old month
+  if (lastReset && lastReset !== currentMonthStr) {
     const savedTier = localStorage.getItem(`cravebiz_tier_${companyId}`) || (currentContent?.tier) || 'Free';
     const limits = TIER_LIMITS[savedTier as SubscriptionTier] || TIER_LIMITS.Free;
     
-    // Reset monthly free credits to the plan's allowance (5 for Free, 100 for Starter, etc.)
     const standardCredits = limits.maxAiUnits;
-    
     const purchasedKey = `cravebiz_purchased_units_${companyId}`;
     const purchasedCredits = parseInt(localStorage.getItem(purchasedKey) || (currentContent?.purchasedAiUnits?.toString()) || '0', 10);
     
@@ -262,9 +265,9 @@ export function checkAndEnforceMonthlyCreditReset(companyId: string, currentCont
     localStorage.setItem(lastResetKey, currentMonthStr);
     
     console.log(`[Monthly Credit Reset] Reset standard credits for workspace ${companyId} to ${standardCredits}. Total units: ${newTotalCredits}`);
-    
-    // Save immediately in the background
     saveSubscriptionInfoToDb(companyId).catch(err => console.warn("Failed to save reset settings:", err));
+  } else if (!lastReset) {
+    localStorage.setItem(lastResetKey, currentMonthStr);
   }
 }
 
@@ -275,7 +278,24 @@ export async function syncSubscriptionInfoFromDb(companyId: string): Promise<voi
   if (!companyId) return;
   const docId = getSettingsDocId(companyId);
 
-  // 1. Retrieve the latest invoice and receipt counts directly from Supabase (making database the absolute single source of truth)
+  // 1. Fetch canonical AI Credits balance from Supabase database via backend API
+  try {
+    const headers = await api.getAuthHeaders(companyId);
+    const creditsRes = await fetch('/api/ai/credits', { headers });
+    if (creditsRes.ok) {
+      const creditsData = await creditsRes.json();
+      if (typeof creditsData.remainingCredits === 'number') {
+        localStorage.setItem(`cravebiz_units_${companyId}`, creditsData.remainingCredits.toString());
+        if (creditsData.subscriptionPlan) {
+          localStorage.setItem(`cravebiz_tier_${companyId}`, creditsData.subscriptionPlan);
+        }
+      }
+    }
+  } catch (creditErr) {
+    console.warn("Could not sync canonical AI credits from Supabase DB:", creditErr);
+  }
+
+  // 2. Retrieve the latest invoice and receipt counts directly from Supabase
   try {
     const { count: dbInvoiceCount, error: invError } = await supabase
       .from('invoices')
@@ -299,7 +319,7 @@ export async function syncSubscriptionInfoFromDb(companyId: string): Promise<voi
     console.warn("Could not sync live counts from DB:", err);
   }
 
-  // 2. Fetch workspace settings
+  // 3. Fetch workspace settings
   try {
     const headers = await api.getAuthHeaders(companyId);
     const response = await fetch('/api/subscription/settings', {
@@ -315,7 +335,7 @@ export async function syncSubscriptionInfoFromDb(companyId: string): Promise<voi
       if (content.tier) {
         localStorage.setItem(`cravebiz_tier_${companyId}`, content.tier);
       }
-      if (content.aiUnits !== undefined) {
+      if (content.aiUnits !== undefined && !localStorage.getItem(`cravebiz_units_${companyId}`)) {
         localStorage.setItem(`cravebiz_units_${companyId}`, content.aiUnits.toString());
       }
       if (content.aiModeEnabled !== undefined) {
@@ -338,7 +358,6 @@ export async function syncSubscriptionInfoFromDb(companyId: string): Promise<voi
         });
       }
 
-      // Check and enforce monthly reset
       checkAndEnforceMonthlyCreditReset(companyId, content);
 
       window.dispatchEvent(new Event('cravebiz_subscription_change'));
