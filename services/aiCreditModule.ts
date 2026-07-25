@@ -165,13 +165,19 @@ export async function getUserAiCredits(
   let wsContent: any = null;
   const targetCompanyId = tenantId || key;
   try {
-    const { data: wsDoc } = await client
+    const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(targetCompanyId);
+    let wsQuery = client
       .from("generated_documents")
       .select("content")
-      .or(`id.eq.${targetCompanyId},company_id.eq.${targetCompanyId}`)
-      .eq("document_type", "cravebiz_workspace_settings")
-      .limit(1)
-      .maybeSingle();
+      .eq("document_type", "cravebiz_workspace_settings");
+
+    if (isUuid) {
+      wsQuery = wsQuery.or(`id.eq.${targetCompanyId},company_id.eq.${targetCompanyId}`);
+    } else {
+      wsQuery = wsQuery.eq("id", targetCompanyId);
+    }
+
+    const { data: wsDoc } = await wsQuery.limit(1).maybeSingle();
 
     if (wsDoc && wsDoc.content) {
       wsContent = wsDoc.content;
@@ -282,13 +288,19 @@ export async function saveUserAiCredits(
   // 4. Sync back to 'cravebiz_workspace_settings' so subscription settings & AI credits stay 100% in sync
   try {
     const targetCompanyId = credits.tenantId || key;
-    const { data: wsDoc } = await client
+    const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(targetCompanyId);
+    let wsQuery = client
       .from("generated_documents")
       .select("content")
-      .or(`id.eq.${targetCompanyId},company_id.eq.${targetCompanyId}`)
-      .eq("document_type", "cravebiz_workspace_settings")
-      .limit(1)
-      .maybeSingle();
+      .eq("document_type", "cravebiz_workspace_settings");
+
+    if (isUuid) {
+      wsQuery = wsQuery.or(`id.eq.${targetCompanyId},company_id.eq.${targetCompanyId}`);
+    } else {
+      wsQuery = wsQuery.eq("id", targetCompanyId);
+    }
+
+    const { data: wsDoc } = await wsQuery.limit(1).maybeSingle();
 
     if (wsDoc && wsDoc.content) {
       const updatedContent = {
@@ -298,7 +310,7 @@ export async function saveUserAiCredits(
       };
       await client.from("generated_documents").upsert({
         id: targetCompanyId,
-        company_id: targetCompanyId.includes("-") && targetCompanyId.length === 36 ? targetCompanyId : null,
+        company_id: isUuid ? targetCompanyId : null,
         document_type: "cravebiz_workspace_settings",
         content: updatedContent,
       });
@@ -535,12 +547,14 @@ export async function getAiCreditLogs(
 
   // 1. Fetch from ai_credit_logs
   try {
-    const { data } = await client
-      .from("ai_credit_logs")
-      .select("*")
-      .or(`company_id.eq.${dbCompanyId},user_id.eq.${userId}`)
-      .order("timestamp", { ascending: false })
-      .limit(limit);
+    const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(dbCompanyId);
+    let logQuery = client.from("ai_credit_logs").select("*");
+    if (isUuid && dbCompanyId !== "11111111-1111-1111-1111-111111111111") {
+      logQuery = logQuery.or(`company_id.eq.${dbCompanyId},user_id.eq."${userId}"`);
+    } else {
+      logQuery = logQuery.eq("user_id", userId);
+    }
+    const { data } = await logQuery.order("timestamp", { ascending: false }).limit(limit);
 
     if (data) {
       data.forEach((row: any) => {
@@ -575,12 +589,14 @@ export async function getAiCreditLogs(
   // 2. Fetch from ai_usage_logs
   if (logsMap.size < limit) {
     try {
-      const { data } = await rootSupabase
-        .from("ai_usage_logs")
-        .select("*")
-        .or(`company_id.eq.${dbCompanyId},user_id.eq.${userId}`)
-        .order("timestamp", { ascending: false })
-        .limit(limit);
+      const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(dbCompanyId);
+      let usageQuery = rootSupabase.from("ai_usage_logs").select("*");
+      if (isUuid && dbCompanyId !== "11111111-1111-1111-1111-111111111111") {
+        usageQuery = usageQuery.or(`company_id.eq.${dbCompanyId},user_id.eq."${userId}"`);
+      } else {
+        usageQuery = usageQuery.eq("user_id", userId);
+      }
+      const { data } = await usageQuery.order("timestamp", { ascending: false }).limit(limit);
 
       if (data) {
         data.forEach((row: any) => {
