@@ -1,4 +1,15 @@
 import nodemailer from "nodemailer";
+import { Resend } from "resend";
+
+let resendClient: Resend | null = null;
+function getResendClient(): Resend | null {
+    const apiKey = process.env.RESEND_API_KEY;
+    if (!apiKey) return null;
+    if (!resendClient) {
+        resendClient = new Resend(apiKey);
+    }
+    return resendClient;
+}
 
 export interface ReceiptEmailData {
     recipientEmail: string;
@@ -272,16 +283,47 @@ export function buildReceiptHtmlEmail(data: ReceiptEmailData): string {
  */
 export async function sendReceiptEmailDirect(data: ReceiptEmailData): Promise<{ success: boolean; message: string; messageId?: string }> {
     try {
-        const transporter = createTransporter();
         const html = buildReceiptHtmlEmail(data);
+        const subject = `Payment Receipt #${data.invoiceNumber} from ${data.company.name}`;
+        const textContent = `Payment Receipt #${data.invoiceNumber}\n\nDear ${data.recipientName},\n\nThank you for your payment of ${data.currencySymbol || '₦'}${data.totalAmount.toLocaleString()} to ${data.company.name}.\nDate: ${data.paymentDate || data.issueDate}\nStatus: PAID IN FULL\n\nBest regards,\n${data.company.name}`;
+        
+        const resend = getResendClient();
+        if (resend) {
+            const fromAddress = process.env.RESEND_FROM || process.env.SMTP_FROM || `${data.company.name || 'CraveBiZ'} <onboarding@resend.dev>`;
+            try {
+                const resendRes = await resend.emails.send({
+                    from: fromAddress,
+                    to: [data.recipientEmail],
+                    subject: subject,
+                    html: html,
+                    text: textContent
+                });
+
+                if (resendRes.error) {
+                    console.error(`[Resend Dispatch Error] Receipt #${data.invoiceNumber}:`, resendRes.error);
+                } else {
+                    console.log(`[Resend Email Dispatch] Receipt #${data.invoiceNumber} sent to ${data.recipientEmail}. Id:`, resendRes.data?.id);
+                    return {
+                        success: true,
+                        message: `Receipt #${data.invoiceNumber} successfully dispatched via Resend to ${data.recipientEmail}!`,
+                        messageId: resendRes.data?.id
+                    };
+                }
+            } catch (resendErr: any) {
+                console.error(`[Resend Email Dispatch Exception] Receipt #${data.invoiceNumber}:`, resendErr);
+            }
+        }
+
+        // Fallback to Nodemailer/SMTP
+        const transporter = createTransporter();
         const fromAddress = process.env.SMTP_FROM || `${data.company.name || 'CraveBiZ'} <no-reply@cravebiz.ai>`;
         
         const mailOptions = {
             from: fromAddress,
             to: `${data.recipientName} <${data.recipientEmail}>`,
-            subject: `Payment Receipt #${data.invoiceNumber} from ${data.company.name}`,
+            subject: subject,
             html: html,
-            text: `Payment Receipt #${data.invoiceNumber}\n\nDear ${data.recipientName},\n\nThank you for your payment of ${data.currencySymbol || '₦'}${data.totalAmount.toLocaleString()} to ${data.company.name}.\nDate: ${data.paymentDate || data.issueDate}\nStatus: PAID IN FULL\n\nBest regards,\n${data.company.name}`
+            text: textContent
         };
 
         const info = await transporter.sendMail(mailOptions);
@@ -529,16 +571,47 @@ export function buildInvoiceHtmlEmail(data: InvoiceEmailData): string {
  */
 export async function sendInvoiceEmailDirect(data: InvoiceEmailData): Promise<{ success: boolean; message: string; messageId?: string }> {
     try {
-        const transporter = createTransporter();
         const html = buildInvoiceHtmlEmail(data);
+        const subject = `Invoice #${data.invoiceNumber} from ${data.company.name}`;
+        const textContent = `Invoice #${data.invoiceNumber}\n\nDear ${data.recipientName},\n\nPlease find attached invoice #${data.invoiceNumber} for ${data.currencySymbol || '₦'}${data.totalAmount.toLocaleString()}.\nDue Date: ${data.dueDate}\n\nBest regards,\n${data.company.name}`;
+        
+        const resend = getResendClient();
+        if (resend) {
+            const fromAddress = process.env.RESEND_FROM || process.env.SMTP_FROM || `${data.company.name || 'CraveBiZ'} <onboarding@resend.dev>`;
+            try {
+                const resendRes = await resend.emails.send({
+                    from: fromAddress,
+                    to: [data.recipientEmail],
+                    subject: subject,
+                    html: html,
+                    text: textContent
+                });
+
+                if (resendRes.error) {
+                    console.error(`[Resend Dispatch Error] Invoice #${data.invoiceNumber}:`, resendRes.error);
+                } else {
+                    console.log(`[Resend Email Dispatch] Invoice #${data.invoiceNumber} sent to ${data.recipientEmail}. Id:`, resendRes.data?.id);
+                    return {
+                        success: true,
+                        message: `Invoice #${data.invoiceNumber} successfully dispatched via Resend to ${data.recipientEmail}!`,
+                        messageId: resendRes.data?.id
+                    };
+                }
+            } catch (resendErr: any) {
+                console.error(`[Resend Email Dispatch Exception] Invoice #${data.invoiceNumber}:`, resendErr);
+            }
+        }
+
+        // Fallback to Nodemailer/SMTP
+        const transporter = createTransporter();
         const fromAddress = process.env.SMTP_FROM || `${data.company.name || 'CraveBiZ'} <no-reply@cravebiz.ai>`;
         
         const mailOptions = {
             from: fromAddress,
             to: `${data.recipientName} <${data.recipientEmail}>`,
-            subject: `Invoice #${data.invoiceNumber} from ${data.company.name}`,
+            subject: subject,
             html: html,
-            text: `Invoice #${data.invoiceNumber}\n\nDear ${data.recipientName},\n\nPlease find attached invoice #${data.invoiceNumber} for ${data.currencySymbol || '₦'}${data.totalAmount.toLocaleString()}.\nDue Date: ${data.dueDate}\n\nBest regards,\n${data.company.name}`
+            text: textContent
         };
 
         const info = await transporter.sendMail(mailOptions);

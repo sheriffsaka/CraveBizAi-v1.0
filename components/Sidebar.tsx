@@ -53,7 +53,6 @@ const Sidebar: React.FC<SidebarProps> = ({ activePage, setActivePage, companyNam
     { id: 'clients', label: 'Clients', icon: 'clients' },
     { id: 'services', label: 'Services', icon: 'services' },
     { id: 'reports', label: 'Reports', icon: 'reports' },
-    { id: 'payment-intelligence', label: 'Payment Intelligence', icon: 'reports' },
     { id: 'settings', label: 'Settings', icon: 'settings' },
   ];
 

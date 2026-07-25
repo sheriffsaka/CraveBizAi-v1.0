@@ -22,7 +22,6 @@ import ReceiptDetail from './components/ReceiptDetail';
 import AdminDashboard from './components/AdminDashboard';
 import DocumentTransformer from './components/DocumentTransformer';
 import DocSignify from './components/DocSignify';
-import PaymentIntelligence from './components/PaymentIntelligence';
 import PublicSigningPortal from './components/PublicSigningPortal';
 import ProjectManagement from './components/ProjectManagement';
 import { api, supabase } from './lib/api';
@@ -31,7 +30,7 @@ import { getSubscriptionInfo, setSubscriptionInfo, SubscriptionTier, TIER_LIMITS
 import { Invoice, Client, Service, Company, User, TenantData, InvoiceStatus, AllTenantsData, GeneratedDocument, DbDocumentSignatory, Project, WorkspaceRole, AuditLog } from './types';
 import Icon from './components/common/Icon';
 
-export type Page = 'dashboard' | 'invoices' | 'clients' | 'services' | 'reports' | 'settings' | 'create-invoice' | 'edit-invoice' | 'invoice-detail' | 'receipt-detail' | 'plain-invoice-detail' | 'recurring-invoices' | 'email-verification' | 'sent-receipts' | 'admin-dashboard' | 'document-transformer' | 'payment-intelligence' | 'projects' | 'doc-signify';
+export type Page = 'dashboard' | 'invoices' | 'clients' | 'services' | 'reports' | 'settings' | 'create-invoice' | 'edit-invoice' | 'invoice-detail' | 'receipt-detail' | 'plain-invoice-detail' | 'recurring-invoices' | 'email-verification' | 'sent-receipts' | 'admin-dashboard' | 'document-transformer' | 'projects' | 'doc-signify';
 
 const stringifyError = (err: any): string => {
   if (!err) return "An unknown error occurred.";
@@ -136,7 +135,7 @@ export default function App() {
     'plain-invoice-detail': 'Document View', 'recurring-invoices': 'Recurring Invoices',
     'email-verification': 'Email Verification', 'sent-receipts': 'Sent Receipts',
     'admin-dashboard': 'System Console', 'document-transformer': 'SmartDocs',
-    'payment-intelligence': 'Payment Intelligence Board', projects: 'Project Hub',
+    projects: 'Project Hub',
     'doc-signify': 'DocSignify',
   };
 
@@ -1043,7 +1042,6 @@ export default function App() {
           }
       }} />;
       case 'reports': return <Reports invoices={invoices} clients={clients} services={services} activeTenantId={activeTenantId || ''} />;
-      case 'payment-intelligence': return <PaymentIntelligence invoices={invoices} clients={clients} />;
       case 'admin-dashboard': {
           const allTenantsData: AllTenantsData = {};
           // For the admin dashboard, we can reconstruct a basic view of all tenants
