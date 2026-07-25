@@ -50,13 +50,6 @@ Please find your receipt attached to this email for your records. If you have an
 
 
 
-
-// --------------------------------------------------
-// ATTACHMENT:
-// The official PDF receipt ('${fileName}') has been generated and saved to your Downloads folder. Please attach it to this email.
-// The official PDF receipt ('${fileName}') has been generated and saved to your Downloads folder. Please attach it to this email.
-// --------------------------------------------------
-
 Best regards,
 ${company.name}
 ${company.email || ''}`;
