@@ -515,18 +515,39 @@ Admin Query: ${activePrompt}
     window.dispatchEvent(new Event('cravebiz_subscription_change'));
   };
 
-  const addCredits = (companyId: string, extraAmount: number) => {
+  const addCredits = async (companyId: string, extraAmount: number) => {
     const sub = getSubscriptionInfo(companyId);
     const newUnits = sub.aiUnits + extraAmount;
     setSubscriptionInfo(companyId, sub.tier, newUnits, sub.aiModeEnabled);
+    try {
+      const headers = await api.getAuthHeaders(companyId);
+      await fetch('/api/ai/credits/reset', {
+        method: 'POST',
+        headers,
+        body: JSON.stringify({ totalCredits: newUnits, plan: sub.tier })
+      });
+    } catch (e) {
+      console.warn("Failed to sync addCredits to Supabase DB:", e);
+    }
     reloadAiUsageData();
     window.dispatchEvent(new Event('cravebiz_subscription_change'));
   };
 
-  const resetCredits = (companyId: string) => {
+  const resetCredits = async (companyId: string) => {
     const sub = getSubscriptionInfo(companyId);
     const limits = TIER_LIMITS[sub.tier];
-    setSubscriptionInfo(companyId, sub.tier, limits?.maxAiUnits || 0, sub.aiModeEnabled);
+    const targetUnits = limits?.maxAiUnits || 0;
+    setSubscriptionInfo(companyId, sub.tier, targetUnits, sub.aiModeEnabled);
+    try {
+      const headers = await api.getAuthHeaders(companyId);
+      await fetch('/api/ai/credits/reset', {
+        method: 'POST',
+        headers,
+        body: JSON.stringify({ totalCredits: targetUnits, plan: sub.tier })
+      });
+    } catch (e) {
+      console.warn("Failed to sync resetCredits to Supabase DB:", e);
+    }
     reloadAiUsageData();
     window.dispatchEvent(new Event('cravebiz_subscription_change'));
   };

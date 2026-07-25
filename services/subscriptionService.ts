@@ -264,6 +264,15 @@ export function checkAndEnforceMonthlyCreditReset(companyId: string, currentCont
     localStorage.setItem(`cravebiz_units_${companyId}`, newTotalCredits.toString());
     localStorage.setItem(lastResetKey, currentMonthStr);
     
+    // Call centralized reset on Supabase DB
+    api.getAuthHeaders(companyId).then(headers => {
+      fetch('/api/ai/credits/reset', {
+        method: 'POST',
+        headers,
+        body: JSON.stringify({ totalCredits: newTotalCredits, plan: savedTier })
+      }).catch(err => console.warn("Failed to reset credits in Supabase DB:", err));
+    }).catch(err => console.warn("Auth header error during monthly reset:", err));
+
     console.log(`[Monthly Credit Reset] Reset standard credits for workspace ${companyId} to ${standardCredits}. Total units: ${newTotalCredits}`);
     saveSubscriptionInfoToDb(companyId).catch(err => console.warn("Failed to save reset settings:", err));
   } else if (!lastReset) {

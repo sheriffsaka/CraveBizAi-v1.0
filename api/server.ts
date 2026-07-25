@@ -17,6 +17,8 @@ import {
 import {
     executeAiRequestWithCredits,
     getUserAiCredits,
+    saveUserAiCredits,
+    deductUserAiCredits,
     getAiCreditLogs,
     resetUserAiCredits,
     checkUserAiCredits
@@ -2147,6 +2149,13 @@ app.post("/api/subscription/upgrade", verifyTenant, async (req: any, res) => {
             status: 'successful'
         });
 
+        try {
+            const userId = req.user?.email || req.user?.id || tenantId;
+            await resetUserAiCredits(userId, tenantId, newUnits, tier, req.token);
+        } catch (creditSyncErr) {
+            console.warn("[Upgrade] Failed to sync user_ai_credits table in Supabase:", creditSyncErr);
+        }
+
         res.json({ success: true, tier, aiUnits: newUnits });
     } catch (err: any) {
         console.error("Express /api/subscription/upgrade error:", err);
@@ -2393,6 +2402,16 @@ app.post("/api/subscription/refill", verifyTenant, async (req: any, res) => {
             amount: expectedAmount,
             status: 'successful'
         });
+
+        try {
+            const userId = req.user?.email || req.user?.id || tenantId;
+            const currentCredits = await getUserAiCredits(userId, tenantId, req.token);
+            currentCredits.totalCredits = currentCredits.totalCredits + addedCredits;
+            currentCredits.remainingCredits = currentCredits.remainingCredits + addedCredits;
+            await saveUserAiCredits(currentCredits, req.token);
+        } catch (creditSyncErr) {
+            console.warn("[Refill] Failed to sync user_ai_credits table in Supabase:", creditSyncErr);
+        }
 
         res.json({ success: true, tier, aiUnits: newUnits });
     } catch (err: any) {
@@ -2987,6 +3006,17 @@ app.post("/api/subscription/settings", verifyTenant, async (req: any, res) => {
                             content: content
                         });
                 }
+
+                // Sync user_ai_credits table in Supabase
+                const userId = req.user?.email || req.user?.id || tenantId;
+                const credits = await getUserAiCredits(userId, tenantId, req.token);
+                if (content.aiUnits !== undefined) {
+                    credits.remainingCredits = parseInt(String(content.aiUnits), 10);
+                }
+                if (content.tier) {
+                    credits.subscriptionPlan = content.tier;
+                }
+                await saveUserAiCredits(credits, req.token);
             } catch (dbErr) {
                 console.warn("[Sub Settings Sync] Database sync failed:", dbErr);
             }

@@ -850,10 +850,20 @@ const Settings: React.FC<SettingsProps> = ({ company, onSaveChanges, onInviteUse
                   {localStorage.getItem('cravebiz_is_super_admin') === 'true' ? (
                     <button
                       type="button"
-                      onClick={() => {
+                      onClick={async () => {
                         const newUnits = subInfo.aiUnits + 50;
                         setSubscriptionInfo(activeTenantId, subInfo.tier, newUnits, subInfo.aiModeEnabled);
                         setSubInfo(getSubscriptionInfo(activeTenantId));
+                        try {
+                          const headers = await api.getAuthHeaders(activeTenantId);
+                          await fetch('/api/ai/credits/reset', {
+                            method: 'POST',
+                            headers,
+                            body: JSON.stringify({ totalCredits: newUnits, plan: subInfo.tier })
+                          });
+                        } catch (e) {
+                          console.warn("Super Admin refill sync failed:", e);
+                        }
                         window.dispatchEvent(new Event('cravebiz_subscription_change'));
                       }}
                       className="bg-emerald-600 hover:bg-emerald-700 text-white text-[9px] font-bold px-2 py-0.5 rounded shadow-sm transition-colors"
