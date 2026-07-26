@@ -29,6 +29,11 @@ import { generateRenewalInvoiceSuggestion } from './services/aiGenerationService
 import { getSubscriptionInfo, setSubscriptionInfo, SubscriptionTier, TIER_LIMITS, syncGlobalPlanSettings, syncSubscriptionInfoFromDb, secureRefillCreditsOnDb, safeFlutterwaveCheckout, getFlutterwavePublicKey, saveSubscriptionInfoToDb, fetchAndCacheFlutterwavePublicKey, incrementInvoiceCount, incrementReceiptCount, syncGlobalRefillPacks, REFILL_PACKS } from './services/subscriptionService';
 import { Invoice, Client, Service, Company, User, TenantData, InvoiceStatus, AllTenantsData, GeneratedDocument, DbDocumentSignatory, Project, WorkspaceRole, AuditLog } from './types';
 import Icon from './components/common/Icon';
+import {
+  GlobalFilterState,
+  loadGlobalFilterFromSession,
+  saveGlobalFilterToSession
+} from './lib/globalFilter';
 
 export type Page = 'dashboard' | 'invoices' | 'clients' | 'services' | 'reports' | 'settings' | 'create-invoice' | 'edit-invoice' | 'invoice-detail' | 'receipt-detail' | 'plain-invoice-detail' | 'recurring-invoices' | 'email-verification' | 'sent-receipts' | 'admin-dashboard' | 'document-transformer' | 'projects' | 'doc-signify';
 
@@ -88,6 +93,14 @@ export default function App() {
   const [selectedProvisionTier, setSelectedProvisionTier] = useState<SubscriptionTier>('Growth');
   const [subTrigger, setSubTrigger] = useState(0);
   const [subErrorMsg, setSubErrorMsg] = useState<string | null>(null);
+
+  // Global Filter State across Dashboard, Invoices and Reports
+  const [globalFilter, setGlobalFilterState] = useState<GlobalFilterState>(() => loadGlobalFilterFromSession());
+
+  const handleGlobalFilterChange = (newFilter: GlobalFilterState) => {
+    setGlobalFilterState(newFilter);
+    saveGlobalFilterToSession(newFilter);
+  };
 
   useEffect(() => {
     const handleSubChange = () => setSubTrigger(prev => prev + 1);
@@ -900,7 +913,7 @@ export default function App() {
               setSyncError(stringifyError(e));
           }
       }} />;
-      case 'invoices': return <InvoiceList invoices={invoices} clients={clients} onViewInvoice={(id) => { setSelectedInvoiceId(id); navigateTo('invoice-detail'); }} onEditInvoice={handleEditInvoiceAction} onDeleteInvoice={handleDeleteInvoice} />;
+      case 'invoices': return <InvoiceList invoices={invoices} clients={clients} services={services} onViewInvoice={(id) => { setSelectedInvoiceId(id); navigateTo('invoice-detail'); }} onEditInvoice={handleEditInvoiceAction} onDeleteInvoice={handleDeleteInvoice} globalFilter={globalFilter} onFilterChange={handleGlobalFilterChange} />;
       case 'recurring-invoices': return <RecurringInvoiceList invoices={invoices.filter(i => i.isRecurringTemplate)} clients={clients} onViewInvoice={(id) => { setSelectedInvoiceId(id); navigateTo('invoice-detail'); }} onEditInvoice={handleEditInvoiceAction} onDeleteInvoice={handleDeleteInvoice} />;
       case 'sent-receipts': return <SentReceiptsList invoices={invoices.filter(i => i.isReceiptSent)} clients={clients} onViewInvoice={(id) => { setSelectedInvoiceId(id); navigateTo('receipt-detail'); }} onEditInvoice={handleEditInvoiceAction} />;
       case 'receipt-detail': {
@@ -1119,7 +1132,7 @@ export default function App() {
         }
         navigateTo(page as Page);
       }} />;
-      default: return <Dashboard invoices={invoices} clients={clients} activeTenantId={activeTenantId} setActivePage={navigateTo} onViewInvoice={(id) => { setSelectedInvoiceId(id); navigateTo('invoice-detail'); }} onEditInvoice={handleEditInvoiceAction} onGenerateRenewal={handleGenerateRenewal} />;
+      default: return <Dashboard invoices={invoices} clients={clients} services={services} activeTenantId={activeTenantId} setActivePage={navigateTo} onViewInvoice={(id) => { setSelectedInvoiceId(id); navigateTo('invoice-detail'); }} onEditInvoice={handleEditInvoiceAction} onGenerateRenewal={handleGenerateRenewal} globalFilter={globalFilter} onFilterChange={handleGlobalFilterChange} />;
     }
   };
 

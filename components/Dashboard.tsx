@@ -1,12 +1,22 @@
 
 import React, { useMemo } from 'react';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
-import { InvoiceStatus, Invoice, Client } from '../types';
+import { InvoiceStatus, Invoice, Client, Service } from '../types';
 import StatCard from './StatCard';
 import InvoiceList from './InvoiceList';
 import { Page } from '../App';
 import { api } from '../lib/api';
 import { getSubscriptionInfo } from '../services/subscriptionService';
+import GlobalFilterBar from './GlobalFilterBar';
+import {
+  GlobalFilterState,
+  loadGlobalFilterFromSession,
+  saveGlobalFilterToSession,
+  filterInvoices,
+  DEFAULT_GLOBAL_FILTER,
+  isFilterActive
+} from '../lib/globalFilter';
+import { Search, RotateCcw, Users, Briefcase, CheckCircle, FileText } from 'lucide-react';
 
 const DashboardIcon = ({ d }: { d: string }) => (
   <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
@@ -17,17 +27,49 @@ const DashboardIcon = ({ d }: { d: string }) => (
 interface DashboardProps {
     invoices: Invoice[];
     clients: Client[];
+    services?: Service[];
     activeTenantId?: string;
     setActivePage: (page: Page) => void;
     onViewInvoice: (invoiceId: string) => void;
     onEditInvoice: (invoiceId: string) => void;
     onGenerateRenewal: (clientId: string, item: any) => Promise<void>;
+    globalFilter?: GlobalFilterState;
+    onFilterChange?: (filter: GlobalFilterState) => void;
 }
 
-const Dashboard: React.FC<DashboardProps> = ({invoices, clients, activeTenantId, setActivePage, onViewInvoice, onEditInvoice, onGenerateRenewal}) => {
+const Dashboard: React.FC<DashboardProps> = ({
+    invoices,
+    clients,
+    services = [],
+    activeTenantId,
+    setActivePage,
+    onViewInvoice,
+    onEditInvoice,
+    onGenerateRenewal,
+    globalFilter,
+    onFilterChange
+}) => {
     const [invoiceUsage, setInvoiceUsage] = React.useState<{ totalQuota: number; remainingCount: number; createdCount: number; resetDate: string } | null>(null);
     const [receiptUsage, setReceiptUsage] = React.useState<{ totalQuota: number; remainingCount: number; createdCount: number; resetDate: string } | null>(null);
     const [isLoadingUsage, setIsLoadingUsage] = React.useState<boolean>(false);
+
+    // Filter state fallback
+    const [internalFilter, setInternalFilter] = React.useState<GlobalFilterState>(() => loadGlobalFilterFromSession());
+    const currentFilter = globalFilter || internalFilter;
+
+    const handleFilterChange = (newFilter: GlobalFilterState) => {
+        if (onFilterChange) {
+            onFilterChange(newFilter);
+        } else {
+            setInternalFilter(newFilter);
+            saveGlobalFilterToSession(newFilter);
+        }
+    };
+
+    // Filtered invoices subset according to active Global Filter
+    const filteredInvoices = useMemo(() => {
+        return filterInvoices(invoices, services, clients, currentFilter);
+    }, [invoices, services, clients, currentFilter]);
 
     React.useEffect(() => {
         let isMounted = true;
@@ -57,7 +99,8 @@ const Dashboard: React.FC<DashboardProps> = ({invoices, clients, activeTenantId,
             window.removeEventListener('cravebiz_subscription_change', handleSubChange);
         };
     }, [activeTenantId]);
-    // Calculate real revenue data for the chart (last 6 months)
+
+    // Calculate real revenue data for the chart (last 6 months) using filteredInvoices
     const calculatedTrendData = useMemo(() => {
         const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
         const now = new Date();
@@ -73,7 +116,7 @@ const Dashboard: React.FC<DashboardProps> = ({invoices, clients, activeTenantId,
             });
         }
 
-        invoices.filter(inv => inv.status === InvoiceStatus.Paid).forEach(inv => {
+        filteredInvoices.filter(inv => inv.status === InvoiceStatus.Paid).forEach(inv => {
             const invDate = new Date(inv.issueDate);
             const m = invDate.getMonth();
             const y = invDate.getFullYear();
@@ -84,26 +127,56 @@ const Dashboard: React.FC<DashboardProps> = ({invoices, clients, activeTenantId,
         });
 
         return last6;
-    }, [invoices]);
+    }, [filteredInvoices]);
 
-    const totalRevenue = useMemo(() => invoices
+    const totalRevenue = useMemo(() => filteredInvoices
         .filter(inv => inv.status === InvoiceStatus.Paid)
-        .reduce((sum, inv) => sum + inv.total, 0), [invoices]);
+        .reduce((sum, inv) => sum + inv.total, 0), [filteredInvoices]);
 
-    const outstanding = useMemo(() => invoices
+    const outstanding = useMemo(() => filteredInvoices
         .filter(inv => inv.status === InvoiceStatus.Sent || inv.status === InvoiceStatus.Overdue)
-        .reduce((sum, inv) => sum + (inv.total - (inv.amountPaid || 0)), 0), [invoices]);
+        .reduce((sum, inv) => sum + (inv.total - (inv.amountPaid || 0)), 0), [filteredInvoices]);
     
-    const overdue = useMemo(() => invoices
+    const overdue = useMemo(() => filteredInvoices
         .filter(inv => inv.status === InvoiceStatus.Overdue)
-        .reduce((sum, inv) => sum + (inv.total - (inv.amountPaid || 0)), 0), [invoices]);
+        .reduce((sum, inv) => sum + (inv.total - (inv.amountPaid || 0)), 0), [filteredInvoices]);
+
+    const paidCount = useMemo(() => filteredInvoices
+        .filter(inv => inv.status === InvoiceStatus.Paid).length, [filteredInvoices]);
+
+    // Filtered Client Registry
+    const filteredClients = useMemo(() => {
+        if (currentFilter.selectedClientIds.length > 0) {
+            return clients.filter(c => currentFilter.selectedClientIds.includes(c.id));
+        }
+        // Unique client IDs present in filteredInvoices
+        const activeClientIds = new Set(filteredInvoices.map(i => i.clientId));
+        if (activeClientIds.size > 0) {
+            return clients.filter(c => activeClientIds.has(c.id));
+        }
+        return clients;
+    }, [clients, filteredInvoices, currentFilter]);
+
+    // Filtered Services Count
+    const filteredServicesCount = useMemo(() => {
+        if (currentFilter.selectedServiceIds.length > 0) {
+            return currentFilter.selectedServiceIds.length;
+        }
+        const activeServiceIds = new Set<string>();
+        filteredInvoices.forEach(i => {
+            i.items?.forEach(item => {
+                if (item.serviceId) activeServiceIds.add(item.serviceId);
+            });
+        });
+        return activeServiceIds.size > 0 ? activeServiceIds.size : services.length;
+    }, [services, filteredInvoices, currentFilter]);
 
     const expiringServices = useMemo(() => {
         const now = new Date();
         now.setHours(0, 0, 0, 0);
         const expiring: any[] = [];
         
-        invoices.forEach(inv => {
+        filteredInvoices.forEach(inv => {
             if (!inv.items) return;
             inv.items.forEach(item => {
                 if (item.periodEndDate) {
@@ -129,7 +202,7 @@ const Dashboard: React.FC<DashboardProps> = ({invoices, clients, activeTenantId,
             });
         });
         
-        // Remove duplicates (if multiple invoices have same service period)
+        // Remove duplicates
         const unique = expiring.reduce((acc: any[], curr) => {
             const exists = acc.find(a => a.clientId === curr.clientId && a.serviceName === curr.serviceName && a.expiryDate === curr.expiryDate);
             if (!exists) acc.push(curr);
@@ -137,7 +210,7 @@ const Dashboard: React.FC<DashboardProps> = ({invoices, clients, activeTenantId,
         }, []);
 
         return unique.sort((a, b) => a.daysLeft - b.daysLeft);
-    }, [invoices, clients]);
+    }, [filteredInvoices, clients]);
 
     const [isGeneratingRenewal, setIsGeneratingRenewal] = React.useState<string | null>(null);
 
@@ -157,11 +230,24 @@ const Dashboard: React.FC<DashboardProps> = ({invoices, clients, activeTenantId,
         <p className="text-gray-500 mt-1 font-medium">Synchronized workspace overview and performance metrics.</p>
       </div>
 
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+      {/* Global Filter Bar */}
+      <GlobalFilterBar
+        filter={currentFilter}
+        onFilterChange={handleFilterChange}
+        clients={clients}
+        services={services}
+        totalInvoicesCount={invoices.length}
+        filteredInvoicesCount={filteredInvoices.length}
+        title="Dashboard Global Filter"
+        description="Filter total revenue, clients, expiring services, and revenue trajectory in real-time"
+      />
+
+      {/* Primary KPI Metrics Cards */}
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6">
         <StatCard 
           title="Total Revenue" 
           value={`₦${totalRevenue.toLocaleString()}`} 
-          change="Real-time" 
+          change={`${paidCount} Paid Invoices`} 
           changeType="increase"
           icon={<DashboardIcon d="M12 2v20M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6" />}
         />
@@ -176,7 +262,32 @@ const Dashboard: React.FC<DashboardProps> = ({invoices, clients, activeTenantId,
           changeType="decrease"
           icon={<DashboardIcon d="M12 22c5.523 0 10-4.477 10-10S17.523 2 12 2 2 6.477 2 12s4.477 10 10 10Z M12 8v4 M12 16h.01" />}
         />
+        <StatCard 
+          title="Filtered Portfolio" 
+          value={`${filteredClients.length} Clients`}
+          change={`${filteredServicesCount} Active Services`}
+          changeType="increase"
+          icon={<Users className="w-6 h-6 text-primary-600" />}
+        />
       </div>
+
+      {/* No Data Found banner if filter returns 0 records */}
+      {filteredInvoices.length === 0 && isFilterActive(currentFilter) && (
+        <div className="bg-white p-8 rounded-[2.5rem] shadow-xl border border-gray-100 text-center py-12 space-y-3">
+          <div className="w-12 h-12 bg-amber-50 text-amber-600 rounded-2xl flex items-center justify-center mx-auto border border-amber-100">
+            <Search className="w-6 h-6" />
+          </div>
+          <h3 className="text-lg font-black text-gray-800 uppercase tracking-tight">No Matching Records Found</h3>
+          <p className="text-xs text-gray-500 max-w-md mx-auto">None of your invoices or metrics match the current combination of Date, Client, or Service filters.</p>
+          <button
+            onClick={() => handleFilterChange(DEFAULT_GLOBAL_FILTER)}
+            className="bg-primary-600 hover:bg-primary-700 text-white px-5 py-2.5 rounded-xl text-xs font-black uppercase tracking-widest transition-all shadow-md cursor-pointer inline-flex items-center space-x-2"
+          >
+            <RotateCcw className="w-4 h-4" />
+            <span>Reset Active Filters</span>
+          </button>
+        </div>
+      )}
 
       {/* Document Usage Quotas */}
       <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
@@ -328,10 +439,10 @@ const Dashboard: React.FC<DashboardProps> = ({invoices, clients, activeTenantId,
         <div className="lg:col-span-2 bg-white p-8 rounded-[2.5rem] shadow-2xl border border-gray-100">
              <h3 className="text-xl font-black text-gray-800 mb-6 uppercase tracking-tighter">Client Registry</h3>
              <ul className="space-y-6">
-                {clients.slice(0, 4).map((client, index) => (
+                {filteredClients.slice(0, 4).map((client) => (
                     <li key={client.id} className="flex items-center space-x-4 p-4 rounded-2xl hover:bg-gray-50 transition-all border border-transparent hover:border-gray-100">
-                         <div className="w-12 h-12 rounded-2xl bg-primary-600 flex items-center justify-center text-white font-black text-lg shadow-lg">
-                            {client.companyName[0].toUpperCase()}
+                         <div className="w-12 h-12 rounded-2xl bg-primary-600 flex items-center justify-center text-white font-black text-lg shadow-lg shrink-0">
+                            {client.companyName ? client.companyName[0].toUpperCase() : 'C'}
                         </div>
                         <div className="flex-1 overflow-hidden">
                             <p className="font-black text-gray-900 text-sm truncate uppercase tracking-tight">{client.companyName}</p>
@@ -339,7 +450,7 @@ const Dashboard: React.FC<DashboardProps> = ({invoices, clients, activeTenantId,
                         </div>
                     </li>
                 ))}
-                {clients.length === 0 && <li className="text-center py-10 italic text-gray-400 text-sm font-bold">No active clients in vault.</li>}
+                {filteredClients.length === 0 && <li className="text-center py-10 italic text-gray-400 text-sm font-bold">No active clients match current filters.</li>}
              </ul>
         </div>
       </div>
@@ -347,11 +458,11 @@ const Dashboard: React.FC<DashboardProps> = ({invoices, clients, activeTenantId,
       <div>
         <div className="flex justify-between items-center mb-6">
             <h3 className="text-2xl font-black text-gray-800 uppercase tracking-tighter">Recent Documents</h3>
-            <button onClick={() => setActivePage('invoices')} className="bg-gray-50 px-6 py-2 rounded-xl font-black text-primary-600 uppercase tracking-widest text-[10px] hover:bg-primary-50 transition-all border border-gray-100">
+            <button onClick={() => setActivePage('invoices')} className="bg-gray-50 px-6 py-2 rounded-xl font-black text-primary-600 uppercase tracking-widest text-[10px] hover:bg-primary-50 transition-all border border-gray-100 cursor-pointer">
                 Audit Trail
             </button>
         </div>
-        <InvoiceList invoices={invoices} clients={clients} limit={5} onViewInvoice={onViewInvoice} onEditInvoice={onEditInvoice} />
+        <InvoiceList invoices={filteredInvoices} clients={clients} services={services} limit={5} onViewInvoice={onViewInvoice} onEditInvoice={onEditInvoice} globalFilter={currentFilter} onFilterChange={handleFilterChange} />
       </div>
 
     </div>

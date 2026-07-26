@@ -1,17 +1,29 @@
 
 import React, { useState, useMemo } from 'react';
-import { Invoice, Client, InvoiceStatus } from '../types';
+import { Invoice, Client, Service, InvoiceStatus } from '../types';
 import InvoiceStatusBadge from './InvoiceStatusBadge';
 import Icon from './common/Icon';
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, Cell } from 'recharts';
+import GlobalFilterBar from './GlobalFilterBar';
+import {
+  GlobalFilterState,
+  loadGlobalFilterFromSession,
+  saveGlobalFilterToSession,
+  filterInvoices,
+  DEFAULT_GLOBAL_FILTER,
+  isFilterActive
+} from '../lib/globalFilter';
 
 interface InvoiceListProps {
   invoices: Invoice[];
   clients: Client[];
+  services?: Service[];
   limit?: number; // Optional limit for displaying a subset (e.g., on dashboard)
   onViewInvoice: (invoiceId: string) => void;
   onEditInvoice?: (invoiceId: string) => void;
   onDeleteInvoice?: (invoiceId: string) => void;
+  globalFilter?: GlobalFilterState;
+  onFilterChange?: (filter: GlobalFilterState) => void;
 }
 
 type SortKey = 'invoiceNumber' | 'clientName' | 'issueDate' | 'dueDate' | 'total' | 'balance' | 'status';
@@ -98,20 +110,46 @@ const InvoicesTable: React.FC<{
 };
 
 
-const InvoiceList: React.FC<InvoiceListProps> = ({ invoices, clients, limit, onViewInvoice, onEditInvoice, onDeleteInvoice }) => {
+const InvoiceList: React.FC<InvoiceListProps> = ({
+  invoices,
+  clients,
+  services = [],
+  limit,
+  onViewInvoice,
+  onEditInvoice,
+  onDeleteInvoice,
+  globalFilter,
+  onFilterChange
+}) => {
   const [searchTerm, setSearchTerm] = useState('');
   const [sortKey, setSortKey] = useState<SortKey>('issueDate');
   const [sortDirection, setSortDirection] = useState<SortDirection>('desc');
   const [currentPage, setCurrentPage] = useState(1);
   const itemsPerPage = limit || 10; 
 
+  const [internalFilter, setInternalFilter] = useState<GlobalFilterState>(() => loadGlobalFilterFromSession());
+  const currentFilter = globalFilter || internalFilter;
+
+  const handleFilterChange = (newFilter: GlobalFilterState) => {
+    if (onFilterChange) {
+      onFilterChange(newFilter);
+    } else {
+      setInternalFilter(newFilter);
+      saveGlobalFilterToSession(newFilter);
+    }
+  };
+
   const getClientNameById = (clientId: string) => {
     return clients.find(c => c.id === clientId)?.companyName || 'Unknown Client';
   };
 
+  const globallyFilteredInvoices = useMemo(() => {
+    return filterInvoices(invoices, services, clients, currentFilter);
+  }, [invoices, services, clients, currentFilter]);
+
   const nonTemplateInvoices = useMemo(() => {
-    return invoices.filter(inv => !inv.isRecurringTemplate);
-  }, [invoices]);
+    return globallyFilteredInvoices.filter(inv => !inv.isRecurringTemplate);
+  }, [globallyFilteredInvoices]);
 
   const filteredAndSortedInvoices = useMemo(() => {
     let filtered = nonTemplateInvoices.filter(invoice => 
@@ -229,6 +267,18 @@ const InvoiceList: React.FC<InvoiceListProps> = ({ invoices, clients, limit, onV
     <div className="space-y-6">
       {!limit && (
         <>
+          {/* Global Filter Bar */}
+          <GlobalFilterBar
+            filter={currentFilter}
+            onFilterChange={handleFilterChange}
+            clients={clients}
+            services={services}
+            totalInvoicesCount={invoices.length}
+            filteredInvoicesCount={globallyFilteredInvoices.length}
+            title="Invoice Vault Global Filter"
+            description="Filter table records, collection totals and status breakdowns across all invoices"
+          />
+
           {/* Summary Cards */}
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
             <div className="bg-white p-5 rounded-2xl shadow-sm border border-gray-100">

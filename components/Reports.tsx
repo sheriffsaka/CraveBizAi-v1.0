@@ -7,6 +7,13 @@ import { generateTextResponse } from '../services/aiGenerationService';
 import { getSubscriptionInfo } from '../services/subscriptionService';
 import ReactMarkdown from 'react-markdown';
 import RevenueVsDirectCostReport from './RevenueVsDirectCostReport';
+import GlobalFilterBar from './GlobalFilterBar';
+import {
+  GlobalFilterState,
+  loadGlobalFilterFromSession,
+  saveGlobalFilterToSession,
+  filterInvoices
+} from '../lib/globalFilter';
 
 // Helper to convert data to CSV string
 const convertToCsv = (data: any[], headers: string[]): string => {
@@ -53,16 +60,34 @@ interface ReportsProps {
     clients: Client[];
     services: Service[];
     activeTenantId?: string;
+    globalFilter?: GlobalFilterState;
+    onFilterChange?: (filter: GlobalFilterState) => void;
 }
 
 type DateRange = 'all_time' | 'last_30_days' | 'this_quarter' | 'this_year';
 
-const Reports: React.FC<ReportsProps> = ({invoices, clients, services, activeTenantId}) => {
+const Reports: React.FC<ReportsProps> = ({invoices, clients, services, activeTenantId, globalFilter, onFilterChange}) => {
     const [activeReportTab, setActiveReportTab] = useState<'overview' | 'revenue-vs-direct-cost'>('revenue-vs-direct-cost');
     const [reportQuery, setReportQuery] = useState('');
     const [aiReportResponse, setAiReportResponse] = useState<string | null>(null);
     const [isLoadingReport, setIsLoadingReport] = useState(false);
     const [dateRange, setDateRange] = useState<DateRange>('all_time');
+
+    const [internalFilter, setInternalFilter] = useState<GlobalFilterState>(() => loadGlobalFilterFromSession());
+    const currentFilter = globalFilter || internalFilter;
+
+    const handleFilterChange = (newFilter: GlobalFilterState) => {
+        if (onFilterChange) {
+            onFilterChange(newFilter);
+        } else {
+            setInternalFilter(newFilter);
+            saveGlobalFilterToSession(newFilter);
+        }
+    };
+
+    const globallyFilteredInvoices = useMemo(() => {
+        return filterInvoices(invoices, services, clients, currentFilter);
+    }, [invoices, services, clients, currentFilter]);
 
     const subInfo = useMemo(() => getSubscriptionInfo(activeTenantId || ''), [activeTenantId]);
     
@@ -115,9 +140,9 @@ const Reports: React.FC<ReportsProps> = ({invoices, clients, services, activeTen
     }, [dateRange]);
 
     const filteredInvoices = useMemo(() => {
-      if (dateRange === 'all_time') return invoices;
-      return invoices.filter(inv => isInvoiceInDateRange(inv, startDate, endDate));
-    }, [invoices, dateRange, startDate, endDate, isInvoiceInDateRange]);
+      if (dateRange === 'all_time') return globallyFilteredInvoices;
+      return globallyFilteredInvoices.filter(inv => isInvoiceInDateRange(inv, startDate, endDate));
+    }, [globallyFilteredInvoices, dateRange, startDate, endDate, isInvoiceInDateRange]);
 
     const totalRevenue = useMemo(() => filteredInvoices
         .filter(inv => inv.status === InvoiceStatus.Paid)
@@ -284,6 +309,18 @@ Operational Dataset: ${dataDump}`;
 
   return (
     <div className="space-y-8">
+      {/* Global Filter Bar */}
+      <GlobalFilterBar
+        filter={currentFilter}
+        onFilterChange={handleFilterChange}
+        clients={clients}
+        services={services}
+        totalInvoicesCount={invoices.length}
+        filteredInvoicesCount={globallyFilteredInvoices.length}
+        title="Vault Analytics Global Filter"
+        description="Filter all report cards, profit margins, revenue trends, and AI analysis across selected clients, services, or dates"
+      />
+
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
         <div>
           <h1 className="text-3xl font-black text-gray-800 uppercase tracking-tighter">Vault Analytics</h1>
@@ -323,7 +360,7 @@ Operational Dataset: ${dataDump}`;
 
       {activeReportTab === 'revenue-vs-direct-cost' ? (
         <RevenueVsDirectCostReport
-          invoices={invoices}
+          invoices={filteredInvoices}
           clients={clients}
           services={services}
           activeTenantId={activeTenantId}
