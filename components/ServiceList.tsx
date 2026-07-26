@@ -36,39 +36,56 @@ const ServicesTable: React.FC<{
             <th scope="col" className="px-6 py-3 cursor-pointer" onClick={() => onSort('name')}>Service / Product Name{getSortIcon('name')}</th>
             <th scope="col" className="px-6 py-3 cursor-pointer" onClick={() => onSort('category')}>Category{getSortIcon('category')}</th>
             <th scope="col" className="px-6 py-3 cursor-pointer" onClick={() => onSort('price')}>Standard Price{getSortIcon('price')}</th>
+            <th scope="col" className="px-6 py-3">Direct Cost</th>
             <th scope="col" className="px-6 py-3 cursor-pointer" onClick={() => onSort('popularity')}>Sales Vol{getSortIcon('popularity')}</th>
             <th scope="col" className="px-6 py-3 text-right"><span className="sr-only">Actions</span></th>
           </tr>
         </thead>
         <tbody>
-          {services.map((service) => (
-            <tr key={service.id} className="bg-white border-b hover:bg-gray-50">
-              <th scope="row" className="px-6 py-4 font-semibold text-gray-900 whitespace-nowrap">
-                <div className="text-sm font-bold text-gray-900">{service.name}</div>
-                {service.packageName && (
-                  <div className="text-[10px] font-semibold text-purple-700 bg-purple-50 border border-purple-200 inline-flex items-center space-x-1 px-2 py-0.5 rounded-md mt-0.5">
-                    <span>📦</span>
-                    <span>{service.packageName}</span>
-                  </div>
-                )}
-              </th>
-              <td className="px-6 py-4">
-                <span className="px-2.5 py-1 bg-gray-100 text-gray-600 rounded-full font-bold uppercase text-[9px] tracking-wider">
-                  {service.category || 'Uncategorized'}
-                </span>
-              </td>
-              <td className="px-6 py-4 font-medium text-gray-900">₦{service.price.toLocaleString()}</td>
-              <td className="px-6 py-4">
-                <span className="font-bold text-gray-600">{serviceUsage[service.id] || 0} units</span>
-              </td>
-              <td className="px-6 py-4 text-right">
-                <a href="#" onClick={(e) => { e.preventDefault(); onEditClick(service); }} className="font-bold text-primary-600 hover:text-primary-800 uppercase text-[10px] tracking-widest transition-colors">Edit</a>
-              </td>
-            </tr>
-          ))}
+          {services.map((service) => {
+            const dc = service.directCost || 0;
+            const marginPct = service.price > 0 ? Math.round(((service.price - dc) / service.price) * 100) : 0;
+            let badgeClass = "bg-rose-50 text-rose-700 border-rose-200";
+            if (marginPct >= 40) badgeClass = "bg-emerald-50 text-emerald-700 border-emerald-200";
+            else if (marginPct >= 20) badgeClass = "bg-amber-50 text-amber-700 border-amber-200";
+
+            return (
+              <tr key={service.id} className="bg-white border-b hover:bg-gray-50">
+                <th scope="row" className="px-6 py-4 font-semibold text-gray-900 whitespace-nowrap">
+                  <div className="text-sm font-bold text-gray-900">{service.name}</div>
+                  {service.packageName && (
+                    <div className="text-[10px] font-semibold text-purple-700 bg-purple-50 border border-purple-200 inline-flex items-center space-x-1 px-2 py-0.5 rounded-md mt-0.5">
+                      <span>📦</span>
+                      <span>{service.packageName}</span>
+                    </div>
+                  )}
+                </th>
+                <td className="px-6 py-4">
+                  <span className="px-2.5 py-1 bg-gray-100 text-gray-600 rounded-full font-bold uppercase text-[9px] tracking-wider">
+                    {service.category || 'Uncategorized'}
+                  </span>
+                </td>
+                <td className="px-6 py-4 font-bold text-gray-900">₦{service.price.toLocaleString()}</td>
+                <td className="px-6 py-4 font-medium text-gray-600">
+                  <div>₦{dc.toLocaleString()}</div>
+                  {service.price > 0 && (
+                    <span className={`inline-block text-[9px] font-extrabold px-1.5 py-0.5 rounded border mt-0.5 ${badgeClass}`}>
+                      {marginPct}% margin
+                    </span>
+                  )}
+                </td>
+                <td className="px-6 py-4">
+                  <span className="font-bold text-gray-600">{serviceUsage[service.id] || 0} units</span>
+                </td>
+                <td className="px-6 py-4 text-right">
+                  <a href="#" onClick={(e) => { e.preventDefault(); onEditClick(service); }} className="font-bold text-primary-600 hover:text-primary-800 uppercase text-[10px] tracking-widest transition-colors">Edit</a>
+                </td>
+              </tr>
+            );
+          })}
           {services.length === 0 && (
             <tr>
-              <td colSpan={5} className="text-center py-10 text-gray-500">No services or products registered.</td>
+              <td colSpan={6} className="text-center py-10 text-gray-500">No services or products registered.</td>
             </tr>
           )}
         </tbody>

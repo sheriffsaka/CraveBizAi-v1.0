@@ -24,6 +24,7 @@ const ServiceFormModal: React.FC<ServiceFormModalProps> = ({
   const [packageName, setPackageName] = useState('');
   const [category, setCategory] = useState('');
   const [price, setPrice] = useState<number>(0);
+  const [directCost, setDirectCost] = useState<number>(0);
   const [description, setDescription] = useState('');
   
   const [isCalculatorOpen, setIsCalculatorOpen] = useState(false);
@@ -40,6 +41,7 @@ const ServiceFormModal: React.FC<ServiceFormModalProps> = ({
           if (draft.packageName) setPackageName(draft.packageName);
           if (draft.category) setCategory(draft.category);
           if (draft.price) setPrice(draft.price);
+          if (draft.directCost) setDirectCost(draft.directCost);
           if (draft.description) setDescription(draft.description);
         } catch (e) {
           console.error("Service draft recovery failed", e);
@@ -50,10 +52,10 @@ const ServiceFormModal: React.FC<ServiceFormModalProps> = ({
 
   useEffect(() => {
     if (!service && isOpen) {
-      const draft = { name, packageName, category, price, description };
+      const draft = { name, packageName, category, price, directCost, description };
       localStorage.setItem('cravebiz_service_draft', JSON.stringify(draft));
     }
-  }, [name, packageName, category, price, description, service, isOpen]);
+  }, [name, packageName, category, price, directCost, description, service, isOpen]);
 
   const clearDraft = () => localStorage.removeItem('cravebiz_service_draft');
 
@@ -64,6 +66,7 @@ const ServiceFormModal: React.FC<ServiceFormModalProps> = ({
       setPackageName(service.packageName || '');
       setCategory(service.category || '');
       setPrice(service.price || 0);
+      setDirectCost(service.directCost || 0);
       setDescription(service.description || '');
     } else {
       // Clear form if adding a new service
@@ -71,6 +74,7 @@ const ServiceFormModal: React.FC<ServiceFormModalProps> = ({
       setPackageName('');
       setCategory('');
       setPrice(0);
+      setDirectCost(0);
       setDescription('');
     }
   }, [service, isOpen]); // Reset when modal opens or service changes
@@ -117,6 +121,7 @@ Ensure the description clearly outlines the core deliverables, client benefits, 
         packageName,
         category,
         price,
+        directCost,
         description
       });
     } else {
@@ -127,6 +132,7 @@ Ensure the description clearly outlines the core deliverables, client benefits, 
         packageName,
         category,
         price,
+        directCost,
         description
       });
     }
@@ -217,6 +223,24 @@ Ensure the description clearly outlines the core deliverables, client benefits, 
             />
           </div>
 
+          {/* Direct Cost (₦) */}
+          <div>
+            <label htmlFor="directCost" className="block text-sm font-medium text-gray-700">
+              Direct Cost (₦)
+            </label>
+            <input
+              type="number"
+              id="directCost"
+              value={directCost === 0 ? '' : directCost}
+              onChange={e => setDirectCost(Number(e.target.value))}
+              placeholder="e.g. 20000"
+              className="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-primary-500 focus:border-primary-500 sm:text-sm bg-white text-gray-900 font-bold"
+            />
+            <p className="mt-1 text-[11px] text-gray-500">
+              Direct labor, materials, and service execution cost per unit. Used to compute Gross Profit & Margins.
+            </p>
+          </div>
+
           {/* Description & Generate Description AI button */}
           <div>
             <div className="flex items-center justify-between mb-1">
@@ -275,8 +299,11 @@ Ensure the description clearly outlines the core deliverables, client benefits, 
       <PriceCalculatorModal
         isOpen={isCalculatorOpen}
         onClose={() => setIsCalculatorOpen(false)}
-        onApplyPrice={(calculatedPrice) => {
+        onApplyPrice={(calculatedPrice, calculatedDirectCost) => {
           setPrice(calculatedPrice);
+          if (calculatedDirectCost !== undefined && calculatedDirectCost > 0) {
+            setDirectCost(calculatedDirectCost);
+          }
         }}
         initialPrice={price}
       />

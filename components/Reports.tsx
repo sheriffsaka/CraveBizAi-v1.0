@@ -6,6 +6,7 @@ import { Invoice, Client, Service, InvoiceStatus } from '../types';
 import { generateTextResponse } from '../services/aiGenerationService';
 import { getSubscriptionInfo } from '../services/subscriptionService';
 import ReactMarkdown from 'react-markdown';
+import RevenueVsDirectCostReport from './RevenueVsDirectCostReport';
 
 // Helper to convert data to CSV string
 const convertToCsv = (data: any[], headers: string[]): string => {
@@ -57,6 +58,7 @@ interface ReportsProps {
 type DateRange = 'all_time' | 'last_30_days' | 'this_quarter' | 'this_year';
 
 const Reports: React.FC<ReportsProps> = ({invoices, clients, services, activeTenantId}) => {
+    const [activeReportTab, setActiveReportTab] = useState<'overview' | 'revenue-vs-direct-cost'>('revenue-vs-direct-cost');
     const [reportQuery, setReportQuery] = useState('');
     const [aiReportResponse, setAiReportResponse] = useState<string | null>(null);
     const [isLoadingReport, setIsLoadingReport] = useState(false);
@@ -282,12 +284,53 @@ Operational Dataset: ${dataDump}`;
 
   return (
     <div className="space-y-8">
-      <div>
-        <h1 className="text-3xl font-black text-gray-800 uppercase tracking-tighter">Vault Analytics</h1>
-        <p className="text-gray-500 mt-1 font-medium">Deep financial intelligence gathered from SME operations.</p>
+      <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
+        <div>
+          <h1 className="text-3xl font-black text-gray-800 uppercase tracking-tighter">Vault Analytics</h1>
+          <p className="text-gray-500 mt-1 font-medium">Deep financial intelligence gathered from SME operations.</p>
+        </div>
+
+        {/* Tab Navigation */}
+        <div className="flex items-center space-x-2 bg-gray-100 p-1.5 rounded-2xl border border-gray-200 self-start md:self-auto print-hidden">
+          <button
+            onClick={() => setActiveReportTab('revenue-vs-direct-cost')}
+            className={`px-5 py-2.5 rounded-xl text-xs font-black uppercase tracking-wider transition-all cursor-pointer flex items-center space-x-2 ${
+              activeReportTab === 'revenue-vs-direct-cost'
+                ? 'bg-primary-600 text-white shadow-md'
+                : 'text-gray-600 hover:text-gray-900'
+            }`}
+          >
+            <span>Revenue vs Direct Cost</span>
+            <span className={`text-[9px] font-black px-1.5 py-0.5 rounded uppercase ${
+              activeReportTab === 'revenue-vs-direct-cost' ? 'bg-emerald-400 text-slate-900' : 'bg-primary-100 text-primary-700'
+            }`}>
+              Report
+            </span>
+          </button>
+
+          <button
+            onClick={() => setActiveReportTab('overview')}
+            className={`px-5 py-2.5 rounded-xl text-xs font-black uppercase tracking-wider transition-all cursor-pointer ${
+              activeReportTab === 'overview'
+                ? 'bg-primary-600 text-white shadow-md'
+                : 'text-gray-600 hover:text-gray-900'
+            }`}
+          >
+            Overview
+          </button>
+        </div>
       </div>
 
-      <div className="flex items-center justify-between flex-wrap gap-4 mb-6 print-hidden">
+      {activeReportTab === 'revenue-vs-direct-cost' ? (
+        <RevenueVsDirectCostReport
+          invoices={invoices}
+          clients={clients}
+          services={services}
+          activeTenantId={activeTenantId}
+        />
+      ) : (
+        <>
+          <div className="flex items-center justify-between flex-wrap gap-4 mb-6 print-hidden">
         <div className="flex items-center space-x-4">
           <label htmlFor="dateRange" className="text-[10px] font-black text-gray-400 uppercase tracking-widest">Temporal Context:</label>
           <select
@@ -575,7 +618,9 @@ Operational Dataset: ${dataDump}`;
           </div>
         </div>
       </div>
-    </div>
+    </>
+  )}
+</div>
   );
 };
 
