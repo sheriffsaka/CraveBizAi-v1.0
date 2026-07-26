@@ -5,6 +5,8 @@ import { InvoiceStatus, Invoice, Client } from '../types';
 import StatCard from './StatCard';
 import InvoiceList from './InvoiceList';
 import { Page } from '../App';
+import { api } from '../lib/api';
+import { getSubscriptionInfo } from '../services/subscriptionService';
 
 const DashboardIcon = ({ d }: { d: string }) => (
   <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
@@ -15,13 +17,46 @@ const DashboardIcon = ({ d }: { d: string }) => (
 interface DashboardProps {
     invoices: Invoice[];
     clients: Client[];
+    activeTenantId?: string;
     setActivePage: (page: Page) => void;
     onViewInvoice: (invoiceId: string) => void;
     onEditInvoice: (invoiceId: string) => void;
     onGenerateRenewal: (clientId: string, item: any) => Promise<void>;
 }
 
-const Dashboard: React.FC<DashboardProps> = ({invoices, clients, setActivePage, onViewInvoice, onEditInvoice, onGenerateRenewal}) => {
+const Dashboard: React.FC<DashboardProps> = ({invoices, clients, activeTenantId, setActivePage, onViewInvoice, onEditInvoice, onGenerateRenewal}) => {
+    const [invoiceUsage, setInvoiceUsage] = React.useState<{ totalQuota: number; remainingCount: number; createdCount: number; resetDate: string } | null>(null);
+    const [receiptUsage, setReceiptUsage] = React.useState<{ totalQuota: number; remainingCount: number; createdCount: number; resetDate: string } | null>(null);
+    const [isLoadingUsage, setIsLoadingUsage] = React.useState<boolean>(false);
+
+    React.useEffect(() => {
+        let isMounted = true;
+        const loadUsage = async () => {
+            setIsLoadingUsage(true);
+            try {
+                const sub = getSubscriptionInfo(activeTenantId || '');
+                const invData = await api.getInvoiceUsage(activeTenantId, sub.tier);
+                const recData = await api.getReceiptUsage(activeTenantId, sub.tier);
+                if (isMounted) {
+                    if (invData) setInvoiceUsage(invData);
+                    if (recData) setReceiptUsage(recData);
+                }
+            } catch (e) {
+                console.warn("Error fetching document usage in Dashboard:", e);
+            } finally {
+                if (isMounted) setIsLoadingUsage(false);
+            }
+        };
+
+        loadUsage();
+
+        const handleSubChange = () => { loadUsage(); };
+        window.addEventListener('cravebiz_subscription_change', handleSubChange);
+        return () => {
+            isMounted = false;
+            window.removeEventListener('cravebiz_subscription_change', handleSubChange);
+        };
+    }, [activeTenantId]);
     // Calculate real revenue data for the chart (last 6 months)
     const calculatedTrendData = useMemo(() => {
         const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
@@ -141,6 +176,73 @@ const Dashboard: React.FC<DashboardProps> = ({invoices, clients, setActivePage, 
           changeType="decrease"
           icon={<DashboardIcon d="M12 22c5.523 0 10-4.477 10-10S17.523 2 12 2 2 6.477 2 12s4.477 10 10 10Z M12 8v4 M12 16h.01" />}
         />
+      </div>
+
+      {/* Document Usage Quotas */}
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+        <div className="bg-gradient-to-br from-blue-900 to-indigo-950 p-6 rounded-[2rem] shadow-xl text-white relative overflow-hidden">
+          <div className="flex justify-between items-start">
+            <div>
+              <span className="text-[10px] font-black uppercase tracking-widest text-blue-300">Invoice Quota</span>
+              <h3 className="text-2xl font-black mt-1">
+                {invoiceUsage ? `${invoiceUsage.remainingCount} / ${invoiceUsage.totalQuota}` : 'Loading...'}
+              </h3>
+              <p className="text-xs text-blue-200/80 mt-1">
+                Invoices Remaining ({invoiceUsage?.createdCount || 0} created)
+              </p>
+            </div>
+            <div className="bg-white/10 p-3 rounded-2xl backdrop-blur-md">
+              <svg className="w-6 h-6 text-blue-300" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+              </svg>
+            </div>
+          </div>
+          {invoiceUsage && (
+            <div className="mt-4">
+              <div className="w-full bg-white/10 rounded-full h-2 overflow-hidden">
+                <div 
+                  className="bg-blue-400 h-full transition-all duration-500" 
+                  style={{ width: `${Math.min(100, Math.max(0, (invoiceUsage.remainingCount / invoiceUsage.totalQuota) * 100))}%` }}
+                />
+              </div>
+              <p className="text-[10px] text-blue-300/70 mt-2 text-right">
+                Resets: {new Date(invoiceUsage.resetDate).toLocaleDateString()}
+              </p>
+            </div>
+          )}
+        </div>
+
+        <div className="bg-gradient-to-br from-slate-900 to-teal-950 p-6 rounded-[2rem] shadow-xl text-white relative overflow-hidden">
+          <div className="flex justify-between items-start">
+            <div>
+              <span className="text-[10px] font-black uppercase tracking-widest text-emerald-300">Receipt Quota</span>
+              <h3 className="text-2xl font-black mt-1">
+                {receiptUsage ? `${receiptUsage.remainingCount} / ${receiptUsage.totalQuota}` : 'Loading...'}
+              </h3>
+              <p className="text-xs text-emerald-200/80 mt-1">
+                Receipts Remaining ({receiptUsage?.createdCount || 0} issued)
+              </p>
+            </div>
+            <div className="bg-white/10 p-3 rounded-2xl backdrop-blur-md">
+              <svg className="w-6 h-6 text-emerald-300" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2" />
+              </svg>
+            </div>
+          </div>
+          {receiptUsage && (
+            <div className="mt-4">
+              <div className="w-full bg-white/10 rounded-full h-2 overflow-hidden">
+                <div 
+                  className="bg-emerald-400 h-full transition-all duration-500" 
+                  style={{ width: `${Math.min(100, Math.max(0, (receiptUsage.remainingCount / receiptUsage.totalQuota) * 100))}%` }}
+                />
+              </div>
+              <p className="text-[10px] text-emerald-300/70 mt-2 text-right">
+                Resets: {new Date(receiptUsage.resetDate).toLocaleDateString()}
+              </p>
+            </div>
+          )}
+        </div>
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-5 gap-8">

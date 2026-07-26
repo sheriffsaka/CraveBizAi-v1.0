@@ -407,12 +407,16 @@ export default function App() {
     // Check receipt limits if the receipt hasn't been sent yet
     if (!inv.isReceiptSent) {
         const sub = getSubscriptionInfo(activeTenantId || '');
-        const currentReceiptCount = tenantData.invoices.filter(i => i.isReceiptSent).length;
-        if (currentReceiptCount >= sub.maxReceipts) {
-            const msg = `You have reached the monthly receipt limit of your ${sub.tier} Plan (${currentReceiptCount}/${sub.maxReceipts} receipts issued). Please upgrade your subscription tier in Workspace Settings.`;
-            window.dispatchEvent(new CustomEvent('cravebiz_subscription_error', { detail: { message: msg } }));
-            alert(msg);
-            return;
+        try {
+            const usage = await api.getReceiptUsage(activeTenantId, sub.tier);
+            if (usage && usage.remainingCount <= 0) {
+                const msg = `You have reached the monthly receipt limit of your ${sub.tier} Plan (${usage.createdCount}/${usage.totalQuota} receipts issued). Please upgrade your subscription tier in Workspace Settings.`;
+                window.dispatchEvent(new CustomEvent('cravebiz_subscription_error', { detail: { message: msg } }));
+                alert(msg);
+                return;
+            }
+        } catch (err) {
+            console.warn("Error checking receipt usage before send:", err);
         }
     }
 
@@ -813,7 +817,7 @@ export default function App() {
     const { invoices = [], clients = [], services = [], generatedDocs = [], projects = [] } = tenantData;
 
     switch (activePage) {
-      case 'dashboard': return <Dashboard invoices={invoices} clients={clients} setActivePage={navigateTo} onViewInvoice={(id) => { setSelectedInvoiceId(id); navigateTo('invoice-detail'); }} onEditInvoice={handleEditInvoiceAction} onGenerateRenewal={handleGenerateRenewal} />;
+      case 'dashboard': return <Dashboard invoices={invoices} clients={clients} activeTenantId={activeTenantId} setActivePage={navigateTo} onViewInvoice={(id) => { setSelectedInvoiceId(id); navigateTo('invoice-detail'); }} onEditInvoice={handleEditInvoiceAction} onGenerateRenewal={handleGenerateRenewal} />;
       case 'doc-signify': return <DocSignify 
           company={activeCompany} 
           user={currentUser} 
@@ -914,8 +918,9 @@ export default function App() {
           
           const sub = getSubscriptionInfo(activeTenantId || '');
           const currentCount = invoices.length;
-          if (currentCount >= sub.maxInvoices) {
-              const msg = `You have reached the monthly invoice limit of your ${sub.tier} Plan (${currentCount}/${sub.maxInvoices} invoices generated). Please upgrade your subscription tier in Workspace Settings.`;
+          const maxAllowed = sub.maxInvoices;
+          if (currentCount >= maxAllowed) {
+              const msg = `You have reached the monthly invoice limit of your ${sub.tier} Plan (${currentCount}/${maxAllowed} invoices generated). Please upgrade your subscription tier in Workspace Settings.`;
               window.dispatchEvent(new CustomEvent('cravebiz_subscription_error', { detail: { message: msg } }));
               return (
                   <div className="flex flex-col items-center justify-center p-12 text-center bg-white rounded-[2.5rem] border border-gray-100 shadow-2xl max-w-lg mx-auto my-12 animate-in fade-in">
@@ -932,6 +937,11 @@ export default function App() {
           return <CreateInvoice clients={clients} services={services} company={activeCompany} initialDraft={draftRenewal} onAddInvoice={async (i) => { 
               try { 
                   setIsDataSyncing(true); 
+                  // First check backend quota
+                  const check = await api.getInvoiceUsage(activeTenantId, sub.tier);
+                  if (check && check.remainingCount <= 0) {
+                      throw new Error(`Invoice creation quota exhausted (${check.createdCount}/${check.totalQuota} generated). Please upgrade your plan.`);
+                  }
                   const newInvoice = await api.createInvoice(activeTenantId!, i); 
                   setTenantData(prev => ({ ...prev, invoices: [newInvoice, ...prev.invoices] }));
                   await incrementInvoiceCount(activeTenantId!);
@@ -1109,7 +1119,7 @@ export default function App() {
         }
         navigateTo(page as Page);
       }} />;
-      default: return <Dashboard invoices={invoices} clients={clients} setActivePage={navigateTo} onViewInvoice={(id) => { setSelectedInvoiceId(id); navigateTo('invoice-detail'); }} onEditInvoice={handleEditInvoiceAction} onGenerateRenewal={handleGenerateRenewal} />;
+      default: return <Dashboard invoices={invoices} clients={clients} activeTenantId={activeTenantId} setActivePage={navigateTo} onViewInvoice={(id) => { setSelectedInvoiceId(id); navigateTo('invoice-detail'); }} onEditInvoice={handleEditInvoiceAction} onGenerateRenewal={handleGenerateRenewal} />;
     }
   };
 

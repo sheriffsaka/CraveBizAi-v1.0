@@ -23,6 +23,12 @@ import {
     resetUserAiCredits,
     checkUserAiCredits
 } from "../services/aiCreditModule.js";
+import {
+    getUserInvoiceUsage,
+    deductInvoiceQuota,
+    getUserReceiptUsage,
+    deductReceiptQuota
+} from "../services/documentUsageModule.js";
 import { SignifyService } from "../services/signifyService.js";
 import { sendReceiptEmailDirect, sendInvoiceEmailDirect } from "../services/emailService.js";
 
@@ -1564,6 +1570,59 @@ app.post("/api/ai/credits/reset", verifyTenant, async (req: any, res) => {
     } catch (err: any) {
         console.error("POST /api/ai/credits/reset error:", err);
         res.status(500).json({ error: err.message || "Failed to reset AI credits" });
+    }
+});
+
+// INVOICE & RECEIPT USAGE MANAGEMENT ENDPOINTS
+app.get("/api/usage/invoice", verifyTenant, async (req: any, res) => {
+    try {
+        const userId = req.user?.email || req.user?.id || req.tenantId;
+        const tenantId = req.tenantId;
+        const tier = req.query.tier || "Free";
+        const usage = await getUserInvoiceUsage(userId, tenantId, req.token, String(tier));
+        res.json(usage);
+    } catch (err: any) {
+        console.error("GET /api/usage/invoice error:", err);
+        res.status(500).json({ error: err.message || "Failed to fetch invoice usage" });
+    }
+});
+
+app.post("/api/usage/invoice/deduct", verifyTenant, async (req: any, res) => {
+    try {
+        const userId = req.user?.email || req.user?.id || req.tenantId;
+        const tenantId = req.tenantId;
+        const tier = req.body.tier || "Free";
+        const usage = await deductInvoiceQuota(userId, tenantId, req.token, String(tier));
+        res.json({ success: true, usage });
+    } catch (err: any) {
+        console.error("POST /api/usage/invoice/deduct error:", err);
+        res.status(403).json({ error: err.message || "Invoice quota exhausted" });
+    }
+});
+
+app.get("/api/usage/receipt", verifyTenant, async (req: any, res) => {
+    try {
+        const userId = req.user?.email || req.user?.id || req.tenantId;
+        const tenantId = req.tenantId;
+        const tier = req.query.tier || "Free";
+        const usage = await getUserReceiptUsage(userId, tenantId, req.token, String(tier));
+        res.json(usage);
+    } catch (err: any) {
+        console.error("GET /api/usage/receipt error:", err);
+        res.status(500).json({ error: err.message || "Failed to fetch receipt usage" });
+    }
+});
+
+app.post("/api/usage/receipt/deduct", verifyTenant, async (req: any, res) => {
+    try {
+        const userId = req.user?.email || req.user?.id || req.tenantId;
+        const tenantId = req.tenantId;
+        const tier = req.body.tier || "Free";
+        const usage = await deductReceiptQuota(userId, tenantId, req.token, String(tier));
+        res.json({ success: true, usage });
+    } catch (err: any) {
+        console.error("POST /api/usage/receipt/deduct error:", err);
+        res.status(403).json({ error: err.message || "Receipt quota exhausted" });
     }
 });
 

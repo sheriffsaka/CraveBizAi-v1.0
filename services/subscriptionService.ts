@@ -428,7 +428,7 @@ export async function syncSubscriptionInfoFromDb(companyId: string): Promise<voi
 }
 
 /**
- * Increments the invoice count on the DB and caches it
+ * Increments the invoice count on the DB and deducts from user_invoice_usage quota
  */
 export async function incrementInvoiceCount(companyId: string): Promise<void> {
   if (!companyId) return;
@@ -437,13 +437,21 @@ export async function incrementInvoiceCount(companyId: string): Promise<void> {
   const newCount = currentCount + 1;
   localStorage.setItem(key, newCount.toString());
   
+  // Call backend API to deduct 1 invoice from user_invoice_usage table in Supabase
+  try {
+    const sub = getSubscriptionInfo(companyId);
+    await api.deductInvoiceQuota(companyId, sub.tier);
+  } catch (err) {
+    console.warn("Failed to deduct invoice quota on backend API:", err);
+  }
+
   // Save in workspace settings payload
   await saveSubscriptionInfoToDb(companyId);
   window.dispatchEvent(new Event('cravebiz_subscription_change'));
 }
 
 /**
- * Increments the receipt count on the DB and caches it
+ * Increments the receipt count on the DB and deducts from user_receipt_usage quota
  */
 export async function incrementReceiptCount(companyId: string): Promise<void> {
   if (!companyId) return;
@@ -452,9 +460,81 @@ export async function incrementReceiptCount(companyId: string): Promise<void> {
   const newCount = currentCount + 1;
   localStorage.setItem(key, newCount.toString());
   
+  // Call backend API to deduct 1 receipt from user_receipt_usage table in Supabase
+  try {
+    const sub = getSubscriptionInfo(companyId);
+    await api.deductReceiptQuota(companyId, sub.tier);
+  } catch (err) {
+    console.warn("Failed to deduct receipt quota on backend API:", err);
+  }
+
   // Save in workspace settings payload
   await saveSubscriptionInfoToDb(companyId);
   window.dispatchEvent(new Event('cravebiz_subscription_change'));
+}
+
+/**
+ * Check if workspace has remaining invoice quota
+ */
+export async function checkCanCreateInvoice(companyId: string): Promise<{ canCreate: boolean; remaining: number; total: number; resetDate: string; reason?: string }> {
+  try {
+    const sub = getSubscriptionInfo(companyId);
+    const usage = await api.getInvoiceUsage(companyId, sub.tier);
+    if (usage && typeof usage.remainingCount === 'number') {
+      const canCreate = usage.remainingCount > 0;
+      return {
+        canCreate,
+        remaining: usage.remainingCount,
+        total: usage.totalQuota,
+        resetDate: usage.resetDate || new Date(Date.now() + 30 * 86400000).toISOString(),
+        reason: canCreate ? undefined : `You have reached your invoice creation quota (${usage.createdCount}/${usage.totalQuota} generated). Please upgrade your plan.`
+      };
+    }
+  } catch (e) {
+    console.warn("checkCanCreateInvoice error:", e);
+  }
+  const sub = getSubscriptionInfo(companyId);
+  const current = parseInt(localStorage.getItem(`cravebiz_invoice_count_${companyId}`) || '0', 10);
+  const rem = Math.max(0, sub.maxInvoices - current);
+  return {
+    canCreate: rem > 0,
+    remaining: rem,
+    total: sub.maxInvoices,
+    resetDate: new Date(Date.now() + 30 * 86400000).toISOString(),
+    reason: rem > 0 ? undefined : `Monthly invoice limit reached (${current}/${sub.maxInvoices}).`
+  };
+}
+
+/**
+ * Check if workspace has remaining receipt quota
+ */
+export async function checkCanCreateReceipt(companyId: string): Promise<{ canCreate: boolean; remaining: number; total: number; resetDate: string; reason?: string }> {
+  try {
+    const sub = getSubscriptionInfo(companyId);
+    const usage = await api.getReceiptUsage(companyId, sub.tier);
+    if (usage && typeof usage.remainingCount === 'number') {
+      const canCreate = usage.remainingCount > 0;
+      return {
+        canCreate,
+        remaining: usage.remainingCount,
+        total: usage.totalQuota,
+        resetDate: usage.resetDate || new Date(Date.now() + 30 * 86400000).toISOString(),
+        reason: canCreate ? undefined : `You have reached your receipt creation quota (${usage.createdCount}/${usage.totalQuota} issued). Please upgrade your plan.`
+      };
+    }
+  } catch (e) {
+    console.warn("checkCanCreateReceipt error:", e);
+  }
+  const sub = getSubscriptionInfo(companyId);
+  const current = parseInt(localStorage.getItem(`cravebiz_receipt_count_${companyId}`) || '0', 10);
+  const rem = Math.max(0, sub.maxReceipts - current);
+  return {
+    canCreate: rem > 0,
+    remaining: rem,
+    total: sub.maxReceipts,
+    resetDate: new Date(Date.now() + 30 * 86400000).toISOString(),
+    reason: rem > 0 ? undefined : `Monthly receipt limit reached (${current}/${sub.maxReceipts}).`
+  };
 }
 
 /**

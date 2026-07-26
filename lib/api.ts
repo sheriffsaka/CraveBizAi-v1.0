@@ -2278,6 +2278,70 @@ class CraveBizApi {
       throw err;
     }
   }
+
+  async getInvoiceUsage(companyId?: string, tier: string = 'Free') {
+    try {
+      const headers = await this.getAuthHeaders(companyId);
+      const res = await fetch(`/api/usage/invoice?tier=${encodeURIComponent(tier)}`, { headers });
+      if (res.ok) {
+        return await res.json();
+      }
+    } catch (e) {
+      console.warn("getInvoiceUsage API call failed, using local fallback:", e);
+    }
+    return {
+      totalQuota: 10,
+      remainingCount: 10,
+      createdCount: 0,
+      resetDate: new Date(Date.now() + 30 * 86400000).toISOString()
+    };
+  }
+
+  async deductInvoiceQuota(companyId?: string, tier: string = 'Free') {
+    const headers = await this.getAuthHeaders(companyId);
+    const res = await fetch('/api/usage/invoice/deduct', {
+      method: 'POST',
+      headers,
+      body: JSON.stringify({ tier })
+    });
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({}));
+      throw new Error(err.error || 'Invoice quota exhausted');
+    }
+    return await res.json();
+  }
+
+  async getReceiptUsage(companyId?: string, tier: string = 'Free') {
+    try {
+      const headers = await this.getAuthHeaders(companyId);
+      const res = await fetch(`/api/usage/receipt?tier=${encodeURIComponent(tier)}`, { headers });
+      if (res.ok) {
+        return await res.json();
+      }
+    } catch (e) {
+      console.warn("getReceiptUsage API call failed, using local fallback:", e);
+    }
+    return {
+      totalQuota: 10,
+      remainingCount: 10,
+      createdCount: 0,
+      resetDate: new Date(Date.now() + 30 * 86400000).toISOString()
+    };
+  }
+
+  async deductReceiptQuota(companyId?: string, tier: string = 'Free') {
+    const headers = await this.getAuthHeaders(companyId);
+    const res = await fetch('/api/usage/receipt/deduct', {
+      method: 'POST',
+      headers,
+      body: JSON.stringify({ tier })
+    });
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({}));
+      throw new Error(err.error || 'Receipt quota exhausted');
+    }
+    return await res.json();
+  }
 }
 export const api = CraveBizApi.getInstance();
 

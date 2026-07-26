@@ -60,3 +60,257 @@ GRANT ALL ON public.ai_credit_logs TO anon, authenticated, service_role;
 
 -- 4. Ensure services table has package_name column
 ALTER TABLE IF EXISTS public.services ADD COLUMN IF NOT EXISTS package_name TEXT;
+
+-- ==============================================================================
+-- 5. Create user_invoice_usage table for tracking invoice quota per user/workspace
+-- ==============================================================================
+CREATE TABLE IF NOT EXISTS public.user_invoice_usage (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    user_id TEXT NOT NULL,
+    company_id TEXT NOT NULL,
+    total_quota INTEGER NOT NULL DEFAULT 10,
+    remaining_count INTEGER NOT NULL DEFAULT 10,
+    created_count INTEGER NOT NULL DEFAULT 0,
+    reset_date TIMESTAMPTZ NOT NULL DEFAULT (NOW() + INTERVAL '1 month'),
+    created_at TIMESTAMPTZ DEFAULT NOW(),
+    updated_at TIMESTAMPTZ DEFAULT NOW(),
+    CONSTRAINT user_invoice_usage_user_company_unique UNIQUE (user_id, company_id)
+);
+
+CREATE INDEX IF NOT EXISTS idx_user_invoice_usage_user_company ON public.user_invoice_usage(user_id, company_id);
+
+ALTER TABLE public.user_invoice_usage ENABLE ROW LEVEL SECURITY;
+
+DROP POLICY IF EXISTS "Allow anon all operations on user_invoice_usage" ON public.user_invoice_usage;
+CREATE POLICY "Allow anon all operations on user_invoice_usage" 
+ON public.user_invoice_usage FOR ALL USING (true) WITH CHECK (true);
+
+GRANT ALL ON public.user_invoice_usage TO anon, authenticated, service_role;
+
+-- ==============================================================================
+-- 6. Create user_receipt_usage table for tracking receipt quota per user/workspace
+-- ==============================================================================
+CREATE TABLE IF NOT EXISTS public.user_receipt_usage (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    user_id TEXT NOT NULL,
+    company_id TEXT NOT NULL,
+    total_quota INTEGER NOT NULL DEFAULT 10,
+    remaining_count INTEGER NOT NULL DEFAULT 10,
+    created_count INTEGER NOT NULL DEFAULT 0,
+    reset_date TIMESTAMPTZ NOT NULL DEFAULT (NOW() + INTERVAL '1 month'),
+    created_at TIMESTAMPTZ DEFAULT NOW(),
+    updated_at TIMESTAMPTZ DEFAULT NOW(),
+    CONSTRAINT user_receipt_usage_user_company_unique UNIQUE (user_id, company_id)
+);
+
+CREATE INDEX IF NOT EXISTS idx_user_receipt_usage_user_company ON public.user_receipt_usage(user_id, company_id);
+
+ALTER TABLE public.user_receipt_usage ENABLE ROW LEVEL SECURITY;
+
+DROP POLICY IF EXISTS "Allow anon all operations on user_receipt_usage" ON public.user_receipt_usage;
+CREATE POLICY "Allow anon all operations on user_receipt_usage" 
+ON public.user_receipt_usage FOR ALL USING (true) WITH CHECK (true);
+
+GRANT ALL ON public.user_receipt_usage TO anon, authenticated, service_role;
+
+-- ==============================================================================
+-- 7. Database RPC Functions for Invoice & Receipt Quota Checking & Deduction
+-- ==============================================================================
+
+-- Function to check invoice quota
+CREATE OR REPLACE FUNCTION public.check_invoice_quota(
+    p_user_id TEXT,
+    p_company_id TEXT,
+    p_default_quota INT DEFAULT 10
+)
+RETURNS TABLE (
+    total_quota INT,
+    remaining_count INT,
+    created_count INT,
+    reset_date TIMESTAMPTZ,
+    has_quota BOOLEAN
+) 
+LANGUAGE plpgsql
+SECURITY DEFINER
+AS $$
+DECLARE
+    v_rec public.user_invoice_usage%ROWTYPE;
+BEGIN
+    SELECT * INTO v_rec 
+    FROM public.user_invoice_usage 
+    WHERE company_id = p_company_id AND user_id = p_user_id;
+
+    IF NOT FOUND THEN
+        INSERT INTO public.user_invoice_usage (user_id, company_id, total_quota, remaining_count, created_count, reset_date)
+        VALUES (p_user_id, p_company_id, p_default_quota, p_default_quota, 0, NOW() + INTERVAL '1 month')
+        RETURNING * INTO v_rec;
+    ELSIF v_rec.reset_date <= NOW() THEN
+        -- Auto reset monthly quota
+        UPDATE public.user_invoice_usage
+        SET created_count = 0,
+            remaining_count = v_rec.total_quota,
+            reset_date = NOW() + INTERVAL '1 month',
+            updated_at = NOW()
+        WHERE id = v_rec.id
+        RETURNING * INTO v_rec;
+    END IF;
+
+    RETURN QUERY SELECT 
+        v_rec.total_quota,
+        v_rec.remaining_count,
+        v_rec.created_count,
+        v_rec.reset_date,
+        (v_rec.remaining_count > 0) AS has_quota;
+END;
+$$;
+
+-- Function to deduct invoice quota
+CREATE OR REPLACE FUNCTION public.deduct_invoice_quota(
+    p_user_id TEXT,
+    p_company_id TEXT,
+    p_default_quota INT DEFAULT 10
+)
+RETURNS TABLE (
+    total_quota INT,
+    remaining_count INT,
+    created_count INT,
+    reset_date TIMESTAMPTZ
+) 
+LANGUAGE plpgsql
+SECURITY DEFINER
+AS $$
+DECLARE
+    v_rec public.user_invoice_usage%ROWTYPE;
+BEGIN
+    SELECT * INTO v_rec 
+    FROM public.user_invoice_usage 
+    WHERE company_id = p_company_id AND user_id = p_user_id;
+
+    IF NOT FOUND THEN
+        INSERT INTO public.user_invoice_usage (user_id, company_id, total_quota, remaining_count, created_count, reset_date)
+        VALUES (p_user_id, p_company_id, p_default_quota, p_default_quota, 0, NOW() + INTERVAL '1 month')
+        RETURNING * INTO v_rec;
+    ELSIF v_rec.reset_date <= NOW() THEN
+        v_rec.created_count := 0;
+        v_rec.remaining_count := v_rec.total_quota;
+        v_rec.reset_date := NOW() + INTERVAL '1 month';
+    END IF;
+
+    IF v_rec.remaining_count <= 0 THEN
+        RAISE EXCEPTION 'Invoice creation quota exhausted (% created of % total)', v_rec.created_count, v_rec.total_quota;
+    END IF;
+
+    UPDATE public.user_invoice_usage
+    SET created_count = v_rec.created_count + 1,
+        remaining_count = GREATEST(0, v_rec.total_quota - (v_rec.created_count + 1)),
+        reset_date = v_rec.reset_date,
+        updated_at = NOW()
+    WHERE id = v_rec.id
+    RETURNING * INTO v_rec;
+
+    RETURN QUERY SELECT 
+        v_rec.total_quota,
+        v_rec.remaining_count,
+        v_rec.created_count,
+        v_rec.reset_date;
+END;
+$$;
+
+-- Function to check receipt quota
+CREATE OR REPLACE FUNCTION public.check_receipt_quota(
+    p_user_id TEXT,
+    p_company_id TEXT,
+    p_default_quota INT DEFAULT 10
+)
+RETURNS TABLE (
+    total_quota INT,
+    remaining_count INT,
+    created_count INT,
+    reset_date TIMESTAMPTZ,
+    has_quota BOOLEAN
+) 
+LANGUAGE plpgsql
+SECURITY DEFINER
+AS $$
+DECLARE
+    v_rec public.user_receipt_usage%ROWTYPE;
+BEGIN
+    SELECT * INTO v_rec 
+    FROM public.user_receipt_usage 
+    WHERE company_id = p_company_id AND user_id = p_user_id;
+
+    IF NOT FOUND THEN
+        INSERT INTO public.user_receipt_usage (user_id, company_id, total_quota, remaining_count, created_count, reset_date)
+        VALUES (p_user_id, p_company_id, p_default_quota, p_default_quota, 0, NOW() + INTERVAL '1 month')
+        RETURNING * INTO v_rec;
+    ELSIF v_rec.reset_date <= NOW() THEN
+        UPDATE public.user_receipt_usage
+        SET created_count = 0,
+            remaining_count = v_rec.total_quota,
+            reset_date = NOW() + INTERVAL '1 month',
+            updated_at = NOW()
+        WHERE id = v_rec.id
+        RETURNING * INTO v_rec;
+    END IF;
+
+    RETURN QUERY SELECT 
+        v_rec.total_quota,
+        v_rec.remaining_count,
+        v_rec.created_count,
+        v_rec.reset_date,
+        (v_rec.remaining_count > 0) AS has_quota;
+END;
+$$;
+
+-- Function to deduct receipt quota
+CREATE OR REPLACE FUNCTION public.deduct_receipt_quota(
+    p_user_id TEXT,
+    p_company_id TEXT,
+    p_default_quota INT DEFAULT 10
+)
+RETURNS TABLE (
+    total_quota INT,
+    remaining_count INT,
+    created_count INT,
+    reset_date TIMESTAMPTZ
+) 
+LANGUAGE plpgsql
+SECURITY DEFINER
+AS $$
+DECLARE
+    v_rec public.user_receipt_usage%ROWTYPE;
+BEGIN
+    SELECT * INTO v_rec 
+    FROM public.user_receipt_usage 
+    WHERE company_id = p_company_id AND user_id = p_user_id;
+
+    IF NOT FOUND THEN
+        INSERT INTO public.user_receipt_usage (user_id, company_id, total_quota, remaining_count, created_count, reset_date)
+        VALUES (p_user_id, p_company_id, p_default_quota, p_default_quota, 0, NOW() + INTERVAL '1 month')
+        RETURNING * INTO v_rec;
+    ELSIF v_rec.reset_date <= NOW() THEN
+        v_rec.created_count := 0;
+        v_rec.remaining_count := v_rec.total_quota;
+        v_rec.reset_date := NOW() + INTERVAL '1 month';
+    END IF;
+
+    IF v_rec.remaining_count <= 0 THEN
+        RAISE EXCEPTION 'Receipt creation quota exhausted (% created of % total)', v_rec.created_count, v_rec.total_quota;
+    END IF;
+
+    UPDATE public.user_receipt_usage
+    SET created_count = v_rec.created_count + 1,
+        remaining_count = GREATEST(0, v_rec.total_quota - (v_rec.created_count + 1)),
+        reset_date = v_rec.reset_date,
+        updated_at = NOW()
+    WHERE id = v_rec.id
+    RETURNING * INTO v_rec;
+
+    RETURN QUERY SELECT 
+        v_rec.total_quota,
+        v_rec.remaining_count,
+        v_rec.created_count,
+        v_rec.reset_date;
+END;
+$$;
+
