@@ -33,23 +33,39 @@ function loadEnvFiles() {
 // Execute environment loading
 loadEnvFiles();
 
+// function getApiKey(): string {
+//     let key = process.env.GEMINI_API_KEY || process.env.API_KEY || "";
+//     if (!key) {
+//         console.warn("WARNING: Neither GEMINI_API_KEY nor API_KEY is set in environment.");
+//         return "";
+//     }
+//     key = key.trim();
+//     // Strip wrapping quotes if present (common issue in custom environments)
+//     if ((key.startsWith('"') && key.endsWith('"')) || (key.startsWith("'") && key.endsWith("'"))) {
+//         key = key.substring(1, key.length - 1).trim();
+//     }
+//     // Ignore invalid placeholder key from example
+//     // if (key.startsWith("AQ.Ab8RN6")) {
+//     //     console.warn("WARNING: GEMINI_API_KEY is using a placeholder string from .env.example.");
+//     //     return "";
+//     // }
+//     return key;
+// }
+
 function getApiKey(): string {
-    let key = process.env.GEMINI_API_KEY || process.env.API_KEY || "";
+    console.log("GEMINI_API_KEY exists:", !!process.env.GEMINI_API_KEY);
+
+    const key = process.env.GEMINI_API_KEY || "";
+
     if (!key) {
-        console.warn("WARNING: Neither GEMINI_API_KEY nor API_KEY is set in environment.");
+        console.error("No GEMINI_API_KEY found.");
         return "";
     }
-    key = key.trim();
-    // Strip wrapping quotes if present (common issue in custom environments)
-    if ((key.startsWith('"') && key.endsWith('"')) || (key.startsWith("'") && key.endsWith("'"))) {
-        key = key.substring(1, key.length - 1).trim();
-    }
-    // Ignore invalid placeholder key from example
-    if (key.startsWith("AQ.Ab8RN6")) {
-        console.warn("WARNING: GEMINI_API_KEY is using a placeholder string from .env.example.");
-        return "";
-    }
-    return key;
+
+    console.log("Key length:", key.length);
+    console.log("Key preview:", key.substring(0, 6));
+
+    return key.trim();
 }
 
 export function checkApiKeyStatus() {
@@ -248,18 +264,18 @@ function compileMockDocument(text: string, companyContext: any, selectedPreset?:
                 logoUrl: ctx.logoUrl || ctx.logo_url || ''
             }
         },
-        {
-            id: 'hdr_' + Math.floor(Math.random() * 100000),
-            type: 'header',
-            content: {
-                companyName: ctx.name || "CRAVEBIZ SOLUTIONS",
-                address: ctx.address || "123 Technology Way",
-                email: ctx.email || "billing@cravebiz.com",
-                phone: ctx.phone || "+1 (555) 012-3456",
-                website: ctx.website || "https://cravebiz.com",
-                logoUrl: ctx.logoUrl || ""
-            }
-        },
+        // {
+        //     id: 'hdr_' + Math.floor(Math.random() * 100000),
+        //     type: 'header',
+        //     content: {
+        //         companyName: ctx.name || "CRAVEBIZ SOLUTIONS",
+        //         address: ctx.address || "123 Technology Way",
+        //         email: ctx.email || "billing@cravebiz.com",
+        //         phone: ctx.phone || "+1 (555) 012-3456",
+        //         website: ctx.website || "https://cravebiz.com",
+        //         logoUrl: ctx.logoUrl || ""
+        //     }
+        // },
         {
             id: 'meta_' + Math.floor(Math.random() * 100000),
             type: 'metadata',
