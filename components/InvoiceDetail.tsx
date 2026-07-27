@@ -12,7 +12,7 @@ interface InvoiceDetailProps {
   services: Service[];
   company: Company | null;
   onUpdateStatus: (invoiceId: string, status: InvoiceStatus) => void;
-  onRecordPayment: (invoiceId: string, amount: number) => Promise<void>;
+  onRecordPayment: (invoiceId: string, amount: number, details?: any) => Promise<void>;
   onGenerateReceipt: (invoiceId: string) => void;
   allTenantInvoices: Invoice[];
   onEditInvoice: (invoiceId: string) => void;
@@ -91,9 +91,9 @@ const InvoiceDetail: React.FC<InvoiceDetailProps> = ({ invoice, client, services
         }
     };
 
-    const handleConfirmPayment = async (amount: number) => {
+    const handleConfirmPayment = async (amount: number, details?: any) => {
         try {
-            await onRecordPayment(invoice.id, amount);
+            await onRecordPayment(invoice.id, amount, details);
         } catch (e) {
             console.error("Payment error:", e);
             alert("Failed to sync payment data.");
@@ -137,15 +137,15 @@ const InvoiceDetail: React.FC<InvoiceDetailProps> = ({ invoice, client, services
               disabled={invoice.id === 'preview'} 
               className="px-6 py-2.5 bg-green-600 text-white rounded-xl font-black uppercase tracking-widest text-xs shadow-lg hover:bg-green-700 transition-all transform hover:-translate-y-0.5 disabled:bg-gray-400"
           >
-              Mark as Paid
+              {invoice.status === InvoiceStatus.PartiallyPaid ? 'Record Payment' : 'Mark as Paid'}
           </button>
         )}
 
-        {invoice.status === InvoiceStatus.Paid && (
+        {((invoice.amountPaid || 0) > 0 || invoice.status === InvoiceStatus.Paid) && (
           <button 
               onClick={() => onGenerateReceipt(invoice.id)} 
               disabled={invoice.id === 'preview'} 
-              className="px-6 py-2.5 bg-green-600 text-white rounded-xl font-black uppercase tracking-widest text-xs shadow-lg hover:bg-green-700 transition-all transform hover:-translate-y-0.5 disabled:bg-gray-400 flex items-center gap-2"
+              className="px-6 py-2.5 bg-emerald-700 text-white rounded-xl font-black uppercase tracking-widest text-xs shadow-lg hover:bg-emerald-800 transition-all transform hover:-translate-y-0.5 disabled:bg-gray-400 flex items-center gap-2"
           >
               <Icon name="file-pdf" className="w-4 h-4" />
               Generate Receipt

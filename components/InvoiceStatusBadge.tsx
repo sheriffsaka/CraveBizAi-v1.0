@@ -8,6 +8,7 @@ interface InvoiceStatusBadgeProps {
 
 const statusStyles: { [key in InvoiceStatus]: string } = {
   [InvoiceStatus.Paid]: 'bg-green-100 text-green-800',
+  [InvoiceStatus.PartiallyPaid]: 'bg-amber-100 text-amber-800 border border-amber-200',
   [InvoiceStatus.Overdue]: 'bg-red-100 text-red-800',
   [InvoiceStatus.Sent]: 'bg-blue-100 text-blue-800',
   [InvoiceStatus.Draft]: 'bg-gray-200 text-gray-700',

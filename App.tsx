@@ -372,13 +372,21 @@ export default function App() {
     return () => { isMounted.current = false; subscription.unsubscribe(); };
   }, []);
 
-  const handleRecordPayment = async (invoiceId: string, cumulativeAmount: number) => {
+  const handleRecordPayment = async (
+    invoiceId: string, 
+    cumulativeAmount: number, 
+    details?: { paymentDate?: string; amount?: number; paymentMethod?: string; reference?: string; autoGenerateReceipt?: boolean }
+  ) => {
     const inv = tenantData.invoices.find(i => i.id === invoiceId);
     if (!inv) return;
     
     // 1. OPTIMISTIC UPDATE: Change local state immediately
-    const isFullyPaid = cumulativeAmount >= inv.total;
-    const nextStatus = isFullyPaid ? InvoiceStatus.Paid : (inv.status === InvoiceStatus.Paid ? InvoiceStatus.Sent : inv.status);
+    const isFullyPaid = cumulativeAmount >= (inv.total - 0.001);
+    const isPartiallyPaid = cumulativeAmount > 0 && !isFullyPaid;
+    const nextStatus = isFullyPaid 
+      ? InvoiceStatus.Paid 
+      : (isPartiallyPaid ? InvoiceStatus.PartiallyPaid : inv.status);
+
     const updatedInvoice: Invoice = { ...inv, amountPaid: cumulativeAmount, status: nextStatus };
     
     setTenantData(prev => ({
@@ -386,16 +394,44 @@ export default function App() {
         invoices: prev.invoices.map(i => i.id === invoiceId ? updatedInvoice : i)
     }));
 
+    // Record audit log
+    const paidDelta = details?.amount || (cumulativeAmount - (inv.amountPaid || 0));
+    await triggerAuditLog(
+      'RECORD_PAYMENT', 
+      invoiceId, 
+      `Recorded payment of ₦${paidDelta.toLocaleString()} via ${details?.paymentMethod || 'Manual Registry'} for invoice ${inv.invoiceNumber}`
+    );
+
     // 2. PERSISTENCE: Send to server
     setIsDataSyncing(true);
     try {
         await api.updateInvoice(updatedInvoice);
-        // Do NOT call forceSyncData immediately to avoid race condition flicker.
-        // The local state is now the "source of truth".
         setSyncError(null);
+
+        // Record payment transaction in API store if available
+        if (details?.paymentMethod) {
+          try {
+            await api.recordTransaction(inv.companyId || activeTenantId || "default", {
+              transactionId: `manual-${Date.now()}`,
+              type: 'invoice-payment',
+              invoiceId: inv.id,
+              amount: paidDelta,
+              status: 'successful',
+              paymentMethod: details.paymentMethod,
+              reference: details.reference,
+              paymentDate: details.paymentDate
+            });
+          } catch (txErr) {
+            console.warn("Failed to log transaction record:", txErr);
+          }
+        }
+
+        // Auto-generate receipt if requested
+        if (details?.autoGenerateReceipt) {
+          handleSendReceipt(invoiceId);
+        }
     } catch (e) {
         console.error("Payment sync failed:", e);
-        // If it failed, we must revert or re-sync
         if (activeTenantId) await forceSyncData(activeTenantId);
         alert("Failed to sync payment to cloud vault. Re-synchronizing...");
     } finally {
