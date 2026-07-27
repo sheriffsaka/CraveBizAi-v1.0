@@ -77,7 +77,7 @@ const BankAccountsManager: React.FC<BankAccountsManagerProps> = ({ companyId, ba
   };
 
   return (
-    <div className="bg-white p-8 rounded-[2rem] shadow-2xl border border-gray-100">
+    <div className="bg-white p-8 rounded-xl shadow-2xl border border-gray-100">
       <h3 className="text-xl font-black text-gray-800 border-b pb-4 mb-6 uppercase tracking-tighter">Settlement Routes</h3>
       
       {bankAccounts && bankAccounts.length > 0 ? (
@@ -691,7 +691,7 @@ const Settings: React.FC<SettingsProps> = ({ company, onSaveChanges, onInviteUse
         </div>
       )}
 
-      <div className="bg-white p-8 rounded-[2.5rem] shadow-2xl border border-gray-100">
+      <div className="bg-white p-8 rounded-xl shadow-2xl border border-gray-100">
         <h3 className="text-xl font-black text-gray-800 border-b pb-4 mb-6 uppercase tracking-tighter">Identity Profile</h3>
         <form className="space-y-6">
             <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
@@ -742,7 +742,7 @@ const Settings: React.FC<SettingsProps> = ({ company, onSaveChanges, onInviteUse
         isReadOnly={isReadOnly}
       />
 
-      <div className="bg-white p-8 rounded-[2.5rem] shadow-2xl border border-gray-100">
+      <div className="bg-white p-8 rounded-xl shadow-2xl border border-gray-100">
         <h3 id="workspace-subscription-section" className="text-xl font-black text-gray-800 border-b pb-4 mb-4 uppercase tracking-tighter">Workspace Subscription</h3>
         <p className="text-xs text-gray-500 mb-6 leading-relaxed">
           Select the subscription tier that matches your SME operational needs. Subscription limits reset at the start of each billing cycle.
@@ -917,7 +917,7 @@ const Settings: React.FC<SettingsProps> = ({ company, onSaveChanges, onInviteUse
       {/* Credits Refill Selection Overlay Modal */}
       {isRefillModalOpen && (
         <div className="fixed inset-0 bg-black/60 backdrop-blur-xs flex items-center justify-center z-50 p-4">
-          <div className="bg-white rounded-[2.5rem] w-full max-w-md p-8 border border-gray-100 shadow-2xl relative animate-in fade-in zoom-in duration-150">
+          <div className="bg-white rounded-2xl w-full max-w-md p-8 border border-gray-100 shadow-2xl relative animate-in fade-in zoom-in duration-150">
             <h3 className="text-xl font-black text-gray-900 uppercase tracking-tighter mb-2">Purchase AI Credits</h3>
             <p className="text-xs text-gray-500 mb-6 leading-relaxed font-medium">
               Select an AI Credit Refill package to recharge your workspace. Refill packages never expire and are consumed after regular plan credits.
@@ -972,7 +972,7 @@ const Settings: React.FC<SettingsProps> = ({ company, onSaveChanges, onInviteUse
         </div>
       )}
 
-      <div className="bg-white p-8 rounded-[2.5rem] shadow-2xl border border-gray-100">
+      <div className="bg-white p-8 rounded-xl shadow-2xl border border-gray-100">
         <h3 className="text-xl font-black text-gray-800 border-b pb-4 mb-6 uppercase tracking-tighter">Permissions Registry</h3>
         {!isReadOnly && (
           <div className="flex justify-end mb-6">
@@ -1100,13 +1100,13 @@ const Settings: React.FC<SettingsProps> = ({ company, onSaveChanges, onInviteUse
       </div>
 
       {/* Real-time Audit Logs Panel */}
-      <div className="bg-white p-8 rounded-[2.5rem] shadow-2xl border border-gray-100">
+      <div className="bg-white p-8 rounded-xl shadow-2xl border border-gray-100">
         <h3 className="text-xl font-black text-gray-800 border-b pb-4 mb-6 uppercase tracking-tighter flex items-center gap-2">
           <Icon name="activity" className="w-5 h-5 text-primary-600" />
           Workspace Audit Logs
         </h3>
         {auditLogs && auditLogs.length > 0 ? (
-          <div className="overflow-hidden border border-gray-100 rounded-3xl">
+          <div className="overflow-hidden border border-gray-100 rounded-xl">
             <div className="overflow-y-auto max-h-96 divide-y divide-gray-50">
               {auditLogs.map(log => (
                 <div key={log.id} className="p-4 hover:bg-gray-50 transition-colors flex flex-col sm:flex-row sm:items-center justify-between gap-2">

@@ -153,11 +153,11 @@ export const GlobalFilterBar: React.FC<GlobalFilterBarProps> = ({
   };
 
   return (
-    <div id="global-filter-system" className="bg-white p-5 md:p-6 rounded-[2.5rem] shadow-xl border border-gray-100/90 space-y-4 print-hidden transition-all">
+    <div id="global-filter-system" className="bg-white p-5 md:p-6 rounded-xl shadow-xl border border-gray-100/90 space-y-4 print-hidden transition-all">
       {/* Top Header Row with Mobile Toggle */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
         <div className="flex items-center space-x-3">
-          <div className="p-2.5 bg-primary-50 text-primary-600 rounded-2xl border border-primary-100 flex items-center justify-center">
+          <div className="p-2.5 bg-primary-50 text-primary-600 rounded-lg border border-primary-100 flex items-center justify-center">
             <SlidersHorizontal className="w-5 h-5" />
           </div>
           <div>
@@ -179,7 +179,7 @@ export const GlobalFilterBar: React.FC<GlobalFilterBarProps> = ({
 
         {/* Status Count Badge & Mobile Expand Button */}
         <div className="flex items-center space-x-3">
-          <div className="text-xs font-bold bg-gray-50 border border-gray-200/80 px-3 py-1.5 rounded-xl text-gray-700 flex items-center space-x-1">
+          <div className="text-xs font-bold bg-gray-50 border border-gray-200/80 px-3 py-1.5 rounded-lg text-gray-700 flex items-center space-x-1">
             <span className="text-gray-400 font-extrabold uppercase text-[10px]">Showing:</span>
             <span className="font-black text-primary-600">{filteredInvoicesCount}</span>
             <span className="text-gray-400">/</span>
@@ -189,7 +189,7 @@ export const GlobalFilterBar: React.FC<GlobalFilterBarProps> = ({
 
           <button
             onClick={() => setIsMobileExpanded(!isMobileExpanded)}
-            className="sm:hidden flex items-center space-x-1.5 bg-gray-100 hover:bg-gray-200 text-gray-800 text-xs font-black px-3 py-1.5 rounded-xl transition-all cursor-pointer"
+            className="sm:hidden flex items-center space-x-1.5 bg-gray-100 hover:bg-gray-200 text-gray-800 text-xs font-black px-3 py-1.5 rounded-lg transition-all cursor-pointer"
           >
             <Filter className="w-4 h-4 text-primary-600" />
             <span>Filters</span>
@@ -216,7 +216,7 @@ export const GlobalFilterBar: React.FC<GlobalFilterBarProps> = ({
             value={filter.searchQuery}
             onChange={(e) => onFilterChange({ ...filter, searchQuery: e.target.value })}
             placeholder="Search invoice #, client, item..."
-            className="w-full pl-10 pr-8 py-2.5 bg-gray-50/80 border border-gray-200/80 rounded-2xl text-xs font-bold text-gray-800 placeholder-gray-400 focus:bg-white focus:border-primary-500 focus:outline-none transition-all shadow-inner"
+            className="w-full pl-10 pr-8 py-2.5 bg-gray-50/80 border border-gray-200/80 rounded-lg text-xs font-bold text-gray-800 placeholder-gray-400 focus:bg-white focus:border-primary-500 focus:outline-none transition-all shadow-inner"
           />
           {filter.searchQuery && (
             <button
@@ -230,7 +230,7 @@ export const GlobalFilterBar: React.FC<GlobalFilterBarProps> = ({
 
         {/* Date Range Select */}
         <div className="relative">
-          <div className="flex items-center bg-gray-50/80 border border-gray-200/80 rounded-2xl px-3 py-1.5 focus-within:bg-white focus-within:border-primary-500 transition-all shadow-inner">
+          <div className="flex items-center bg-gray-50/80 border border-gray-200/80 rounded-lg px-3 py-1.5 focus-within:bg-white focus-within:border-primary-500 transition-all shadow-inner">
             <Calendar className="w-4 h-4 text-gray-400 mr-2 shrink-0" />
             <select
               value={filter.dateRange}
@@ -257,7 +257,7 @@ export const GlobalFilterBar: React.FC<GlobalFilterBarProps> = ({
               setIsServiceOpen(false);
               setIsStatusOpen(false);
             }}
-            className={`w-full flex items-center justify-between bg-gray-50/80 border px-3.5 py-2.5 rounded-2xl text-xs font-bold text-left transition-all cursor-pointer ${
+            className={`w-full flex items-center justify-between bg-gray-50/80 border px-3.5 py-2.5 rounded-lg text-xs font-bold text-left transition-all cursor-pointer ${
               filter.selectedClientIds.length > 0
                 ? 'border-primary-400 bg-primary-50/30 text-primary-900'
                 : 'border-gray-200/80 text-gray-700 hover:bg-gray-100/60'
@@ -275,14 +275,14 @@ export const GlobalFilterBar: React.FC<GlobalFilterBarProps> = ({
           </button>
 
           {isClientOpen && (
-            <div className="absolute z-50 left-0 right-0 mt-2 bg-white rounded-2xl shadow-2xl border border-gray-100 p-3 space-y-2 animate-in fade-in slide-in-from-top-2">
+            <div className="absolute z-50 left-0 right-0 mt-2 bg-white rounded-xl shadow-2xl border border-gray-100 p-3 space-y-2 animate-in fade-in slide-in-from-top-2">
               <div className="relative">
                 <input
                   type="text"
                   value={clientSearch}
                   onChange={(e) => setClientSearch(e.target.value)}
                   placeholder="Search clients..."
-                  className="w-full pl-8 pr-3 py-1.5 bg-gray-50 border border-gray-200 rounded-xl text-xs font-bold outline-none focus:border-primary-500"
+                  className="w-full pl-8 pr-3 py-1.5 bg-gray-50 border border-gray-200 rounded-lg text-xs font-bold outline-none focus:border-primary-500"
                 />
                 <Search className="w-3.5 h-3.5 text-gray-400 absolute left-2.5 top-2.5" />
               </div>

@@ -406,7 +406,7 @@ Operational Dataset: ${dataDump}`;
         </button>
       </div>
 
-      <div className="bg-white p-8 rounded-[2.5rem] shadow-2xl border border-gray-100 transition-shadow">
+      <div className="bg-white p-8 rounded-xl shadow-2xl border border-gray-100 transition-shadow">
           <h3 className="text-xl font-black text-gray-800 mb-6 uppercase tracking-tighter flex items-center gap-3">
               <svg className="w-6 h-6 text-primary-600" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M13 10V3L4 14h7v7l9-11h-7z"></path></svg>
               AI Performance Analysis
@@ -466,7 +466,7 @@ Operational Dataset: ${dataDump}`;
           </form>
 
           {aiReportResponse && (
-              <div className="mt-8 bg-slate-50 border border-slate-200 rounded-[2rem] p-8 shadow-inner animate-in slide-in-from-top-4">
+              <div className="mt-8 bg-slate-50 border border-slate-200 rounded-xl p-8 shadow-inner animate-in slide-in-from-top-4">
                   <div className="flex items-center justify-between mb-6 pb-4 border-b border-slate-200">
                       <div>
                           <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest block mb-0.5">EXECUTIVE PERFORMANCE DOSSIER</span>
@@ -510,7 +510,7 @@ Operational Dataset: ${dataDump}`;
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
-        <div className="bg-white p-8 rounded-[2.5rem] shadow-2xl border border-gray-100">
+        <div className="bg-white p-8 rounded-xl shadow-2xl border border-gray-100">
           <h3 className="text-xl font-black text-gray-800 mb-6 uppercase tracking-tighter">Temporal Revenue Trend</h3>
           <div style={{ width: '100%', height: 300 }}>
             <ResponsiveContainer width="100%" height="100%" minWidth={0}>
@@ -525,7 +525,7 @@ Operational Dataset: ${dataDump}`;
           </div>
         </div>
 
-        <div className="bg-white p-8 rounded-[2.5rem] shadow-2xl border border-gray-100">
+        <div className="bg-white p-8 rounded-xl shadow-2xl border border-gray-100">
           <h3 className="text-xl font-black text-gray-800 mb-6 uppercase tracking-tighter">Status Distribution</h3>
            <div style={{ width: '100%', height: 300 }}>
             <ResponsiveContainer width="100%" height="100%" minWidth={0}>
@@ -544,7 +544,7 @@ Operational Dataset: ${dataDump}`;
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
-        <div className="bg-white p-8 rounded-[2.5rem] shadow-2xl border border-gray-100">
+        <div className="bg-white p-8 rounded-xl shadow-2xl border border-gray-100">
           <h3 className="text-xl font-black text-gray-800 mb-6 uppercase tracking-tighter">Client Lifetime Value (LTV)</h3>
           {clientLifetimeValue.length > 0 ? (
             <div style={{ width: '100%', height: 300 }}>
@@ -563,7 +563,7 @@ Operational Dataset: ${dataDump}`;
           )}
         </div>
 
-        <div className="bg-white p-8 rounded-[2.5rem] shadow-2xl border border-gray-100">
+        <div className="bg-white p-8 rounded-xl shadow-2xl border border-gray-100">
           <h3 className="text-xl font-black text-gray-800 mb-6 uppercase tracking-tighter">Service Revenue Contribution</h3>
           {revenueByService.length > 0 ? (
             <div style={{ width: '100%', height: 300 }}>
@@ -586,7 +586,7 @@ Operational Dataset: ${dataDump}`;
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
-        <div className="bg-white p-8 rounded-[2.5rem] shadow-2xl border border-gray-100">
+        <div className="bg-white p-8 rounded-xl shadow-2xl border border-gray-100">
           <h3 className="text-xl font-black text-gray-800 mb-6 uppercase tracking-tighter">Outstanding / Overdue Aging Bracket</h3>
           <div style={{ width: '100%', height: 300 }}>
             <ResponsiveContainer width="100%" height="100%" minWidth={0}>
@@ -601,7 +601,7 @@ Operational Dataset: ${dataDump}`;
           </div>
         </div>
 
-        <div className="bg-white p-8 rounded-[2.5rem] shadow-2xl border border-gray-100 flex flex-col justify-between">
+        <div className="bg-white p-8 rounded-xl shadow-2xl border border-gray-100 flex flex-col justify-between">
           <div>
             <h3 className="text-xl font-black text-gray-800 mb-6 uppercase tracking-tighter">Pipeline Conversion & Ticket Sizes</h3>
             <div className="space-y-6">

@@ -425,6 +425,7 @@ class CraveBizApi {
       items: (inv.invoice_items || []).map((item: any) => ({
         id: item.id, serviceId: item.service_id, description: item.description, quantity: item.quantity, price: Number(item.price),
         discount: Number(item.discount || 0),
+        directCost: item.direct_cost !== undefined && item.direct_cost !== null ? Number(item.direct_cost) : Number(item.directCost || 0),
         billingCycle: item.billing_cycle,
         periodStartDate: item.period_start_date,
         periodEndDate: item.period_end_date,
@@ -564,6 +565,7 @@ class CraveBizApi {
       items: (inv.invoice_items || []).map((item: any) => ({
         id: item.id, serviceId: item.service_id, description: item.description, quantity: item.quantity, price: Number(item.price),
         discount: Number(item.discount || 0),
+        directCost: item.direct_cost !== undefined && item.direct_cost !== null ? Number(item.direct_cost) : Number(item.directCost || 0),
         billingCycle: item.billing_cycle,
         periodStartDate: item.period_start_date,
         periodEndDate: item.period_end_date,
@@ -628,6 +630,7 @@ class CraveBizApi {
             quantity: item.quantity || 1,
             price: item.price || 0,
             discount: item.discount || 0,
+            direct_cost: Number(item.directCost || 0),
             billing_cycle: item.billingCycle,
             period_start_date: item.periodStartDate,
             period_end_date: item.periodEndDate,
@@ -722,6 +725,7 @@ class CraveBizApi {
             quantity: item.quantity || 1,
             price: item.price || 0,
             discount: item.discount || 0,
+            direct_cost: Number(item.directCost || 0),
             billing_cycle: item.billingCycle,
             period_start_date: item.periodStartDate,
             period_end_date: item.periodEndDate,
@@ -913,7 +917,8 @@ class CraveBizApi {
       packageName: s.package_name || s.packageName || '',
       category: s.category,
       description: s.description,
-      price: Number(s.price)
+      price: Number(s.price),
+      directCost: s.direct_cost !== undefined && s.direct_cost !== null ? Number(s.direct_cost) : (s.directCost !== undefined && s.directCost !== null ? Number(s.directCost) : 0)
     }));
   }
 
@@ -926,37 +931,40 @@ class CraveBizApi {
       package_name: service.packageName || '',
       category: service.category,
       description: service.description,
-      price: service.price
+      price: service.price,
+      direct_cost: service.directCost ?? 0
     };
-    try {
-      const { data, error } = await supabase.from('services').insert(payload).select().maybeSingle();
-      if (!error && data) {
-        return {
-          id: data.id,
-          companyId: data.company_id,
-          name: data.name,
-          packageName: data.package_name || service.packageName || '',
-          category: data.category,
-          description: data.description,
-          price: Number(data.price)
-        };
+
+    const performInsert = async (currentPayload: any): Promise<any> => {
+      const { data, error } = await supabase.from('services').insert(currentPayload).select().maybeSingle();
+      if (error) {
+        const problematicColumn = extractMissingColumnName(error.message || error.details || '');
+        if (problematicColumn && problematicColumn in currentPayload) {
+          console.warn(`[createService] Removing missing column '${problematicColumn}' and retrying...`);
+          const { [problematicColumn]: _, ...newPayload } = currentPayload;
+          return performInsert(newPayload);
+        }
+        throw error;
       }
-    } catch (dbErr) {
-      console.warn("createService with package_name column failed, trying fallback:", dbErr);
-    }
-    // Fallback if package_name column is missing in DB schema
-    delete payload.package_name;
-    const { data, error } = await supabase.from('services').insert(payload).select().maybeSingle();
-    if (error) throw error;
-    return {
-      id: data?.id || newId,
-      companyId: service.companyId,
-      name: service.name,
-      packageName: service.packageName || '',
-      category: service.category,
-      description: service.description,
-      price: service.price
+      return data;
     };
+
+    try {
+      const data = await performInsert(payload);
+      return {
+        id: data?.id || newId,
+        companyId: service.companyId,
+        name: service.name,
+        packageName: service.packageName || '',
+        category: service.category,
+        description: service.description,
+        price: service.price,
+        directCost: data?.direct_cost !== undefined && data?.direct_cost !== null ? Number(data.direct_cost) : Number(service.directCost || 0)
+      };
+    } catch (dbErr) {
+      console.warn("createService failed, saving fallback:", dbErr);
+      throw dbErr;
+    }
   }
 
   async updateService(service: Service): Promise<void> {
@@ -965,17 +973,24 @@ class CraveBizApi {
       package_name: service.packageName || '',
       category: service.category,
       description: service.description,
-      price: service.price
+      price: service.price,
+      direct_cost: service.directCost ?? 0
     };
-    try {
-      const { error } = await supabase.from('services').update(updateData).eq('id', service.id);
-      if (!error) return;
-    } catch (dbErr) {
-      console.warn("updateService with package_name column failed, trying fallback:", dbErr);
-    }
-    delete updateData.package_name;
-    const { error } = await supabase.from('services').update(updateData).eq('id', service.id);
-    if (error) throw error;
+
+    const performUpdate = async (currentPayload: any): Promise<void> => {
+      const { error } = await supabase.from('services').update(currentPayload).eq('id', service.id);
+      if (error) {
+        const problematicColumn = extractMissingColumnName(error.message || error.details || '');
+        if (problematicColumn && problematicColumn in currentPayload) {
+          console.warn(`[updateService] Removing missing column '${problematicColumn}' and retrying...`);
+          const { [problematicColumn]: _, ...newPayload } = currentPayload;
+          return performUpdate(newPayload);
+        }
+        throw error;
+      }
+    };
+
+    await performUpdate(updateData);
   }
 
   async deleteService(serviceId: string): Promise<void> {

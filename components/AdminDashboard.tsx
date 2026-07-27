@@ -573,7 +573,7 @@ Admin Query: ${activePrompt}
     return (
       <div className="space-y-8 font-sans">
         {/* Banner with explanations */}
-        <div className="bg-slate-900 text-slate-100 p-8 rounded-[3rem] border border-slate-800 shadow-2xl relative overflow-hidden">
+        <div className="bg-slate-900 text-slate-100 p-8 rounded-xl border border-slate-800 shadow-2xl relative overflow-hidden">
           <div className="absolute top-0 right-0 w-48 h-48 bg-primary-500/10 rounded-full -mr-24 -mt-24"></div>
           <div className="max-w-3xl">
             <span className="text-[10px] font-black text-primary-400 uppercase tracking-widest bg-primary-950/40 border border-primary-900 px-3 py-1.5 rounded-full inline-block mb-4">
@@ -609,7 +609,7 @@ Admin Query: ${activePrompt}
         </div>
 
         {/* Search and interactive table */}
-        <div className="bg-white p-8 rounded-[3rem] shadow-2xl border border-gray-100">
+        <div className="bg-white p-8 rounded-xl shadow-2xl border border-gray-100">
           <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 mb-6">
             <div>
               <h3 className="text-lg font-black text-gray-800 uppercase tracking-tight">Active Workspaces List</h3>
@@ -770,7 +770,7 @@ Admin Query: ${activePrompt}
         </div>
 
         {/* Global Plan Configuration Panel */}
-        <div className="bg-white p-8 rounded-[3rem] shadow-2xl border border-gray-100 mt-8">
+        <div className="bg-white p-8 rounded-xl shadow-2xl border border-gray-100 mt-8">
           <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 mb-6">
             <div>
               <h3 className="text-lg font-black text-gray-800 uppercase tracking-tight">Standard Plan Limits & Global Pricing Table</h3>
@@ -950,7 +950,7 @@ Admin Query: ${activePrompt}
         </div>
 
         {/* Global AI Credit Refill Packs Panel */}
-        <div className="bg-white p-8 rounded-[3rem] shadow-2xl border border-gray-100 mt-8">
+        <div className="bg-white p-8 rounded-xl shadow-2xl border border-gray-100 mt-8">
           <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 mb-6">
             <div>
               <h3 className="text-lg font-black text-gray-800 uppercase tracking-tight">Global AI Credit Refill Packs</h3>
@@ -1029,7 +1029,7 @@ Admin Query: ${activePrompt}
         </div>
 
         {/* Super-Admin AI Credit Ledger Logs & Billing Calculator */}
-        <div className="bg-white p-8 rounded-[3rem] shadow-2xl border border-gray-100 mt-8">
+        <div className="bg-white p-8 rounded-xl shadow-2xl border border-gray-100 mt-8">
           <div className="flex flex-col lg:flex-row justify-between items-start lg:items-center gap-6 mb-8">
             <div>
               <span className="text-[9px] font-black text-primary-600 uppercase tracking-widest bg-primary-50 px-2.5 py-1 rounded-md inline-block mb-2">
@@ -1204,7 +1204,7 @@ Admin Query: ${activePrompt}
       <div className="space-y-8 animate-in fade-in duration-300">
         {/* Transaction Summary Cards */}
         <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
-          <div className="bg-white p-8 rounded-[2.5rem] shadow-xl border border-gray-100 flex items-center justify-between">
+          <div className="bg-white p-8 rounded-xl shadow-xl border border-gray-100 flex items-center justify-between">
             <div>
               <p className="text-[10px] font-black text-gray-400 uppercase tracking-widest">Total Volume (₦)</p>
               <h4 className="text-2xl font-black text-gray-900 mt-2 select-all">₦{totalVolume.toLocaleString()}</h4>
@@ -1215,7 +1215,7 @@ Admin Query: ${activePrompt}
             </div>
           </div>
 
-          <div className="bg-white p-8 rounded-[2.5rem] shadow-xl border border-gray-100 flex items-center justify-between">
+          <div className="bg-white p-8 rounded-xl shadow-xl border border-gray-100 flex items-center justify-between">
             <div>
               <p className="text-[10px] font-black text-gray-400 uppercase tracking-widest">Successful Settlements</p>
               <h4 className="text-2xl font-black text-emerald-600 mt-2 select-all">{successfulTxCount}</h4>
@@ -1226,7 +1226,7 @@ Admin Query: ${activePrompt}
             </div>
           </div>
 
-          <div className="bg-white p-8 rounded-[2.5rem] shadow-xl border border-gray-100 flex items-center justify-between">
+          <div className="bg-white p-8 rounded-xl shadow-xl border border-gray-100 flex items-center justify-between">
             <div>
               <p className="text-[10px] font-black text-gray-400 uppercase tracking-widest">Failed Attempts</p>
               <h4 className="text-2xl font-black text-rose-600 mt-2 select-all">{failedTxCount}</h4>
@@ -1237,7 +1237,7 @@ Admin Query: ${activePrompt}
             </div>
           </div>
 
-          <div className="bg-white p-8 rounded-[2.5rem] shadow-xl border border-gray-100 flex items-center justify-between">
+          <div className="bg-white p-8 rounded-xl shadow-xl border border-gray-100 flex items-center justify-between">
             <div>
               <p className="text-[10px] font-black text-gray-400 uppercase tracking-widest">Failure Rate Index</p>
               <h4 className="text-2xl font-black text-gray-800 mt-2 select-all">{failureRate}%</h4>
@@ -1250,7 +1250,7 @@ Admin Query: ${activePrompt}
         </div>
 
         {/* Central Filters and Table Container */}
-        <div className="bg-white p-8 rounded-[3rem] shadow-2xl border border-gray-100">
+        <div className="bg-white p-8 rounded-xl shadow-2xl border border-gray-100">
           <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-6 pb-6 border-b border-gray-100">
             <div>
               <h3 className="text-xl font-black uppercase tracking-tighter text-gray-800 flex items-center gap-2">
@@ -1422,7 +1422,7 @@ Admin Query: ${activePrompt}
         </div>
 
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
-          <div className="bg-white p-8 rounded-[2.5rem] shadow-xl border border-gray-100">
+          <div className="bg-white p-8 rounded-xl shadow-xl border border-gray-100">
             <h3 className="text-lg font-black mb-6 uppercase tracking-tighter">Transaction By Month</h3>
             <div className="h-64">
               {stats.chartData.length > 0 ? (
@@ -1446,7 +1446,7 @@ Admin Query: ${activePrompt}
             </div>
           </div>
 
-          <div className="bg-white p-8 rounded-[2.5rem] shadow-xl border border-gray-100">
+          <div className="bg-white p-8 rounded-xl shadow-xl border border-gray-100">
             <h3 className="text-lg font-black mb-6 uppercase tracking-tighter">Invoices By Months</h3>
             <div className="h-64">
               {stats.chartData.length > 0 ? (
@@ -1471,17 +1471,17 @@ Admin Query: ${activePrompt}
           </div>
         </div>
 
-        <div className="bg-white p-8 rounded-[2.5rem] shadow-2xl border border-gray-100 relative overflow-hidden">
+        <div className="bg-white p-8 rounded-xl shadow-2xl border border-gray-100 relative overflow-hidden">
           <div className="absolute top-0 right-0 w-32 h-32 bg-primary-50 rounded-full -mr-16 -mt-16 opacity-50"></div>
           <h3 className="text-xl font-black mb-6 uppercase tracking-tighter flex items-center gap-3">
               <svg className="w-6 h-6 text-primary-600" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M13 10V3L4 14h7v7l9-11h-7z"></path></svg>
               AI Platform Intelligence
           </h3>
           <form onSubmit={handleAskAI} className="flex gap-4">
-            <input value={query} onChange={e => setQuery(e.target.value)} className="flex-1 border-2 border-gray-100 rounded-2xl px-6 py-4 outline-none focus:border-primary-500 transition-all font-medium" placeholder="Analyze platform growth or revenue trends..." />
-            <button className="bg-primary-600 text-white px-10 py-4 rounded-2xl font-black uppercase tracking-widest text-xs shadow-xl hover:bg-primary-700 transition-all active:scale-95 disabled:bg-gray-300" disabled={loading}>{loading ? 'Consulting...' : 'Run Analysis'}</button>
+            <input value={query} onChange={e => setQuery(e.target.value)} className="flex-1 border-2 border-gray-100 rounded-xl px-6 py-4 outline-none focus:border-primary-500 transition-all font-medium" placeholder="Analyze platform growth or revenue trends..." />
+            <button className="bg-primary-600 text-white px-10 py-4 rounded-xl font-black uppercase tracking-widest text-xs shadow-xl hover:bg-primary-700 transition-all active:scale-95 disabled:bg-gray-300" disabled={loading}>{loading ? 'Consulting...' : 'Run Analysis'}</button>
           </form>
-          {response && <div className="mt-6 p-6 bg-primary-50 rounded-2xl border border-primary-100 text-sm font-medium leading-relaxed italic text-primary-900 animate-in slide-in-from-top-4">{response}</div>}
+          {response && <div className="mt-6 p-6 bg-primary-50 rounded-xl border border-primary-100 text-sm font-medium leading-relaxed italic text-primary-900 animate-in slide-in-from-top-4">{response}</div>}
         </div>
       </div>
     );
@@ -1518,13 +1518,13 @@ Admin Query: ${activePrompt}
       <div className="space-y-8">
         {/* Compliance Hero Cards */}
         <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
-          <div className="bg-slate-900 text-slate-100 p-6 rounded-[2rem] border border-slate-800 shadow-xl relative overflow-hidden">
+          <div className="bg-slate-900 text-slate-100 p-6 rounded-xl border border-slate-800 shadow-xl relative overflow-hidden">
             <div className="absolute top-0 right-0 w-24 h-24 bg-blue-500/10 rounded-full -mr-12 -mt-12"></div>
             <p className="text-[10px] font-black text-blue-400 uppercase tracking-widest mb-1">Archived Vaults</p>
             <h4 className="text-3xl font-black text-white tracking-tighter">{archivedProjects.length}</h4>
             <p className="text-2xs text-slate-400 mt-2 font-medium">Secured across multi-tenant nodes</p>
           </div>
-          <div className="bg-slate-900 text-slate-100 p-6 rounded-[2rem] border border-slate-800 shadow-xl relative overflow-hidden">
+          <div className="bg-slate-900 text-slate-100 p-6 rounded-xl border border-slate-800 shadow-xl relative overflow-hidden">
             <div className="absolute top-0 right-0 w-24 h-24 bg-emerald-500/10 rounded-full -mr-12 -mt-12"></div>
             <p className="text-[10px] font-black text-emerald-400 uppercase tracking-widest mb-1">Seal Status</p>
             <h4 className="text-3xl font-black text-white tracking-tighter">
@@ -1532,13 +1532,13 @@ Admin Query: ${activePrompt}
             </h4>
             <p className="text-2xs text-slate-400 mt-2 font-medium">Cryptographic validation state</p>
           </div>
-          <div className="bg-slate-900 text-slate-100 p-6 rounded-[2rem] border border-slate-800 shadow-xl relative overflow-hidden">
+          <div className="bg-slate-900 text-slate-100 p-6 rounded-xl border border-slate-800 shadow-xl relative overflow-hidden">
             <div className="absolute top-0 right-0 w-24 h-24 bg-amber-500/10 rounded-full -mr-12 -mt-12"></div>
             <p className="text-[10px] font-black text-amber-400 uppercase tracking-widest mb-1">Audit Ledger Size</p>
             <h4 className="text-3xl font-black text-white tracking-tighter">{allAuditLogs.length}</h4>
             <p className="text-2xs text-slate-400 mt-2 font-medium">Recorded regulatory security events</p>
           </div>
-          <div className="bg-slate-900 text-slate-100 p-6 rounded-[2rem] border border-slate-800 shadow-xl relative overflow-hidden">
+          <div className="bg-slate-900 text-slate-100 p-6 rounded-xl border border-slate-800 shadow-xl relative overflow-hidden">
             <div className="absolute top-0 right-0 w-24 h-24 bg-purple-500/10 rounded-full -mr-12 -mt-12"></div>
             <p className="text-[10px] font-black text-purple-400 uppercase tracking-widest mb-1">Archived Asset Value</p>
             <h4 className="text-3xl font-black text-white tracking-tighter">₦{totalArchivedValue.toLocaleString()}</h4>
@@ -1548,7 +1548,7 @@ Admin Query: ${activePrompt}
 
         {/* Dynamic Verification Scanner Block */}
         <div className="grid grid-cols-1 lg:grid-cols-12 gap-8">
-          <div className="lg:col-span-4 bg-slate-950 p-8 rounded-[2.5rem] border border-slate-800 shadow-2xl relative overflow-hidden text-slate-100 flex flex-col justify-between">
+          <div className="lg:col-span-4 bg-slate-950 p-8 rounded-xl border border-slate-800 shadow-2xl relative overflow-hidden text-slate-100 flex flex-col justify-between">
             <div className="absolute top-0 right-0 w-32 h-32 bg-primary-500/5 rounded-full -mr-16 -mt-16"></div>
             <div>
               <div className="flex items-center gap-2 mb-4">
@@ -1588,7 +1588,7 @@ Admin Query: ${activePrompt}
           </div>
 
           {/* Unified Compliance Vault Table */}
-          <div className="lg:col-span-8 bg-white p-8 rounded-[2.5rem] shadow-2xl border border-gray-100 flex flex-col justify-between">
+          <div className="lg:col-span-8 bg-white p-8 rounded-xl shadow-2xl border border-gray-100 flex flex-col justify-between">
             <div>
               <div className="flex justify-between items-center mb-6">
                 <div>
@@ -1665,7 +1665,7 @@ Admin Query: ${activePrompt}
                   </table>
                 </div>
               ) : (
-                <div className="py-16 text-center border border-dashed border-gray-100 rounded-3xl bg-gray-50/20">
+                <div className="py-16 text-center border border-dashed border-gray-100 rounded-xl bg-gray-50/20">
                   <p className="text-sm font-bold text-gray-400 italic">No SME tenants have currently archived compliance ledgers on this platform.</p>
                 </div>
               )}
@@ -1674,7 +1674,7 @@ Admin Query: ${activePrompt}
         </div>
 
         {/* AI Compliance Risk Analyst */}
-        <div className="bg-white p-8 rounded-[2.5rem] shadow-2xl border border-gray-100 relative overflow-hidden">
+        <div className="bg-white p-8 rounded-xl shadow-2xl border border-gray-100 relative overflow-hidden">
           <div className="absolute top-0 right-0 w-32 h-32 bg-primary-50 rounded-full -mr-16 -mt-16 opacity-50"></div>
           <h3 className="text-xl font-black mb-4 uppercase tracking-tighter flex items-center gap-3 text-gray-800">
             <svg className="w-6 h-6 text-primary-600" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19.428 15.428a2 2 0 00-1.022-.547l-2.387-.477a6 6 0 00-3.86.517l-.318.158a6 6 0 01-3.86.517L6.05 15.21a2 2 0 00-1.806.547M8 4h8l-1 1v5.172a2 2 0 00.586 1.414l5 5c1.26 1.26.367 3.414-1.415 3.414H4.828c-1.782 0-2.674-2.154-1.414-3.414l5-5A2 2 0 009 10.172V5L8 4z"></path></svg>
@@ -1713,12 +1713,12 @@ Admin Query: ${activePrompt}
             <input 
               value={query} 
               onChange={e => setQuery(e.target.value)} 
-              className="flex-1 border-2 border-gray-100 rounded-2xl px-6 py-4 outline-none focus:border-primary-500 transition-all font-medium text-sm text-gray-800" 
+              className="flex-1 border-2 border-gray-100 rounded-xl px-6 py-4 outline-none focus:border-primary-500 transition-all font-medium text-sm text-gray-800" 
               placeholder="Ask the AI Auditor anything about platform safety, regulatory posture, or log trail analysis..." 
             />
             <button 
               type="submit"
-              className="bg-primary-600 text-white px-10 py-4 rounded-2xl font-black uppercase tracking-widest text-xs shadow-xl hover:bg-primary-700 transition-all active:scale-95 disabled:bg-gray-300" 
+              className="bg-primary-600 text-white px-10 py-4 rounded-xl font-black uppercase tracking-widest text-xs shadow-xl hover:bg-primary-700 transition-all active:scale-95 disabled:bg-gray-300" 
               disabled={aiLoading}
             >
               {aiLoading ? 'Auditing Vaults...' : 'Execute AI Audit'}
@@ -1726,7 +1726,7 @@ Admin Query: ${activePrompt}
           </form>
 
           {aiResponse && (
-            <div className="mt-6 p-6 bg-slate-900 rounded-3xl border border-slate-800 text-slate-100 text-xs font-mono leading-relaxed max-h-96 overflow-y-auto whitespace-pre-wrap animate-in slide-in-from-top-4">
+            <div className="mt-6 p-6 bg-slate-900 rounded-xl border border-slate-800 text-slate-100 text-xs font-mono leading-relaxed max-h-96 overflow-y-auto whitespace-pre-wrap animate-in slide-in-from-top-4">
               <div className="flex justify-between items-center mb-4 border-b border-slate-800 pb-3">
                 <span className="text-[10px] font-black tracking-widest text-primary-400 uppercase">🛡️ SENIOR AUDITOR INSIGHT REPORT</span>
                 <span className="text-[9px] text-slate-500 font-bold">{new Date().toUTCString()}</span>
@@ -1737,7 +1737,7 @@ Admin Query: ${activePrompt}
         </div>
 
         {/* Global Audit Trails Explorer */}
-        <div className="bg-white p-8 rounded-[3rem] shadow-2xl border border-gray-100">
+        <div className="bg-white p-8 rounded-xl shadow-2xl border border-gray-100">
           <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-6 border-b pb-6 border-gray-100">
             <div>
               <h3 className="text-xl font-black uppercase tracking-tighter text-gray-800 flex items-center gap-2">
@@ -1878,7 +1878,7 @@ Admin Query: ${activePrompt}
       {activeTab === 'transactions' && renderTransactions()}
 
       {activeTab === 'companies' && (
-        <div className="bg-white rounded-3xl shadow-xl border border-gray-100 overflow-hidden">
+        <div className="bg-white rounded-xl shadow-xl border border-gray-100 overflow-hidden">
           <div className="p-6 border-b font-black uppercase text-xs tracking-widest text-gray-400 bg-gray-50/50">Company Registry</div>
           <CompaniesTable 
             companies={companies} 
@@ -1893,7 +1893,7 @@ Admin Query: ${activePrompt}
       )}
 
       {activeTab === 'users' && (
-        <div className="bg-white rounded-3xl shadow-xl border border-gray-100 overflow-hidden">
+        <div className="bg-white rounded-xl shadow-xl border border-gray-100 overflow-hidden">
           <div className="p-6 border-b font-black uppercase text-xs tracking-widest text-gray-400 bg-gray-50/50">User Access Management</div>
           <UsersTable 
             users={users} 
@@ -1928,21 +1928,21 @@ Admin Query: ${activePrompt}
       {activeTab === 'reports' && (
         <div className="space-y-8">
            <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-              <div className="bg-emerald-50 p-8 rounded-[2rem] border border-emerald-100">
+              <div className="bg-emerald-50 p-8 rounded-xl border border-emerald-100">
                   <p className="text-[10px] font-black text-emerald-600 uppercase tracking-widest mb-1">Total Revenue</p>
                   <h4 className="text-3xl font-black text-emerald-900 tracking-tighter">₦{stats.totalRevenue.toLocaleString()}</h4>
               </div>
-              <div className="bg-orange-50 p-8 rounded-[2rem] border border-orange-100">
+              <div className="bg-orange-50 p-8 rounded-xl border border-orange-100">
                   <p className="text-[10px] font-black text-orange-600 uppercase tracking-widest mb-1">Pending Invoices</p>
                   <h4 className="text-3xl font-black text-orange-900 tracking-tighter">₦{stats.pendingRevenue.toLocaleString()}</h4>
               </div>
-              <div className="bg-blue-50 p-8 rounded-[2rem] border border-blue-100">
+              <div className="bg-blue-50 p-8 rounded-xl border border-blue-100">
                   <p className="text-[10px] font-black text-blue-600 uppercase tracking-widest mb-1">Total SME Nodes</p>
                   <h4 className="text-3xl font-black text-blue-900 tracking-tighter">{companies.length}</h4>
               </div>
            </div>
            
-           <div className="bg-white p-10 rounded-[3rem] shadow-xl border border-gray-100">
+           <div className="bg-white p-10 rounded-xl shadow-xl border border-gray-100">
               <h3 className="text-xl font-black mb-8 uppercase tracking-tighter">Platform Financial Performance</h3>
               <div className="h-96">
                 {stats.chartData.length > 0 ? (

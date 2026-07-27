@@ -674,7 +674,7 @@ export default function PublicSigningPortal({ docId, token, prefilledRecipient, 
     if (loading) {
         return (
             <div className="min-h-screen flex flex-col items-center justify-center bg-gray-50 p-4">
-                <div className="bg-white p-10 rounded-[2.5rem] shadow-xl border border-gray-100 max-w-sm w-full text-center">
+                <div className="bg-white p-10 rounded-xl shadow-xl border border-gray-100 max-w-sm w-full text-center">
                     <div className="animate-spin rounded-full h-8 w-8 border-t-2 border-indigo-600 mb-4 mx-auto"></div>
                     <h3 className="text-lg font-black text-gray-800 tracking-tight">Accessing Secure Vault</h3>
                     <p className="text-xs text-gray-400 font-medium mt-1 uppercase tracking-wider">Verifying token routing...</p>
@@ -686,7 +686,7 @@ export default function PublicSigningPortal({ docId, token, prefilledRecipient, 
     if (error || !document) {
         return (
             <div className="min-h-screen flex flex-col items-center justify-center bg-gray-50 p-4">
-                <div className="bg-white p-10 rounded-[2.5rem] shadow-xl border border-gray-100 max-w-md w-full text-center space-y-6">
+                <div className="bg-white p-10 rounded-xl shadow-xl border border-gray-100 max-w-md w-full text-center space-y-6">
                     <div className="w-14 h-14 bg-red-50 text-red-600 rounded-2xl flex items-center justify-center mx-auto text-xl">⚠️</div>
                     <div className="space-y-2">
                         <h3 className="text-xl font-black text-gray-800 tracking-tight">Access Intervention</h3>
@@ -844,7 +844,7 @@ export default function PublicSigningPortal({ docId, token, prefilledRecipient, 
                 <div className="lg:col-span-4 space-y-6">
                     {/* Document Details Card */}
                     {docOverview && (
-                        <div className="bg-white border border-gray-200/60 p-6 rounded-[2.5rem] shadow-xl space-y-4">
+                        <div className="bg-white border border-gray-200/60 p-6 rounded-xl shadow-xl space-y-4">
                             <div className="flex items-center gap-2.5 pb-3 border-b border-gray-100">
                                 <div className="w-8 h-8 bg-indigo-50 text-indigo-600 rounded-xl flex items-center justify-center text-sm">
                                     📋
@@ -893,7 +893,7 @@ export default function PublicSigningPortal({ docId, token, prefilledRecipient, 
                     )}
 
                     {isSignedSuccess ? (
-                        <div className="bg-emerald-50 border border-emerald-100 p-6 rounded-[2.5rem] shadow-xl space-y-5 animate-scale-up">
+                        <div className="bg-emerald-50 border border-emerald-100 p-6 rounded-xl shadow-xl space-y-5 animate-scale-up">
                             <div className="flex items-center gap-3">
                                 <div className="w-12 h-12 bg-emerald-500 text-white rounded-2xl flex items-center justify-center text-lg shadow-md">✓</div>
                                 <div>
@@ -936,7 +936,7 @@ export default function PublicSigningPortal({ docId, token, prefilledRecipient, 
                         <div className="space-y-6">
                             {/* Personal Invitation Block */}
                             {matchedSignatory ? (
-                                <div className="bg-gradient-to-br from-indigo-50/70 to-indigo-100/30 border-2 border-indigo-200/80 p-6 rounded-[2.5rem] shadow-xl space-y-4">
+                                <div className="bg-gradient-to-br from-indigo-50/70 to-indigo-100/30 border-2 border-indigo-200/80 p-6 rounded-xl shadow-xl space-y-4">
                                     <div className="space-y-1">
                                         <div className="inline-flex items-center gap-1.5 px-2.5 py-1 bg-indigo-100 text-indigo-700 text-[9px] font-black uppercase tracking-wider rounded-md border border-indigo-200/40">
                                             ✨ Requested Signatory Slot
@@ -991,7 +991,7 @@ export default function PublicSigningPortal({ docId, token, prefilledRecipient, 
                                     </div>
                                 </div>
                             ) : (
-                                <div className="bg-white border border-gray-200/60 p-6 rounded-[2.5rem] shadow-xl space-y-5">
+                                <div className="bg-white border border-gray-200/60 p-6 rounded-xl shadow-xl space-y-5">
                                     <div className="space-y-1">
                                         <h3 className="text-base font-black text-gray-800 uppercase tracking-tight flex items-center gap-1.5">
                                             🔒 Identify Your Signature Slot
@@ -1131,7 +1131,7 @@ export default function PublicSigningPortal({ docId, token, prefilledRecipient, 
                             )}
 
                             {/* All Signature Slots */}
-                            <div className="bg-white border border-gray-200/60 p-6 rounded-[2.5rem] shadow-xl space-y-4">
+                            <div className="bg-white border border-gray-200/60 p-6 rounded-xl shadow-xl space-y-4">
                                 <label className="text-[10px] font-black uppercase tracking-widest text-gray-400 block border-b border-gray-50 pb-1.5">
                                     All Agreement Signatories ({signatories.length})
                                 </label>

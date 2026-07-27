@@ -211,7 +211,7 @@ const PaymentIntelligence: React.FC<PaymentIntelligenceProps> = ({ invoices, cli
       {/* Interactive Charts Panel */}
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
         {/* Paid vs Outstanding Bar Chart */}
-        <div className="bg-white p-6 rounded-[2rem] border border-gray-100 shadow-xl lg:col-span-8 animate-fade-in flex flex-col justify-between">
+        <div className="bg-white p-6 rounded-xl border border-gray-100 shadow-xl lg:col-span-8 animate-fade-in flex flex-col justify-between">
           <div>
             <h4 className="text-sm font-black text-gray-700 uppercase tracking-wider mb-2">Settled vs Outstanding Balance by Client</h4>
             <p className="text-xs text-gray-400 mb-4">
@@ -232,7 +232,7 @@ const PaymentIntelligence: React.FC<PaymentIntelligenceProps> = ({ invoices, cli
         </div>
 
         {/* Global Coverage Health Donut Chart */}
-        <div className="bg-white p-6 rounded-[2rem] border border-gray-100 shadow-xl lg:col-span-4 animate-fade-in flex flex-col justify-between">
+        <div className="bg-white p-6 rounded-xl border border-gray-100 shadow-xl lg:col-span-4 animate-fade-in flex flex-col justify-between">
           <div>
             <h4 className="text-sm font-black text-gray-700 uppercase tracking-wider mb-2">Coverage Portfolio Health</h4>
             <p className="text-xs text-gray-400 mb-4">
@@ -285,7 +285,7 @@ const PaymentIntelligence: React.FC<PaymentIntelligenceProps> = ({ invoices, cli
         </div>
       </div>
 
-      <div className="bg-white rounded-[2.5rem] shadow-2xl border border-gray-100 overflow-hidden">
+      <div className="bg-white rounded-xl shadow-2xl border border-gray-100 overflow-hidden">
         <div className="p-8 border-b border-gray-50 flex justify-between items-center">
             <h3 className="text-xl font-black text-gray-800 uppercase tracking-tighter">Payment & Coverage Matrix</h3>
             <div className="flex gap-4">
@@ -358,7 +358,7 @@ const PaymentIntelligence: React.FC<PaymentIntelligenceProps> = ({ invoices, cli
       </div>
 
       {selectedClientId && aiReport && (
-        <div className="bg-primary-900 text-white p-10 rounded-[3rem] shadow-2xl relative overflow-hidden animate-in slide-in-from-bottom-8">
+        <div className="bg-primary-900 text-white p-10 rounded-xl shadow-2xl relative overflow-hidden animate-in slide-in-from-bottom-8">
             <div className="absolute top-0 right-0 w-64 h-64 bg-primary-800 rounded-full -mr-32 -mt-32 opacity-50 blur-3xl"></div>
             <div className="flex justify-between items-start mb-8 relative z-10">
                 <div>

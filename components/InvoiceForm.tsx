@@ -125,6 +125,7 @@ const InvoiceForm: React.FC<InvoiceFormProps> = ({ initialInvoice, clients, serv
         if (s) {
             newItems[index].price = s.price;
             newItems[index].description = s.description || '';
+            newItems[index].directCost = s.directCost || 0;
         }
     }
     setItems(newItems);
@@ -137,6 +138,7 @@ const InvoiceForm: React.FC<InvoiceFormProps> = ({ initialInvoice, clients, serv
         quantity: 1, 
         price: 0,
         discount: 0,
+        directCost: 0,
         billingCycle: undefined,
         autoRenew: false,
         renewalReminderDaysBefore: 7

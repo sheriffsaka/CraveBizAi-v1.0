@@ -129,9 +129,40 @@ const Dashboard: React.FC<DashboardProps> = ({
         return last6;
     }, [filteredInvoices]);
 
-    const totalRevenue = useMemo(() => filteredInvoices
-        .filter(inv => inv.status === InvoiceStatus.Paid)
-        .reduce((sum, inv) => sum + inv.total, 0), [filteredInvoices]);
+    const { totalRevenue, totalDirectCost, grossProfit, profitMarginPct, paidCount } = useMemo(() => {
+        let rev = 0;
+        let cost = 0;
+        let pCount = 0;
+
+        filteredInvoices.forEach(inv => {
+            if (inv.status === InvoiceStatus.Paid) {
+                pCount++;
+                const invRev = Number(inv.total || 0);
+                rev += invRev;
+
+                if (inv.items && inv.items.length > 0) {
+                    inv.items.forEach(item => {
+                        const qty = Number(item.quantity) || 1;
+                        const matchingSrv = services.find(s => s.id === item.serviceId || s.name.toLowerCase() === (item.description || '').toLowerCase());
+                        const itemDc = Number(item.directCost || 0);
+                        const srvDc = Number(matchingSrv?.directCost || 0);
+                        const unitDc = itemDc > 0 ? itemDc : srvDc;
+                        cost += unitDc * qty;
+                    });
+                }
+            }
+        });
+
+        const profit = rev - cost;
+        const margin = rev > 0 ? Math.round((profit / rev) * 100) : 0;
+        return {
+            totalRevenue: rev,
+            totalDirectCost: cost,
+            grossProfit: profit,
+            profitMarginPct: margin,
+            paidCount: pCount
+        };
+    }, [filteredInvoices, services]);
 
     const outstanding = useMemo(() => filteredInvoices
         .filter(inv => inv.status === InvoiceStatus.Sent || inv.status === InvoiceStatus.Overdue)
@@ -140,9 +171,6 @@ const Dashboard: React.FC<DashboardProps> = ({
     const overdue = useMemo(() => filteredInvoices
         .filter(inv => inv.status === InvoiceStatus.Overdue)
         .reduce((sum, inv) => sum + (inv.total - (inv.amountPaid || 0)), 0), [filteredInvoices]);
-
-    const paidCount = useMemo(() => filteredInvoices
-        .filter(inv => inv.status === InvoiceStatus.Paid).length, [filteredInvoices]);
 
     // Filtered Client Registry
     const filteredClients = useMemo(() => {
@@ -252,6 +280,13 @@ const Dashboard: React.FC<DashboardProps> = ({
           icon={<DashboardIcon d="M12 2v20M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6" />}
         />
         <StatCard 
+          title="Gross Profit" 
+          value={`₦${grossProfit.toLocaleString()}`} 
+          change={`${profitMarginPct}% Margin (Cost: ₦${totalDirectCost.toLocaleString()})`} 
+          changeType="increase"
+          icon={<DashboardIcon d="M13 7h8m0 0v8m0-8l-8 8-4-4-6 6" />}
+        />
+        <StatCard 
           title="Outstanding" 
           value={`₦${outstanding.toLocaleString()}`} 
           icon={<DashboardIcon d="M2 12s3-7 10-7 10 7 10 7-3 7-10 7-10-7-10-7Z M12 15a3 3 0 1 0 0-6 3 3 0 0 0 0 6Z"/>}
@@ -262,19 +297,12 @@ const Dashboard: React.FC<DashboardProps> = ({
           changeType="decrease"
           icon={<DashboardIcon d="M12 22c5.523 0 10-4.477 10-10S17.523 2 12 2 2 6.477 2 12s4.477 10 10 10Z M12 8v4 M12 16h.01" />}
         />
-        <StatCard 
-          title="Filtered Portfolio" 
-          value={`${filteredClients.length} Clients`}
-          change={`${filteredServicesCount} Active Services`}
-          changeType="increase"
-          icon={<Users className="w-6 h-6 text-primary-600" />}
-        />
       </div>
 
       {/* No Data Found banner if filter returns 0 records */}
       {filteredInvoices.length === 0 && isFilterActive(currentFilter) && (
-        <div className="bg-white p-8 rounded-[2.5rem] shadow-xl border border-gray-100 text-center py-12 space-y-3">
-          <div className="w-12 h-12 bg-amber-50 text-amber-600 rounded-2xl flex items-center justify-center mx-auto border border-amber-100">
+        <div className="bg-white p-8 rounded-xl shadow-xl border border-gray-100 text-center py-12 space-y-3">
+          <div className="w-12 h-12 bg-amber-50 text-amber-600 rounded-xl flex items-center justify-center mx-auto border border-amber-100">
             <Search className="w-6 h-6" />
           </div>
           <h3 className="text-lg font-black text-gray-800 uppercase tracking-tight">No Matching Records Found</h3>
@@ -291,7 +319,7 @@ const Dashboard: React.FC<DashboardProps> = ({
 
       {/* Document Usage Quotas */}
       <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-        <div className="bg-gradient-to-br from-blue-900 to-indigo-950 p-6 rounded-[2rem] shadow-xl text-white relative overflow-hidden">
+        <div className="bg-gradient-to-br from-blue-900 to-indigo-950 p-6 rounded-xl shadow-xl text-white relative overflow-hidden">
           <div className="flex justify-between items-start">
             <div>
               <span className="text-[10px] font-black uppercase tracking-widest text-blue-300">Invoice Quota</span>
@@ -302,7 +330,7 @@ const Dashboard: React.FC<DashboardProps> = ({
                 Invoices Remaining ({invoiceUsage?.createdCount || 0} created)
               </p>
             </div>
-            <div className="bg-white/10 p-3 rounded-2xl backdrop-blur-md">
+            <div className="bg-white/10 p-3 rounded-xl backdrop-blur-md">
               <svg className="w-6 h-6 text-blue-300" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
               </svg>
@@ -323,7 +351,7 @@ const Dashboard: React.FC<DashboardProps> = ({
           )}
         </div>
 
-        <div className="bg-gradient-to-br from-slate-900 to-teal-950 p-6 rounded-[2rem] shadow-xl text-white relative overflow-hidden">
+        <div className="bg-gradient-to-br from-slate-900 to-teal-950 p-6 rounded-xl shadow-xl text-white relative overflow-hidden">
           <div className="flex justify-between items-start">
             <div>
               <span className="text-[10px] font-black uppercase tracking-widest text-emerald-300">Receipt Quota</span>
@@ -334,7 +362,7 @@ const Dashboard: React.FC<DashboardProps> = ({
                 Receipts Remaining ({receiptUsage?.createdCount || 0} issued)
               </p>
             </div>
-            <div className="bg-white/10 p-3 rounded-2xl backdrop-blur-md">
+            <div className="bg-white/10 p-3 rounded-xl backdrop-blur-md">
               <svg className="w-6 h-6 text-emerald-300" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2" />
               </svg>
@@ -358,7 +386,7 @@ const Dashboard: React.FC<DashboardProps> = ({
 
       <div className="grid grid-cols-1 lg:grid-cols-5 gap-8">
         <div className="lg:col-span-3 space-y-8">
-            <div className="bg-white p-8 rounded-[2.5rem] shadow-2xl border border-gray-100 relative overflow-hidden">
+            <div className="bg-white p-8 rounded-xl shadow-2xl border border-gray-100 relative overflow-hidden">
                 <div className="absolute top-0 right-0 w-32 h-32 bg-primary-50 rounded-full -mr-16 -mt-16 opacity-50"></div>
                 <h3 className="text-xl font-black text-gray-800 mb-6 uppercase tracking-tighter">Revenue Trajectory</h3>
                 <div style={{ width: '100%', height: 300 }}>
@@ -378,7 +406,7 @@ const Dashboard: React.FC<DashboardProps> = ({
                 </div>
             </div>
 
-            <div className="bg-white p-8 rounded-[2.5rem] shadow-2xl border border-gray-100">
+            <div className="bg-white p-8 rounded-xl shadow-2xl border border-gray-100">
                 <div className="flex justify-between items-center mb-6">
                     <h3 className="text-xl font-black text-gray-800 uppercase tracking-tighter">Expiring Services Intelligence</h3>
                     <span className="bg-primary-50 text-primary-600 px-3 py-1 rounded-full text-[10px] font-black uppercase tracking-widest">AI Monitoring Active</span>
@@ -436,12 +464,12 @@ const Dashboard: React.FC<DashboardProps> = ({
                 </div>
             </div>
         </div>
-        <div className="lg:col-span-2 bg-white p-8 rounded-[2.5rem] shadow-2xl border border-gray-100">
+        <div className="lg:col-span-2 bg-white p-8 rounded-xl shadow-2xl border border-gray-100">
              <h3 className="text-xl font-black text-gray-800 mb-6 uppercase tracking-tighter">Client Registry</h3>
              <ul className="space-y-6">
                 {filteredClients.slice(0, 4).map((client) => (
-                    <li key={client.id} className="flex items-center space-x-4 p-4 rounded-2xl hover:bg-gray-50 transition-all border border-transparent hover:border-gray-100">
-                         <div className="w-12 h-12 rounded-2xl bg-primary-600 flex items-center justify-center text-white font-black text-lg shadow-lg shrink-0">
+                    <li key={client.id} className="flex items-center space-x-4 p-4 rounded-xl hover:bg-gray-50 transition-all border border-transparent hover:border-gray-100">
+                         <div className="w-12 h-12 rounded-xl bg-primary-600 flex items-center justify-center text-white font-black text-lg shadow-lg shrink-0">
                             {client.companyName ? client.companyName[0].toUpperCase() : 'C'}
                         </div>
                         <div className="flex-1 overflow-hidden">
