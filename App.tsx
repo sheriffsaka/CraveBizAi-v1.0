@@ -573,6 +573,69 @@ export default function App() {
     }
   };
 
+  const handleDeleteService = async (serviceId: string) => {
+    if (userRole !== 'Owner') {
+      alert("Only Workspace Owners can delete services.");
+      return;
+    }
+    try {
+      setIsDataSyncing(true);
+      await api.deleteService(serviceId);
+      await triggerAuditLog('DELETE_SERVICE', serviceId, `Deleted service record ${serviceId}`);
+      setTenantData(prev => ({
+        ...prev,
+        services: prev.services.filter(s => s.id !== serviceId)
+      }));
+      if (activeTenantId) await forceSyncData(activeTenantId);
+    } catch (e) {
+      alert("Error deleting service: " + stringifyError(e));
+    } finally {
+      if (isMounted.current) setIsDataSyncing(false);
+    }
+  };
+
+  const handleDeleteClient = async (clientId: string) => {
+    if (userRole !== 'Owner') {
+      alert("Only Workspace Owners can delete clients.");
+      return;
+    }
+    try {
+      setIsDataSyncing(true);
+      await api.deleteClient(clientId);
+      await triggerAuditLog('DELETE_CLIENT', clientId, `Deleted client record ${clientId}`);
+      setTenantData(prev => ({
+        ...prev,
+        clients: prev.clients.filter(c => c.id !== clientId)
+      }));
+      if (activeTenantId) await forceSyncData(activeTenantId);
+    } catch (e) {
+      alert("Error deleting client: " + stringifyError(e));
+    } finally {
+      if (isMounted.current) setIsDataSyncing(false);
+    }
+  };
+
+  const handleDeleteReceipt = async (invoiceId: string) => {
+    if (userRole !== 'Owner') {
+      alert("Only Workspace Owners can delete receipts.");
+      return;
+    }
+    try {
+      setIsDataSyncing(true);
+      await api.deleteReceipt(invoiceId);
+      await triggerAuditLog('DELETE_RECEIPT', invoiceId, `Deleted / Revoked receipt for invoice ${invoiceId}`);
+      setTenantData(prev => ({
+        ...prev,
+        invoices: prev.invoices.map(inv => inv.id === invoiceId ? { ...inv, isReceiptSent: false } : inv)
+      }));
+      if (activeTenantId) await forceSyncData(activeTenantId);
+    } catch (e) {
+      alert("Error deleting receipt: " + stringifyError(e));
+    } finally {
+      if (isMounted.current) setIsDataSyncing(false);
+    }
+  };
+
   if (!isLoading && !currentUser) {
     return (
       <>
@@ -951,15 +1014,17 @@ export default function App() {
       }} />;
       case 'invoices': return <InvoiceList invoices={invoices} clients={clients} services={services} onViewInvoice={(id) => { setSelectedInvoiceId(id); navigateTo('invoice-detail'); }} onEditInvoice={handleEditInvoiceAction} onDeleteInvoice={handleDeleteInvoice} globalFilter={globalFilter} onFilterChange={handleGlobalFilterChange} />;
       case 'recurring-invoices': return <RecurringInvoiceList invoices={invoices.filter(i => i.isRecurringTemplate)} clients={clients} onViewInvoice={(id) => { setSelectedInvoiceId(id); navigateTo('invoice-detail'); }} onEditInvoice={handleEditInvoiceAction} onDeleteInvoice={handleDeleteInvoice} />;
-      case 'sent-receipts': return <SentReceiptsList invoices={invoices.filter(i => i.isReceiptSent)} clients={clients} onViewInvoice={(id) => { setSelectedInvoiceId(id); navigateTo('receipt-detail'); }} onEditInvoice={handleEditInvoiceAction} />;
+      case 'sent-receipts': return <SentReceiptsList invoices={invoices.filter(i => i.isReceiptSent)} clients={clients} userRole={userRole} onViewInvoice={(id) => { setSelectedInvoiceId(id); navigateTo('receipt-detail'); }} onEditInvoice={handleEditInvoiceAction} onDeleteReceipt={handleDeleteReceipt} />;
       case 'receipt-detail': {
         const inv = invoices.find(i => i.id === selectedInvoiceId);
         if (!inv) return <div className="text-center py-20 italic text-gray-400">Document synchronized or unavailable.</div>;
         const cli = clients.find(c => c.id === inv.clientId) || { id: '', companyId: '', name: 'Guest', email: '', companyName: 'Guest' };
         return <ReceiptDetail 
             invoice={inv} client={cli} services={services} company={activeCompany!} 
+            userRole={userRole}
             onBack={() => navigateTo('sent-receipts')}
             onSendReceipt={handleSendReceipt}
+            onDeleteReceipt={handleDeleteReceipt}
         />;
       }
       case 'create-invoice': {
@@ -1070,7 +1135,7 @@ export default function App() {
           onTriggerAuditLog={triggerAuditLog}
           invoices={invoices}
       />;
-      case 'clients': return <ClientList companyId={activeTenantId!} clients={clients} invoices={invoices} onAddClient={async (c) => { 
+      case 'clients': return <ClientList companyId={activeTenantId!} clients={clients} invoices={invoices} userRole={userRole} onDeleteClient={handleDeleteClient} onAddClient={async (c) => { 
           try {
               await api.createClient(c); 
               await forceSyncData(activeTenantId!); 
@@ -1085,7 +1150,7 @@ export default function App() {
               setSyncError(stringifyError(e));
           }
       }} />;
-      case 'services': return <ServiceList companyId={activeTenantId!} services={services} invoices={invoices} onAddService={async (s) => { 
+      case 'services': return <ServiceList companyId={activeTenantId!} services={services} invoices={invoices} userRole={userRole} onDeleteService={handleDeleteService} onAddService={async (s) => { 
           try {
               await api.createService(s); 
               await forceSyncData(activeTenantId!); 

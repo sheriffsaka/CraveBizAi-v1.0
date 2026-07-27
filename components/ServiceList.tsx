@@ -1,6 +1,7 @@
 import React, { useState, useMemo } from 'react';
-import { Service, Invoice } from '../types';
+import { Service, Invoice, WorkspaceRole } from '../types';
 import ServiceFormModal from './ServiceFormModal';
+import DeleteConfirmationModal from './DeleteConfirmationModal';
 import Icon from './common/Icon';
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, Cell } from 'recharts';
 
@@ -8,8 +9,10 @@ interface ServiceListProps {
   companyId: string;
   services: Service[];
   invoices?: Invoice[];
+  userRole?: WorkspaceRole;
   onAddService: (service: Omit<Service, 'id'>) => void;
   onUpdateService: (service: Service) => void;
+  onDeleteService?: (serviceId: string) => void;
 }
 
 type SortKey = 'name' | 'category' | 'price' | 'popularity';
@@ -18,11 +21,15 @@ type SortDirection = 'asc' | 'desc';
 const ServicesTable: React.FC<{
   services: Service[];
   onEditClick: (service: Service) => void;
+  onDeleteClick?: (service: Service) => void;
+  userRole?: WorkspaceRole;
   sortKey: SortKey;
   sortDirection: SortDirection;
   onSort: (key: SortKey) => void;
   serviceUsage: Record<string, number>;
-}> = ({ services, onEditClick, sortKey, sortDirection, onSort, serviceUsage }) => {
+}> = ({ services, onEditClick, onDeleteClick, userRole, sortKey, sortDirection, onSort, serviceUsage }) => {
+  const isOwner = userRole === 'Owner';
+
   const getSortIcon = (key: SortKey) => {
     if (sortKey !== key) return null;
     return sortDirection === 'asc' ? ' ▲' : ' ▼';
@@ -77,8 +84,17 @@ const ServicesTable: React.FC<{
                 <td className="px-6 py-4">
                   <span className="font-bold text-gray-600">{serviceUsage[service.id] || 0} units</span>
                 </td>
-                <td className="px-6 py-4 text-right">
+                <td className="px-6 py-4 text-right space-x-3">
                   <a href="#" onClick={(e) => { e.preventDefault(); onEditClick(service); }} className="font-bold text-primary-600 hover:text-primary-800 uppercase text-[10px] tracking-widest transition-colors">Edit</a>
+                  {isOwner && onDeleteClick && (
+                    <button 
+                      onClick={() => onDeleteClick(service)} 
+                      className="font-bold text-red-600 hover:text-red-800 uppercase text-[10px] tracking-widest transition-colors"
+                      title="Workspace Owner Delete Action"
+                    >
+                      Delete
+                    </button>
+                  )}
                 </td>
               </tr>
             );
@@ -94,9 +110,10 @@ const ServicesTable: React.FC<{
   );
 };
 
-const ServiceList: React.FC<ServiceListProps> = ({ companyId, services, invoices = [], onAddService, onUpdateService }) => {
+const ServiceList: React.FC<ServiceListProps> = ({ companyId, services, invoices = [], userRole, onAddService, onUpdateService, onDeleteService }) => {
   const [isAddModalOpen, setIsAddModalOpen] = useState(false);
   const [editingService, setEditingService] = useState<Service | null>(null);
+  const [deletingService, setDeletingService] = useState<Service | null>(null);
   const [searchTerm, setSearchTerm] = useState('');
   const [sortKey, setSortKey] = useState<SortKey>('name');
   const [sortDirection, setSortDirection] = useState<SortDirection>('asc');
@@ -323,6 +340,8 @@ const ServiceList: React.FC<ServiceListProps> = ({ companyId, services, invoices
         <ServicesTable
           services={paginatedServices}
           onEditClick={handleEditClick}
+          onDeleteClick={(service) => setDeletingService(service)}
+          userRole={userRole}
           sortKey={sortKey}
           sortDirection={sortDirection}
           onSort={handleSort}
@@ -365,6 +384,23 @@ const ServiceList: React.FC<ServiceListProps> = ({ companyId, services, invoices
         service={editingService}
         companyId={companyId}
       />
+
+      {deletingService && (
+        <DeleteConfirmationModal
+          isOpen={!!deletingService}
+          onClose={() => setDeletingService(null)}
+          onConfirm={async () => {
+            if (deletingService && onDeleteService) {
+              await onDeleteService(deletingService.id);
+            }
+          }}
+          title="Delete Service / Product"
+          itemName={deletingService.name}
+          itemType="Service"
+          warningText="This action cannot be undone. Removing this service will permanently delete it from your active catalog."
+          impactText="Existing invoices will preserve their historical item descriptions and amounts."
+        />
+      )}
     </div>
   );
 };

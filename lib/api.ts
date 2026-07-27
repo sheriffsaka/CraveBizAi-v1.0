@@ -745,6 +745,17 @@ class CraveBizApi {
     if (error) throw error;
   }
 
+  async deleteClient(clientId: string): Promise<void> {
+    try {
+      await supabase.from('invoices').update({ client_id: null }).eq('client_id', clientId);
+      await supabase.from('projects').update({ client_id: null }).eq('client_id', clientId);
+    } catch (e) {
+      console.warn("Disassociating client references encountered warning:", e);
+    }
+    const { error } = await supabase.from('clients').delete().eq('id', clientId);
+    if (error) throw error;
+  }
+
   async fetchProjects(companyId: string): Promise<Project[]> {
     try {
       const { data, error } = await supabase.from('projects').select('*').eq('company_id', cleanCompanyId(companyId));
@@ -913,6 +924,26 @@ class CraveBizApi {
     delete updateData.package_name;
     const { error } = await supabase.from('services').update(updateData).eq('id', service.id);
     if (error) throw error;
+  }
+
+  async deleteService(serviceId: string): Promise<void> {
+    try {
+      await supabase.from('invoice_items').update({ service_id: null }).eq('service_id', serviceId);
+    } catch (e) {
+      console.warn("Disassociating service from invoice_items encountered warning:", e);
+    }
+    const { error } = await supabase.from('services').delete().eq('id', serviceId);
+    if (error) throw error;
+  }
+
+  async deleteReceipt(invoiceId: string): Promise<void> {
+    const { error } = await supabase.from('invoices').update({ is_receipt_sent: false }).eq('id', invoiceId);
+    if (error) throw error;
+
+    const companyId = localStorage.getItem('cravebiz_tenant') || '';
+    if (companyId) {
+      this.syncWorkspaceCounts(companyId).catch(err => console.warn("Deferred count sync failed:", err));
+    }
   }
 
   async updateCompany(id: string, details: Partial<Company>): Promise<void> {

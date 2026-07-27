@@ -1,6 +1,7 @@
 
 import React, { useState } from 'react';
-import { Invoice, Client, Service, Company, BankAccount } from '../types';
+import { Invoice, Client, Service, Company, BankAccount, WorkspaceRole } from '../types';
+import DeleteConfirmationModal from './DeleteConfirmationModal';
 import Icon from './common/Icon';
 import { api } from '../lib/api';
 
@@ -9,13 +10,17 @@ interface ReceiptDetailProps {
   client: Client;
   services: Service[];
   company: Company;
+  userRole?: WorkspaceRole;
   onBack: () => void;
   onSendReceipt?: (invoiceId: string) => Promise<void>;
+  onDeleteReceipt?: (invoiceId: string) => void;
 }
 
-const ReceiptDetail: React.FC<ReceiptDetailProps> = ({ invoice, client, services, company, onBack, onSendReceipt }) => {
+const ReceiptDetail: React.FC<ReceiptDetailProps> = ({ invoice, client, services, company, userRole, onBack, onSendReceipt, onDeleteReceipt }) => {
     const [isSendingEmail, setIsSendingEmail] = useState(false);
     const [sendStatus, setSendStatus] = useState<{ type: 'success' | 'error'; message: string } | null>(null);
+    const [isDeleteModalOpen, setIsDeleteModalOpen] = useState(false);
+    const isOwner = userRole === 'Owner';
     
     const getServiceName = (serviceId: string) => {
         return services.find(s => s.id === serviceId)?.name || 'Custom Item';
@@ -316,6 +321,15 @@ const ReceiptDetail: React.FC<ReceiptDetailProps> = ({ invoice, client, services
           >
             <Icon name="download-word" className="w-5 h-5 mr-2" /> Download Word
           </button>
+          {isOwner && onDeleteReceipt && (
+            <button 
+              onClick={() => setIsDeleteModalOpen(true)} 
+              className="flex items-center px-4 py-2 bg-red-600 text-white rounded shadow hover:bg-red-700 font-bold text-sm"
+              title="Workspace Owner Delete Action"
+            >
+              Delete Receipt
+            </button>
+          )}
         </div>
       </div>
 
@@ -442,6 +456,24 @@ const ReceiptDetail: React.FC<ReceiptDetailProps> = ({ invoice, client, services
 
           </div>
       </div>
+
+      {isDeleteModalOpen && (
+        <DeleteConfirmationModal
+          isOpen={isDeleteModalOpen}
+          onClose={() => setIsDeleteModalOpen(false)}
+          onConfirm={async () => {
+            if (onDeleteReceipt) {
+              await onDeleteReceipt(invoice.id);
+              onBack();
+            }
+          }}
+          title="Delete / Revoke Receipt"
+          itemName={`Receipt for Invoice #${invoice.invoiceNumber}`}
+          itemType="Receipt"
+          warningText="This action is permanent and cannot be undone. Deleting this receipt will revoke its issued status in your system."
+          impactText="The underlying invoice and payment history will remain intact."
+        />
+      )}
     </div>
   );
 };

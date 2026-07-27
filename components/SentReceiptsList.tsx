@@ -1,15 +1,18 @@
 
 import React, { useState, useMemo } from 'react';
-import { Invoice, Client, InvoiceStatus } from '../types';
+import { Invoice, Client, InvoiceStatus, WorkspaceRole } from '../types';
 import InvoiceStatusBadge from './InvoiceStatusBadge';
+import DeleteConfirmationModal from './DeleteConfirmationModal';
 import Icon from './common/Icon';
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, Cell } from 'recharts';
 
 interface SentReceiptsListProps {
   invoices: Invoice[]; // These should already be filtered to be isReceiptSent: true
   clients: Client[];
+  userRole?: WorkspaceRole;
   onViewInvoice: (invoiceId: string) => void; // For viewing the original invoice detail
   onEditInvoice?: (invoiceId: string) => void;
+  onDeleteReceipt?: (invoiceId: string) => void;
 }
 
 type SortKey = 'invoiceNumber' | 'clientName' | 'issueDate' | 'total';
@@ -20,10 +23,14 @@ const SentReceiptsTable: React.FC<{
   clients: Client[];
   onViewInvoice: (invoiceId: string) => void;
   onEditInvoice?: (invoiceId: string) => void;
+  onDeleteClick?: (invoice: Invoice) => void;
+  userRole?: WorkspaceRole;
   sortKey: SortKey;
   sortDirection: SortDirection;
   onSort: (key: SortKey) => void;
-}> = ({ invoices, clients, onViewInvoice, onEditInvoice, sortKey, sortDirection, onSort }) => {
+}> = ({ invoices, clients, onViewInvoice, onEditInvoice, onDeleteClick, userRole, sortKey, sortDirection, onSort }) => {
+  const isOwner = userRole === 'Owner';
+
   const getClientName = (clientId: string) => {
     return clients.find(c => c.id === clientId)?.companyName || 'Unknown Client';
   };
@@ -63,6 +70,15 @@ const SentReceiptsTable: React.FC<{
                 {onEditInvoice && (
                     <button onClick={() => onEditInvoice(invoice.id)} className="font-bold text-amber-600 hover:text-amber-800 transition-colors uppercase text-[10px] tracking-widest">Edit</button>
                 )}
+                {isOwner && onDeleteClick && (
+                  <button 
+                    onClick={() => onDeleteClick(invoice)} 
+                    className="font-bold text-red-600 hover:text-red-800 uppercase text-[10px] tracking-widest transition-colors"
+                    title="Workspace Owner Delete Action"
+                  >
+                    Delete Receipt
+                  </button>
+                )}
               </td>
             </tr>
           ))}
@@ -78,8 +94,9 @@ const SentReceiptsTable: React.FC<{
 };
 
 
-const SentReceiptsList: React.FC<SentReceiptsListProps> = ({ invoices, clients, onViewInvoice, onEditInvoice }) => {
+const SentReceiptsList: React.FC<SentReceiptsListProps> = ({ invoices, clients, userRole, onViewInvoice, onEditInvoice, onDeleteReceipt }) => {
   const [searchTerm, setSearchTerm] = useState('');
+  const [deletingReceiptInvoice, setDeletingReceiptInvoice] = useState<Invoice | null>(null);
   const [sortKey, setSortKey] = useState<SortKey>('issueDate');
   const [sortDirection, setSortDirection] = useState<SortDirection>('desc');
   const [currentPage, setCurrentPage] = useState(1);
@@ -264,6 +281,8 @@ const SentReceiptsList: React.FC<SentReceiptsListProps> = ({ invoices, clients, 
         clients={clients}
         onViewInvoice={onViewInvoice}
         onEditInvoice={onEditInvoice}
+        onDeleteClick={(inv) => setDeletingReceiptInvoice(inv)}
+        userRole={userRole}
         sortKey={sortKey}
         sortDirection={sortDirection}
         onSort={handleSort}
@@ -296,6 +315,23 @@ const SentReceiptsList: React.FC<SentReceiptsListProps> = ({ invoices, clients, 
         </div>
       )}
       </div>
+
+      {deletingReceiptInvoice && (
+        <DeleteConfirmationModal
+          isOpen={!!deletingReceiptInvoice}
+          onClose={() => setDeletingReceiptInvoice(null)}
+          onConfirm={async () => {
+            if (deletingReceiptInvoice && onDeleteReceipt) {
+              await onDeleteReceipt(deletingReceiptInvoice.id);
+            }
+          }}
+          title="Delete / Revoke Receipt"
+          itemName={`Receipt for Invoice #${deletingReceiptInvoice.invoiceNumber}`}
+          itemType="Receipt"
+          warningText="This action is permanent. Deleting this receipt will revoke its issued receipt status in your system."
+          impactText="The underlying paid invoice record and payment balance will remain safely intact."
+        />
+      )}
     </div>
   );
 };

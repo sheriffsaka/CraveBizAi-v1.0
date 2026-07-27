@@ -1,7 +1,8 @@
 
 import React, { useState, useMemo } from 'react';
-import { Client, Invoice } from '../types';
+import { Client, Invoice, WorkspaceRole } from '../types';
 import ClientFormModal from './ClientFormModal';
+import DeleteConfirmationModal from './DeleteConfirmationModal';
 import Icon from './common/Icon';
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, Cell } from 'recharts';
 
@@ -9,8 +10,10 @@ interface ClientListProps {
   companyId: string; // Added companyId
   clients: Client[];
   invoices?: Invoice[];
+  userRole?: WorkspaceRole;
   onAddClient: (client: Omit<Client, 'id'>) => void;
   onUpdateClient: (client: Client) => void;
+  onDeleteClient?: (clientId: string) => void;
 }
 
 type SortKey = 'companyName' | 'name' | 'email';
@@ -19,10 +22,14 @@ type SortDirection = 'asc' | 'desc';
 const ClientsTable: React.FC<{
   clients: Client[];
   onEditClick: (client: Client) => void;
+  onDeleteClick?: (client: Client) => void;
+  userRole?: WorkspaceRole;
   sortKey: SortKey;
   sortDirection: SortDirection;
   onSort: (key: SortKey) => void;
-}> = ({ clients, onEditClick, sortKey, sortDirection, onSort }) => {
+}> = ({ clients, onEditClick, onDeleteClick, userRole, sortKey, sortDirection, onSort }) => {
+  const isOwner = userRole === 'Owner';
+
   const getSortIcon = (key: SortKey) => {
     if (sortKey !== key) return null;
     return sortDirection === 'asc' ? ' ▲' : ' ▼';
@@ -36,7 +43,7 @@ const ClientsTable: React.FC<{
             <th scope="col" className="px-6 py-3 cursor-pointer" onClick={() => onSort('companyName')}>Company Name{getSortIcon('companyName')}</th>
             <th scope="col" className="px-6 py-3 cursor-pointer" onClick={() => onSort('name')}>Contact Person{getSortIcon('name')}</th>
             <th scope="col" className="px-6 py-3 cursor-pointer" onClick={() => onSort('email')}>Email{getSortIcon('email')}</th>
-            <th scope="col" className="px-6 py-3"><span className="sr-only">Actions</span></th>
+            <th scope="col" className="px-6 py-3 text-right"><span className="sr-only">Actions</span></th>
           </tr>
         </thead>
         <tbody>
@@ -47,8 +54,17 @@ const ClientsTable: React.FC<{
               </th>
               <td className="px-6 py-4">{client.name}</td>
               <td className="px-6 py-4">{client.email}</td>
-              <td className="px-6 py-4 text-right">
-                <a href="#" onClick={(e) => { e.preventDefault(); onEditClick(client); }} className="font-medium text-primary-600 hover:underline">Edit</a>
+              <td className="px-6 py-4 text-right space-x-3">
+                <a href="#" onClick={(e) => { e.preventDefault(); onEditClick(client); }} className="font-bold text-primary-600 hover:text-primary-800 uppercase text-[10px] tracking-widest transition-colors">Edit</a>
+                {isOwner && onDeleteClick && (
+                  <button 
+                    onClick={() => onDeleteClick(client)} 
+                    className="font-bold text-red-600 hover:text-red-800 uppercase text-[10px] tracking-widest transition-colors"
+                    title="Workspace Owner Delete Action"
+                  >
+                    Delete
+                  </button>
+                )}
               </td>
             </tr>
           ))}
@@ -63,9 +79,10 @@ const ClientsTable: React.FC<{
   );
 };
 
-const ClientList: React.FC<ClientListProps> = ({ companyId, clients, invoices = [], onAddClient, onUpdateClient }) => {
+const ClientList: React.FC<ClientListProps> = ({ companyId, clients, invoices = [], userRole, onAddClient, onUpdateClient, onDeleteClient }) => {
   const [isAddModalOpen, setIsAddModalOpen] = useState(false);
   const [editingClient, setEditingClient] = useState<Client | null>(null);
+  const [deletingClient, setDeletingClient] = useState<Client | null>(null);
   const [searchTerm, setSearchTerm] = useState('');
   const [sortKey, setSortKey] = useState<SortKey>('companyName');
   const [sortDirection, setSortDirection] = useState<SortDirection>('asc');
@@ -302,6 +319,8 @@ const ClientList: React.FC<ClientListProps> = ({ companyId, clients, invoices = 
         <ClientsTable
           clients={paginatedClients}
           onEditClick={handleEditClick}
+          onDeleteClick={(client) => setDeletingClient(client)}
+          userRole={userRole}
           sortKey={sortKey}
           sortDirection={sortDirection}
           onSort={handleSort}
@@ -341,6 +360,23 @@ const ClientList: React.FC<ClientListProps> = ({ companyId, clients, invoices = 
         client={editingClient}
         companyId={companyId} // Passed companyId
       />
+
+      {deletingClient && (
+        <DeleteConfirmationModal
+          isOpen={!!deletingClient}
+          onClose={() => setDeletingClient(null)}
+          onConfirm={async () => {
+            if (deletingClient && onDeleteClient) {
+              await onDeleteClient(deletingClient.id);
+            }
+          }}
+          title="Delete Client Record"
+          itemName={`${deletingClient.companyName} (${deletingClient.name})`}
+          itemType="Client"
+          warningText="This action is permanent and cannot be undone. All linked invoice histories and records will be preserved."
+          impactText="Removing this client profile will un-link them from future invoice creation."
+        />
+      )}
     </>
   );
 };
