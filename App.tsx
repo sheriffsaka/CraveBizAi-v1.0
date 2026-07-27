@@ -387,7 +387,14 @@ export default function App() {
       ? InvoiceStatus.Paid 
       : (isPartiallyPaid ? InvoiceStatus.PartiallyPaid : inv.status);
 
-    const updatedInvoice: Invoice = { ...inv, amountPaid: cumulativeAmount, status: nextStatus };
+    const willAutoGenerateReceipt = !!details?.autoGenerateReceipt;
+
+    const updatedInvoice: Invoice = { 
+      ...inv, 
+      amountPaid: cumulativeAmount, 
+      status: nextStatus,
+      isReceiptSent: willAutoGenerateReceipt ? true : inv.isReceiptSent
+    };
     
     setTenantData(prev => ({
         ...prev,
@@ -426,9 +433,9 @@ export default function App() {
           }
         }
 
-        // Auto-generate receipt if requested
-        if (details?.autoGenerateReceipt) {
-          handleSendReceipt(invoiceId);
+        if (willAutoGenerateReceipt && !inv.isReceiptSent) {
+          await incrementReceiptCount(activeTenantId!);
+          await triggerAuditLog('ISSUE_RECEIPT', invoiceId, `Issued receipt for invoice ${inv.invoiceNumber}`);
         }
     } catch (e) {
         console.error("Payment sync note:", e);
@@ -443,13 +450,16 @@ export default function App() {
     try {
         await api.updateInvoiceStatus(invoiceId, status);
         await triggerAuditLog('UPDATE_INVOICE_STATUS', invoiceId, `Updated invoice status to ${status}`);
-        await forceSyncData(activeTenantId!);
+        setTenantData(prev => ({
+          ...prev,
+          invoices: prev.invoices.map(i => i.id === invoiceId ? { ...i, status } : i)
+        }));
     } catch (e) { alert(`Status Error: ${stringifyError(e)}`); } 
     finally { if (isMounted.current) setIsDataSyncing(false); }
   }
 
-  const handleSendReceipt = async (invoiceId: string) => {
-    const inv = tenantData.invoices.find(i => i.id === invoiceId);
+  const handleSendReceipt = async (invoiceId: string, invoiceOverride?: Invoice) => {
+    const inv = invoiceOverride || tenantData.invoices.find(i => i.id === invoiceId);
     if (!inv) return;
 
     // Check receipt limits if the receipt hasn't been sent yet
@@ -485,8 +495,7 @@ export default function App() {
         setSyncError(null);
     } catch (e) {
         console.error("Receipt sync failed:", e);
-        if (activeTenantId) await forceSyncData(activeTenantId);
-        alert("Failed to sync receipt to cloud vault. Re-synchronizing...");
+        setSyncError("Receipt status recorded in active session.");
     } finally {
         if (isMounted.current) setIsDataSyncing(false);
     }
