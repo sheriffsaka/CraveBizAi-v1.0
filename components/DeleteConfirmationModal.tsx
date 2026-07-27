@@ -44,8 +44,8 @@ const DeleteConfirmationModal: React.FC<DeleteConfirmationModalProps> = ({
     <Modal isOpen={isOpen} onClose={onClose} title={title}>
       <div className="space-y-6">
         {/* Warning Banner */}
-        <div className="p-4 bg-red-50 border-2 border-red-100 rounded-2xl flex items-start gap-3">
-          <div className="w-10 h-10 bg-red-100 rounded-xl flex items-center justify-center shrink-0 text-red-600">
+        <div className="p-4 bg-red-50 border-2 border-red-100 rounded-xl flex items-start gap-3">
+          <div className="w-10 h-10 bg-red-100 rounded-lg flex items-center justify-center shrink-0 text-red-600">
             <Icon name="reports" className="w-5 h-5" />
           </div>
           <div>
@@ -57,7 +57,7 @@ const DeleteConfirmationModal: React.FC<DeleteConfirmationModalProps> = ({
         </div>
 
         {/* Item Details Card */}
-        <div className="bg-gray-50 border border-gray-100 p-4 rounded-2xl">
+        <div className="bg-gray-50 border border-gray-100 p-4 rounded-xl">
           <span className="text-[10px] font-black uppercase tracking-widest text-gray-400 block mb-1">
             Target {itemType}
           </span>
@@ -79,7 +79,7 @@ const DeleteConfirmationModal: React.FC<DeleteConfirmationModalProps> = ({
               value={confirmInput}
               onChange={(e) => setConfirmInput(e.target.value)}
               placeholder="DELETE"
-              className="w-full px-4 py-2.5 bg-gray-50 border border-gray-200 rounded-xl font-mono text-sm focus:bg-white focus:border-red-500 outline-none uppercase"
+              className="w-full px-4 py-2.5 bg-gray-50 border border-gray-200 rounded-lg font-mono text-sm focus:bg-white focus:border-red-500 outline-none uppercase"
             />
           </div>
         )}
@@ -98,7 +98,7 @@ const DeleteConfirmationModal: React.FC<DeleteConfirmationModalProps> = ({
             type="button"
             onClick={handleConfirm}
             disabled={isDeleting || (requireTypedConfirmation && confirmInput.trim() !== 'DELETE')}
-            className="px-6 py-3 bg-red-600 text-white rounded-xl font-black uppercase tracking-widest text-xs shadow-lg shadow-red-200 hover:bg-red-700 transition transform active:scale-95 disabled:bg-gray-300 disabled:shadow-none disabled:cursor-not-allowed flex items-center gap-2"
+            className="px-6 py-3 bg-red-600 text-white rounded-lg font-black uppercase tracking-widest text-xs shadow-md shadow-red-200 hover:bg-red-700 transition transform active:scale-95 disabled:bg-gray-300 disabled:shadow-none disabled:cursor-not-allowed flex items-center gap-2"
           >
             {isDeleting ? (
               <span>Deleting...</span>

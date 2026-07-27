@@ -649,7 +649,7 @@ export default function App() {
       <>
         {syncError && (
           <div className="fixed top-4 left-1/2 -translate-x-1/2 z-[9999] max-w-md w-full px-4 animate-in slide-in-from-top-4">
-            <div className="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-2xl shadow-xl flex items-start text-sm">
+            <div className="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-xl shadow-xl flex items-start text-sm">
               <Icon name="reports" className="w-5 h-5 mr-3 shrink-0 text-red-600 mt-0.5" />
               <div className="flex-1">
                 <p className="font-bold">Database Sync Error</p>
@@ -852,8 +852,8 @@ export default function App() {
 
         return (
             <div className="flex flex-col items-center justify-center min-h-[80vh] text-center p-4 bg-gray-50/50">
-                <div className="bg-white p-8 lg:p-10 rounded-[2.5rem] shadow-2xl border border-gray-100 max-w-xl w-full animate-in fade-in zoom-in-95 duration-300">
-                    <div className="bg-primary-50 w-20 h-20 rounded-3xl flex items-center justify-center mx-auto mb-6 border border-primary-100">
+                <div className="bg-white p-8 lg:p-10 rounded-xl shadow-2xl border border-gray-100 max-w-xl w-full animate-in fade-in zoom-in-95 duration-300">
+                    <div className="bg-primary-50 w-20 h-20 rounded-xl flex items-center justify-center mx-auto mb-6 border border-primary-100">
                         <Icon name="dashboard" className="w-10 h-10 text-primary-600" />
                     </div>
                     
@@ -863,7 +863,7 @@ export default function App() {
                     </p>
                     
                     {/* Workspace Summary Card */}
-                    <div className="bg-gray-50 p-6 rounded-2xl border border-gray-100 text-left mb-8 space-y-4">
+                    <div className="bg-gray-50 p-6 rounded-xl border border-gray-100 text-left mb-8 space-y-4">
                         <span className="text-xs font-bold uppercase text-gray-400 tracking-wider block">Workspace Configuration Details</span>
                         
                         <div className="grid grid-cols-2 gap-4 pt-2 border-t border-gray-100">
@@ -895,9 +895,9 @@ export default function App() {
                     </div>
 
                     {/* Verification & Checkout description */}
-                    <div className="bg-primary-50/50 p-5 rounded-2xl border border-primary-100/50 text-left mb-8">
+                    <div className="bg-primary-50/50 p-5 rounded-xl border border-primary-100/50 text-left mb-8">
                         <div className="flex items-start space-x-3">
-                            <div className="bg-primary-100 p-2 rounded-xl mt-0.5">
+                            <div className="bg-primary-100 p-2 rounded-lg mt-0.5">
                                 <Icon name="reports" className="w-5 h-5 text-primary-700" />
                             </div>
                             <div>
@@ -916,7 +916,7 @@ export default function App() {
                     {isPaidPlan ? (
                         <button 
                             onClick={handleProvisionCheckout} 
-                            className="w-full py-5 bg-primary-600 text-white rounded-2xl font-black uppercase tracking-widest shadow-lg shadow-primary-100 hover:bg-primary-700 transition-all flex items-center justify-center space-x-2 group active:scale-95"
+                            className="w-full py-5 bg-primary-600 text-white rounded-xl font-black uppercase tracking-widest shadow-lg shadow-primary-100 hover:bg-primary-700 transition-all flex items-center justify-center space-x-2 group active:scale-95"
                         >
                             <span>Pay {planPrice} & Activate</span>
                             <svg className="w-5 h-5 transform group-hover:translate-x-1 transition-transform" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M14 5l7 7m0 0l-7 7m7-7H3"></path></svg>
@@ -924,7 +924,7 @@ export default function App() {
                     ) : (
                         <button 
                             onClick={handleProvisionFree} 
-                            className="w-full py-5 bg-primary-600 text-white rounded-2xl font-black uppercase tracking-widest shadow-lg shadow-primary-100 hover:bg-primary-700 transition-all flex items-center justify-center space-x-2 active:scale-95"
+                            className="w-full py-5 bg-primary-600 text-white rounded-xl font-black uppercase tracking-widest shadow-lg shadow-primary-100 hover:bg-primary-700 transition-all flex items-center justify-center space-x-2 active:scale-95"
                         >
                             <span>Activate Free Workspace</span>
                         </button>
@@ -1045,8 +1045,8 @@ export default function App() {
               const msg = `You have reached the monthly invoice limit of your ${sub.tier} Plan (${currentCount}/${maxAllowed} invoices generated). Please upgrade your subscription tier in Workspace Settings.`;
               window.dispatchEvent(new CustomEvent('cravebiz_subscription_error', { detail: { message: msg } }));
               return (
-                  <div className="flex flex-col items-center justify-center p-12 text-center bg-white rounded-[2.5rem] border border-gray-100 shadow-2xl max-w-lg mx-auto my-12 animate-in fade-in">
-                      <div className="bg-red-50 w-16 h-16 rounded-3xl flex items-center justify-center mb-4 text-red-600 border border-red-100">
+                  <div className="flex flex-col items-center justify-center p-12 text-center bg-white rounded-xl border border-gray-100 shadow-2xl max-w-lg mx-auto my-12 animate-in fade-in">
+                      <div className="bg-red-50 w-16 h-16 rounded-xl flex items-center justify-center mb-4 text-red-600 border border-red-100">
                           <Icon name="reports" className="w-8 h-8" />
                       </div>
                       <h3 className="text-lg font-black text-gray-800 uppercase tracking-tighter mb-2">Invoice Limit Reached</h3>
@@ -1282,7 +1282,7 @@ export default function App() {
         />
         <main className="flex-1 overflow-y-auto p-4 md:p-8 relative">
             {syncError && (
-                <div className="mb-6 p-4 rounded-2xl bg-red-50 border border-red-200 text-red-700 font-bold shadow-lg flex justify-between items-center animate-in slide-in-from-top-4">
+                <div className="mb-6 p-4 rounded-xl bg-red-50 border border-red-200 text-red-700 font-bold shadow-lg flex justify-between items-center animate-in slide-in-from-top-4">
                     <div className="flex items-center gap-3">
                         <Icon name="reports" className="w-5 h-5" />
                         <span>{syncError}</span>
@@ -1330,10 +1330,10 @@ export default function App() {
       )}
       {subErrorMsg && (
         <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-[999] flex items-center justify-center p-4">
-          <div className="bg-white rounded-3xl p-8 max-w-md w-full shadow-2xl animate-in fade-in zoom-in-95 duration-200 border border-gray-100 text-center">
+          <div className="bg-white rounded-xl p-8 max-w-md w-full shadow-2xl animate-in fade-in zoom-in-95 duration-200 border border-gray-100 text-center">
             {subErrorMsg.toLowerCase().includes('ai') || subErrorMsg.toLowerCase().includes('token') || subErrorMsg.toLowerCase().includes('credit') || subErrorMsg.toLowerCase().includes('unit') ? (
               <>
-                <div className="bg-amber-50 w-16 h-16 rounded-2xl flex items-center justify-center mx-auto mb-4 border border-amber-100">
+                <div className="bg-amber-50 w-16 h-16 rounded-xl flex items-center justify-center mx-auto mb-4 border border-amber-100">
                   <Icon name="reports" className="w-8 h-8 text-amber-600" />
                 </div>
                 <h3 className="text-lg font-black text-gray-800 uppercase tracking-tighter mb-2">AI Quota Exhausted</h3>
@@ -1418,7 +1418,7 @@ export default function App() {
               </>
             ) : (
               <>
-                <div className="bg-red-50 w-16 h-16 rounded-2xl flex items-center justify-center mx-auto mb-4 border border-red-100 animate-bounce">
+                <div className="bg-red-50 w-16 h-16 rounded-xl flex items-center justify-center mx-auto mb-4 border border-red-100 animate-bounce">
                   <Icon name="reports" className="w-8 h-8 text-red-600" />
                 </div>
                 <h3 className="text-lg font-black text-gray-800 uppercase tracking-tighter mb-2">Subscription Limit</h3>

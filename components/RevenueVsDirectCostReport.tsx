@@ -327,7 +327,7 @@ ${JSON.stringify(summaryPayload, null, 2)}`;
   return (
     <div className="space-y-8 animate-in fade-in duration-300">
       {/* Header & Controls */}
-      <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4 bg-white p-6 md:p-8 rounded-[2.5rem] shadow-xl border border-gray-100">
+      <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4 bg-white p-6 md:p-8 rounded-xl shadow-xl border border-gray-100">
         <div>
           <div className="flex items-center space-x-2">
             <span className="bg-primary-50 text-primary-700 px-3 py-1 rounded-full text-[10px] font-black uppercase tracking-widest border border-primary-200">
@@ -345,7 +345,7 @@ ${JSON.stringify(summaryPayload, null, 2)}`;
 
         {/* Date Filter Bar */}
         <div className="flex flex-wrap items-center gap-3 print-hidden">
-          <div className="flex items-center space-x-2 bg-gray-50 border border-gray-200 p-1.5 rounded-2xl">
+          <div className="flex items-center space-x-2 bg-gray-50 border border-gray-200 p-1.5 rounded-lg">
             <Calendar className="w-4 h-4 text-gray-400 ml-2" />
             <select
               value={filterRange}
@@ -363,7 +363,7 @@ ${JSON.stringify(summaryPayload, null, 2)}`;
           </div>
 
           {filterRange === 'custom' && (
-            <div className="flex items-center space-x-2 bg-gray-50 border border-gray-200 p-2 rounded-2xl text-xs">
+            <div className="flex items-center space-x-2 bg-gray-50 border border-gray-200 p-2 rounded-lg text-xs">
               <input
                 type="date"
                 value={customStartDate}
@@ -385,7 +385,7 @@ ${JSON.stringify(summaryPayload, null, 2)}`;
             <button
               onClick={handleExportCsv}
               title="Export CSV"
-              className="bg-emerald-600 hover:bg-emerald-700 text-white px-3 py-2 rounded-xl text-xs font-black uppercase tracking-widest transition-all shadow-md flex items-center space-x-1 cursor-pointer"
+              className="bg-emerald-600 hover:bg-emerald-700 text-white px-3 py-2 rounded-lg text-xs font-black uppercase tracking-widest transition-all shadow-md flex items-center space-x-1 cursor-pointer"
             >
               <Download className="w-3.5 h-3.5" />
               <span>CSV</span>
@@ -393,7 +393,7 @@ ${JSON.stringify(summaryPayload, null, 2)}`;
             <button
               onClick={handleExportExcel}
               title="Export Excel Spreadsheet"
-              className="bg-blue-600 hover:bg-blue-700 text-white px-3 py-2 rounded-xl text-xs font-black uppercase tracking-widest transition-all shadow-md flex items-center space-x-1 cursor-pointer"
+              className="bg-blue-600 hover:bg-blue-700 text-white px-3 py-2 rounded-lg text-xs font-black uppercase tracking-widest transition-all shadow-md flex items-center space-x-1 cursor-pointer"
             >
               <FileSpreadsheet className="w-3.5 h-3.5" />
               <span>Excel</span>
@@ -401,7 +401,7 @@ ${JSON.stringify(summaryPayload, null, 2)}`;
             <button
               onClick={handlePrintPdf}
               title="Print / Save PDF"
-              className="bg-slate-900 hover:bg-slate-800 text-white px-3 py-2 rounded-xl text-xs font-black uppercase tracking-widest transition-all shadow-md flex items-center space-x-1 cursor-pointer"
+              className="bg-slate-900 hover:bg-slate-800 text-white px-3 py-2 rounded-lg text-xs font-black uppercase tracking-widest transition-all shadow-md flex items-center space-x-1 cursor-pointer"
             >
               <Printer className="w-3.5 h-3.5" />
               <span>PDF / Print</span>
@@ -413,7 +413,7 @@ ${JSON.stringify(summaryPayload, null, 2)}`;
       {/* 4 Key Summary Cards */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6">
         {/* Card 1: Total Revenue */}
-        <div className="bg-white p-6 rounded-[2rem] border border-gray-100 shadow-xl relative overflow-hidden group hover:border-emerald-200 transition-all">
+        <div className="bg-white p-6 rounded-xl border border-gray-100 shadow-lg relative overflow-hidden group hover:border-emerald-200 transition-all">
           <div className="flex justify-between items-start">
             <div>
               <p className="text-[10px] font-black uppercase tracking-widest text-gray-400">Total Paid Revenue</p>
@@ -421,7 +421,7 @@ ${JSON.stringify(summaryPayload, null, 2)}`;
                 ₦{totalRevenue.toLocaleString()}
               </h3>
             </div>
-            <div className="p-3 bg-emerald-50 rounded-2xl text-emerald-600 border border-emerald-100">
+            <div className="p-3 bg-emerald-50 rounded-lg text-emerald-600 border border-emerald-100">
               <DollarSign className="w-6 h-6" />
             </div>
           </div>
@@ -431,7 +431,7 @@ ${JSON.stringify(summaryPayload, null, 2)}`;
         </div>
 
         {/* Card 2: Total Direct Cost */}
-        <div className="bg-white p-6 rounded-[2rem] border border-gray-100 shadow-xl relative overflow-hidden group hover:border-rose-200 transition-all">
+        <div className="bg-white p-6 rounded-xl border border-gray-100 shadow-lg relative overflow-hidden group hover:border-rose-200 transition-all">
           <div className="flex justify-between items-start">
             <div>
               <p className="text-[10px] font-black uppercase tracking-widest text-gray-400">Total Direct Cost</p>
@@ -439,7 +439,7 @@ ${JSON.stringify(summaryPayload, null, 2)}`;
                 ₦{totalDirectCost.toLocaleString()}
               </h3>
             </div>
-            <div className="p-3 bg-rose-50 rounded-2xl text-rose-600 border border-rose-100">
+            <div className="p-3 bg-rose-50 rounded-lg text-rose-600 border border-rose-100">
               <Layers className="w-6 h-6" />
             </div>
           </div>
@@ -449,7 +449,7 @@ ${JSON.stringify(summaryPayload, null, 2)}`;
         </div>
 
         {/* Card 3: Gross Profit */}
-        <div className="bg-white p-6 rounded-[2rem] border border-gray-100 shadow-xl relative overflow-hidden group hover:border-indigo-200 transition-all">
+        <div className="bg-white p-6 rounded-xl border border-gray-100 shadow-lg relative overflow-hidden group hover:border-indigo-200 transition-all">
           <div className="flex justify-between items-start">
             <div>
               <p className="text-[10px] font-black uppercase tracking-widest text-gray-400">Gross Profit</p>
@@ -457,7 +457,7 @@ ${JSON.stringify(summaryPayload, null, 2)}`;
                 ₦{grossProfit.toLocaleString()}
               </h3>
             </div>
-            <div className="p-3 bg-indigo-50 rounded-2xl text-indigo-600 border border-indigo-100">
+            <div className="p-3 bg-indigo-50 rounded-lg text-indigo-600 border border-indigo-100">
               <TrendingUp className="w-6 h-6" />
             </div>
           </div>
@@ -467,7 +467,7 @@ ${JSON.stringify(summaryPayload, null, 2)}`;
         </div>
 
         {/* Card 4: Profit Margin % */}
-        <div className={`bg-white p-6 rounded-[2rem] border-2 shadow-xl relative overflow-hidden transition-all ${overallIndicator.bg}`}>
+        <div className={`bg-white p-6 rounded-xl border-2 shadow-lg relative overflow-hidden transition-all ${overallIndicator.bg}`}>
           <div className="flex justify-between items-start">
             <div>
               <p className="text-[10px] font-black uppercase tracking-widest text-gray-500">Overall Profit Margin</p>
@@ -477,7 +477,7 @@ ${JSON.stringify(summaryPayload, null, 2)}`;
                 </h3>
               </div>
             </div>
-            <div className={`p-2.5 rounded-xl font-extrabold text-xs tracking-wider uppercase shadow-sm border ${overallIndicator.bg}`}>
+            <div className={`p-2.5 rounded-lg font-extrabold text-xs tracking-wider uppercase shadow-sm border ${overallIndicator.bg}`}>
               {overallIndicator.status}
             </div>
           </div>
@@ -495,7 +495,7 @@ ${JSON.stringify(summaryPayload, null, 2)}`;
       {/* Visual Charts: Bar Chart (Revenue vs Direct Cost) & Line Chart (Trends) */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
         {/* Bar Chart: Revenue vs Direct Cost by Service */}
-        <div className="bg-white p-6 md:p-8 rounded-[2.5rem] shadow-xl border border-gray-100">
+        <div className="bg-white p-6 md:p-8 rounded-xl shadow-xl border border-gray-100">
           <div className="flex items-center justify-between mb-6">
             <div>
               <h3 className="text-lg font-black text-gray-900 uppercase tracking-tight">
@@ -529,11 +529,11 @@ ${JSON.stringify(summaryPayload, null, 2)}`;
                   />
                   <Tooltip
                     formatter={(value: number, name: string) => [`₦${value.toLocaleString()}`, name === 'revenue' ? 'Revenue' : 'Direct Cost']}
-                    contentStyle={{ borderRadius: '1rem', border: '1px solid #f3f4f6', boxShadow: '0 10px 25px -5px rgba(0,0,0,0.1)' }}
+                    contentStyle={{ borderRadius: '0.75rem', border: '1px solid #f3f4f6', boxShadow: '0 10px 25px -5px rgba(0,0,0,0.1)' }}
                   />
                   <Legend wrapperStyle={{ paddingTop: '10px', fontSize: '11px', fontWeight: 800 }} />
-                  <Bar dataKey="revenue" name="Revenue (₦)" fill="#10b981" radius={[6, 6, 0, 0]} />
-                  <Bar dataKey="directCost" name="Direct Cost (₦)" fill="#f43f5e" radius={[6, 6, 0, 0]} />
+                  <Bar dataKey="revenue" name="Revenue (₦)" fill="#10b981" radius={[4, 4, 0, 0]} />
+                  <Bar dataKey="directCost" name="Direct Cost (₦)" fill="#f43f5e" radius={[4, 4, 0, 0]} />
                 </BarChart>
               </ResponsiveContainer>
             </div>
@@ -546,7 +546,7 @@ ${JSON.stringify(summaryPayload, null, 2)}`;
         </div>
 
         {/* Line Chart: Revenue and Direct Cost Trends over time */}
-        <div className="bg-white p-6 md:p-8 rounded-[2.5rem] shadow-xl border border-gray-100">
+        <div className="bg-white p-6 md:p-8 rounded-xl shadow-xl border border-gray-100">
           <div className="flex items-center justify-between mb-6">
             <div>
               <h3 className="text-lg font-black text-gray-900 uppercase tracking-tight">
@@ -573,7 +573,7 @@ ${JSON.stringify(summaryPayload, null, 2)}`;
                   />
                   <Tooltip
                     formatter={(value: number, name: string) => [`₦${value.toLocaleString()}`, name]}
-                    contentStyle={{ borderRadius: '1rem', border: '1px solid #f3f4f6', boxShadow: '0 10px 25px -5px rgba(0,0,0,0.1)' }}
+                    contentStyle={{ borderRadius: '0.75rem', border: '1px solid #f3f4f6', boxShadow: '0 10px 25px -5px rgba(0,0,0,0.1)' }}
                   />
                   <Legend wrapperStyle={{ paddingTop: '10px', fontSize: '11px', fontWeight: 800 }} />
                   <Line type="monotone" dataKey="revenue" name="Revenue" stroke="#10b981" strokeWidth={3} dot={{ r: 4 }} activeDot={{ r: 6 }} />
@@ -592,7 +592,7 @@ ${JSON.stringify(summaryPayload, null, 2)}`;
       </div>
 
       {/* Service Profitability Table */}
-      <div className="bg-white p-6 md:p-8 rounded-[2.5rem] shadow-xl border border-gray-100 overflow-hidden">
+      <div className="bg-white p-6 md:p-8 rounded-xl shadow-xl border border-gray-100 overflow-hidden">
         <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 mb-6">
           <div>
             <h3 className="text-xl font-black text-gray-900 uppercase tracking-tight">
@@ -604,7 +604,7 @@ ${JSON.stringify(summaryPayload, null, 2)}`;
           </div>
 
           {/* Indicator Rules Legend */}
-          <div className="flex items-center space-x-3 text-[10px] font-black uppercase tracking-wider bg-gray-50 px-4 py-2 rounded-2xl border border-gray-100">
+          <div className="flex items-center space-x-3 text-[10px] font-black uppercase tracking-wider bg-gray-50 px-4 py-2 rounded-lg border border-gray-100">
             <span className="flex items-center space-x-1">
               <span className="w-2.5 h-2.5 rounded-full bg-emerald-500"></span>
               <span className="text-emerald-800">Green (&gt;40%)</span>
@@ -624,13 +624,13 @@ ${JSON.stringify(summaryPayload, null, 2)}`;
           <table className="w-full text-left text-xs">
             <thead className="bg-gray-50 text-gray-600 uppercase font-black tracking-widest text-[10px]">
               <tr>
-                <th className="px-6 py-4 rounded-l-2xl">Service Name</th>
+                <th className="px-6 py-4 rounded-l-lg">Service Name</th>
                 <th className="px-6 py-4">Category</th>
                 <th className="px-6 py-4 text-right">Revenue Generated</th>
                 <th className="px-6 py-4 text-right">Direct Cost</th>
                 <th className="px-6 py-4 text-right">Gross Profit</th>
                 <th className="px-6 py-4 text-center">Profit Margin %</th>
-                <th className="px-6 py-4 text-center rounded-r-2xl">Indicator</th>
+                <th className="px-6 py-4 text-center rounded-r-lg">Indicator</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-gray-100">
@@ -678,10 +678,10 @@ ${JSON.stringify(summaryPayload, null, 2)}`;
       </div>
 
       {/* AI Insights & Strategic Profitability Advisor Section */}
-      <div className="bg-gradient-to-br from-slate-900 via-slate-850 to-indigo-950 text-white p-6 md:p-8 rounded-[2.5rem] shadow-2xl relative overflow-hidden">
+      <div className="bg-gradient-to-br from-slate-900 via-slate-850 to-indigo-950 text-white p-6 md:p-8 rounded-xl shadow-2xl relative overflow-hidden">
         <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 mb-6">
           <div className="flex items-center space-x-3">
-            <div className="p-3 bg-indigo-500/20 border border-indigo-400/30 rounded-2xl text-indigo-300">
+            <div className="p-3 bg-indigo-500/20 border border-indigo-400/30 rounded-lg text-indigo-300">
               <Sparkles className="w-6 h-6" />
             </div>
             <div>
@@ -693,7 +693,7 @@ ${JSON.stringify(summaryPayload, null, 2)}`;
           <button
             onClick={handleGenerateAiInsights}
             disabled={isGeneratingAi}
-            className="bg-indigo-600 hover:bg-indigo-500 text-white px-6 py-3 rounded-2xl font-black uppercase tracking-wider text-xs shadow-xl transition-all flex items-center justify-center space-x-2 disabled:opacity-50 cursor-pointer"
+            className="bg-indigo-600 hover:bg-indigo-500 text-white px-6 py-3 rounded-lg font-black uppercase tracking-wider text-xs shadow-xl transition-all flex items-center justify-center space-x-2 disabled:opacity-50 cursor-pointer"
           >
             {isGeneratingAi ? (
               <>
@@ -711,7 +711,7 @@ ${JSON.stringify(summaryPayload, null, 2)}`;
 
         {/* Real-time Rule-based Quick Summary Cards */}
         <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
-          <div className="bg-slate-800/80 border border-slate-700/80 p-4 rounded-2xl">
+          <div className="bg-slate-800/80 border border-slate-700/80 p-4 rounded-lg">
             <div className="flex items-center space-x-2 text-emerald-400 text-xs font-bold uppercase tracking-wider mb-2">
               <CheckCircle2 className="w-4 h-4" />
               <span>Highest Profit Margin Services</span>
@@ -730,7 +730,7 @@ ${JSON.stringify(summaryPayload, null, 2)}`;
             )}
           </div>
 
-          <div className="bg-slate-800/80 border border-slate-700/80 p-4 rounded-2xl">
+          <div className="bg-slate-800/80 border border-slate-700/80 p-4 rounded-lg">
             <div className="flex items-center space-x-2 text-rose-400 text-xs font-bold uppercase tracking-wider mb-2">
               <AlertTriangle className="w-4 h-4" />
               <span>Low Profitability Caution</span>
@@ -749,7 +749,7 @@ ${JSON.stringify(summaryPayload, null, 2)}`;
             )}
           </div>
 
-          <div className="bg-slate-800/80 border border-slate-700/80 p-4 rounded-2xl">
+          <div className="bg-slate-800/80 border border-slate-700/80 p-4 rounded-lg">
             <div className="flex items-center space-x-2 text-amber-400 text-xs font-bold uppercase tracking-wider mb-2">
               <ShieldAlert className="w-4 h-4" />
               <span>High Revenue / Low Profit Risk</span>
@@ -771,7 +771,7 @@ ${JSON.stringify(summaryPayload, null, 2)}`;
 
         {/* Deep AI Analysis Response Panel */}
         {aiAnalysis && (
-          <div className="bg-slate-900/90 border border-indigo-500/30 rounded-2xl p-6 md:p-8 animate-in slide-in-from-bottom-3">
+          <div className="bg-slate-900/90 border border-indigo-500/30 rounded-lg p-6 md:p-8 animate-in slide-in-from-bottom-3">
             <div className="flex items-center justify-between pb-4 border-b border-slate-800 mb-4">
               <span className="text-[10px] font-black uppercase tracking-widest text-indigo-400">Executive Dossier & Recommendations</span>
               <span className="text-[9px] font-bold bg-indigo-500/20 text-indigo-300 px-2.5 py-0.5 rounded-md">AI-Generated</span>
