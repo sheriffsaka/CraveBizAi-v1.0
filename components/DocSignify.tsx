@@ -7,6 +7,7 @@ import {
 } from 'lucide-react';
 import { api } from '../lib/api';
 import { DocumentSignifyViewer, PreparedField } from './DocumentSignifyViewer';
+import { overlaySignaturesOnPdf, downloadPdfBytes } from '../lib/pdfOverlay';
 import { Company, User, GeneratedDocument, DbDocument, DbDocumentSignatory, SignatureInfo } from '../types';
 
 interface DocSignifyProps {
@@ -154,7 +155,13 @@ export default function DocSignify({ company, user, prefillProject, prefillClien
         // Upload to server storage
         const cloudUrl = await api.uploadDocSignifyFile(file.name, base64Data, mimeType, company?.id);
         const resolvedUrl = cloudUrl || "/uploads/placeholder_document.pdf";
-        setFileUrl(resolvedUrl);
+        
+        // Use base64 data URI for instant local PDF rendering if PDF
+        if (mimeType === 'pdf' || mimeType.includes('pdf')) {
+          setFileUrl(`data:application/pdf;base64,${base64Data}`);
+        } else {
+          setFileUrl(resolvedUrl);
+        }
 
         const newDoc: GeneratedDocument = {
           documentType: file.name.replace(/\.[^/.]+$/, "") || "Uploaded Document",
@@ -223,7 +230,7 @@ export default function DocSignify({ company, user, prefillProject, prefillClien
   };
 
   // Add field to canvas
-  const handlePlaceField = (pageNum: number, x: number, y: number) => {
+  const handlePlaceField = (pageNum: number, x: number, y: number, overrideType?: PreparedField['type']) => {
     if (!activeSignerId) {
       showToast("⚠️ Please select an active signer from the left menu first.");
       return;
@@ -231,24 +238,19 @@ export default function DocSignify({ company, user, prefillProject, prefillClien
 
     const activeSigner = signers.find(s => s.id === activeSignerId);
     const signerName = activeSigner ? activeSigner.name : "Signer";
+    const fieldType = overrideType || selectedFieldType || 'signature';
 
-    // Standard width/height defaults based on type
+    // Standard width/height defaults based on simplified field types
     let width = 140;
-    let height = 50;
-    if (selectedFieldType === 'checkbox') {
-      width = 30;
-      height = 30;
-    } else if (selectedFieldType === 'initial') {
-      width = 80;
-      height = 45;
-    } else if (selectedFieldType === 'date' || selectedFieldType === 'name' || selectedFieldType === 'email') {
-      width = 150;
+    let height = 55;
+    if (fieldType === 'date') {
+      width = 130;
       height = 36;
     }
 
     const newField: PreparedField = {
       id: 'field_' + Math.floor(Math.random() * 899999 + 100000),
-      type: selectedFieldType,
+      type: fieldType,
       page_number: pageNum,
       x_position: x,
       y_position: y,
@@ -259,7 +261,7 @@ export default function DocSignify({ company, user, prefillProject, prefillClien
     };
 
     setFields(prev => [...prev, newField]);
-    showToast(`Placed ${selectedFieldType.toUpperCase()} box for ${signerName} on Page ${pageNum}`);
+    showToast(`Placed ${fieldType === 'signature' ? 'Signature' : 'Date'} field for ${signerName} on Page ${pageNum}`);
   };
 
   const handleFieldMove = (id: string, pageNum: number, x: number, y: number) => {
@@ -273,6 +275,30 @@ export default function DocSignify({ company, user, prefillProject, prefillClien
   const handleFieldDelete = (id: string) => {
     setFields(prev => prev.filter(f => f.id !== id));
     showToast("Field removed from canvas.");
+  };
+
+  const handleDownloadSignedPdf = async (item: DashboardDocItem) => {
+    try {
+      setIsLoading(true);
+      showToast("Preparing signed PDF document...");
+      const doc = item.document;
+      const fields = doc.content_json?.fields || [];
+      const sourcePdf = doc.original_file_url || doc.signed_file_url;
+      if (!sourcePdf) {
+        showToast("PDF source file not found.");
+        return;
+      }
+      const pdfBytes = await overlaySignaturesOnPdf(sourcePdf, fields);
+      downloadPdfBytes(pdfBytes, `${doc.title || 'signed_document'}.pdf`);
+      showToast("Downloaded signed PDF!");
+    } catch (err: any) {
+      console.error("Error generating signed PDF overlay:", err);
+      if (item.document.signed_file_url || item.document.original_file_url) {
+        window.open(item.document.signed_file_url || item.document.original_file_url, '_blank');
+      }
+    } finally {
+      setIsLoading(false);
+    }
   };
 
   // Proceed to Step 2
@@ -712,30 +738,14 @@ export default function DocSignify({ company, user, prefillProject, prefillClien
                                 <Eye className="w-4 h-4" />
                               </button>
 
-                              {/* Download Signed Document if available */}
-                              {doc.signed_file_url ? (
-                                <a
-                                  href={doc.signed_file_url}
-                                  download
-                                  target="_blank"
-                                  rel="noopener noreferrer"
-                                  className="p-1.5 text-emerald-600 hover:bg-emerald-50 rounded-lg transition-colors"
-                                  title="Download Final Signed PDF"
-                                >
-                                  <Download className="w-4 h-4" />
-                                </a>
-                              ) : doc.original_file_url ? (
-                                <a
-                                  href={doc.original_file_url}
-                                  download
-                                  target="_blank"
-                                  rel="noopener noreferrer"
-                                  className="p-1.5 text-slate-400 hover:text-slate-600 hover:bg-slate-100 rounded-lg transition-colors"
-                                  title="Download Original File"
-                                >
-                                  <Download className="w-4 h-4" />
-                                </a>
-                              ) : null}
+                              {/* Download Signed Document */}
+                              <button
+                                onClick={() => handleDownloadSignedPdf(item)}
+                                className="p-1.5 text-emerald-600 hover:bg-emerald-50 rounded-lg transition-colors"
+                                title="Download Signed PDF Document"
+                              >
+                                <Download className="w-4 h-4" />
+                              </button>
 
                               {/* Resend email invitations */}
                               <button
@@ -973,6 +983,50 @@ export default function DocSignify({ company, user, prefillProject, prefillClien
                   <ArrowRight className="w-4 h-4" />
                 </button>
               </div>
+
+              {/* Immediate Document Preview Section (Renders immediately upon upload) */}
+              {fileUrl && (
+                <div className="lg:col-span-12 bg-white p-6 rounded-2xl border border-slate-200/80 shadow-sm space-y-4">
+                  <div className="flex flex-wrap items-center justify-between border-b border-slate-100 pb-3 gap-2">
+                    <div>
+                      <h3 className="text-xs font-black text-slate-800 uppercase tracking-wider flex items-center gap-2">
+                        <span className="w-2.5 h-2.5 rounded-full bg-emerald-500 animate-pulse"></span>
+                        Immediate Document Preview ({fileName || 'Uploaded PDF'})
+                      </h3>
+                      <p className="text-[11px] text-slate-500 font-semibold mt-0.5">
+                        Every page of your uploaded document is rendered live below. Click "Prepare Fields & Sign Document" to place signatures.
+                      </p>
+                    </div>
+
+                    <button
+                      onClick={handleProceedToPrepare}
+                      className="px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-xs font-bold shadow-md inline-flex items-center gap-1.5"
+                    >
+                      <span>Prepare Fields & Place Signatures</span>
+                      <ArrowRight className="w-4 h-4" />
+                    </button>
+                  </div>
+
+                  <div className="bg-slate-100 p-4 rounded-xl border border-slate-200 min-h-[550px] flex justify-center overflow-auto">
+                    <DocumentSignifyViewer
+                      fileUrl={fileUrl}
+                      fileType={fileType}
+                      fields={fields}
+                      signatories={signers.map(s => ({
+                        id: s.id,
+                        document_id: 'doc_temp',
+                        name: s.name,
+                        email: s.email,
+                        role: s.signatoryType === 'Main' ? 'main_signatory' : 'witness',
+                        token: 'token_' + s.id,
+                        status: 'pending',
+                        signed_at: null
+                      }))}
+                      isDesignerMode={false}
+                    />
+                  </div>
+                </div>
+              )}
             </div>
           )}
 
@@ -983,10 +1037,10 @@ export default function DocSignify({ company, user, prefillProject, prefillClien
               <div className="lg:col-span-4 bg-white p-6 rounded-2xl border border-slate-200/80 shadow-sm space-y-6">
                 <div>
                   <h2 className="text-xs font-black text-slate-800 uppercase tracking-wider border-b border-slate-100 pb-2">
-                    Signature Fields & Palette
+                    Signature & Date Fields Palette
                   </h2>
                   <p className="text-xs text-slate-500 font-semibold mt-1">
-                    Select a recipient, pick a field type, then click anywhere on the page on the right to place it.
+                    Select a recipient, pick a field, then drag or click on the document page on the right to drop it.
                   </p>
                 </div>
 
@@ -1018,31 +1072,32 @@ export default function DocSignify({ company, user, prefillProject, prefillClien
                   </div>
                 </div>
 
-                {/* Field Presets */}
+                {/* Field Presets (Restricted to Signature and Date Fields) */}
                 <div className="space-y-2">
                   <label className="block text-[10px] font-black uppercase text-slate-400 tracking-wider">
-                    Field Type to Drop:
+                    Available Fields (Drag or Click):
                   </label>
-                  <div className="grid grid-cols-2 gap-2">
+                  <div className="grid grid-cols-2 gap-2.5">
                     {[
-                      { type: 'signature', label: '✍️ Signature' },
-                      { type: 'initial', label: '🔤 Initial' },
-                      { type: 'date', label: '📅 Date Signed' },
-                      { type: 'name', label: '👤 Full Name' },
-                      { type: 'email', label: '✉️ Email Address' },
-                      { type: 'text', label: '📝 Text Input' },
-                      { type: 'checkbox', label: '☑️ Checkbox' }
+                      { type: 'signature', label: '✍️ Signature', desc: 'Signature box' },
+                      { type: 'date', label: '📅 Date Signed', desc: 'Date box' }
                     ].map(f => (
                       <button
                         key={f.type}
+                        draggable
+                        onDragStart={(e) => {
+                          e.dataTransfer.setData('field-type', f.type);
+                        }}
                         onClick={() => setSelectedFieldType(f.type as any)}
-                        className={`p-2.5 rounded-xl border text-xs font-bold transition-all text-left ${
+                        className={`p-3 rounded-xl border text-xs font-bold transition-all text-left cursor-grab active:cursor-grabbing ${
                           selectedFieldType === f.type
-                            ? 'border-indigo-600 bg-indigo-600 text-white shadow-sm'
+                            ? 'border-indigo-600 bg-indigo-600 text-white shadow-md'
                             : 'border-slate-200 bg-slate-50 text-slate-700 hover:bg-slate-100'
                         }`}
                       >
-                        {f.label}
+                        <p className="font-extrabold text-xs">{f.label}</p>
+                        <p className={`text-[10px] mt-0.5 ${selectedFieldType === f.type ? 'text-indigo-100' : 'text-slate-400'}`}>{f.desc}</p>
+                        <span className={`text-[9px] block mt-1 font-mono uppercase ${selectedFieldType === f.type ? 'text-indigo-200' : 'text-indigo-600 font-bold'}`}>✋ Drag onto page</span>
                       </button>
                     ))}
                   </div>

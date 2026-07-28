@@ -57,7 +57,7 @@ interface DocumentSignifyViewerProps {
   onFieldDelete?: (fieldId: string) => void;
   onFieldUpdate?: (fieldId: string, updatedFields: Partial<PreparedField>) => void;
   onFieldClick?: (fieldId: string) => void;
-  onPlaceFieldAtCoordinates?: (pageNum: number, x: number, y: number) => void;
+  onPlaceFieldAtCoordinates?: (pageNum: number, x: number, y: number, fieldType?: PreparedField['type']) => void;
 }
 
 interface PDFPageCanvasProps {
@@ -457,6 +457,30 @@ export const DocumentSignifyViewer: React.FC<DocumentSignifyViewerProps> = ({
             key={pageNum}
             ref={el => { pageRefs.current[pageNum] = el; }}
             onClick={(e) => handlePageClick(pageNum, e)}
+            onDragOver={(e) => {
+              e.preventDefault();
+              e.dataTransfer.dropEffect = 'copy';
+            }}
+            onDrop={(e) => {
+              e.preventDefault();
+              const droppedType = e.dataTransfer.getData('field-type') || e.dataTransfer.getData('text/plain');
+              if (onPlaceFieldAtCoordinates) {
+                const pageDiv = pageRefs.current[pageNum];
+                if (pageDiv) {
+                  const rect = pageDiv.getBoundingClientRect();
+                  const x = e.clientX - rect.left;
+                  const y = e.clientY - rect.top;
+                  const xPercent = (x / rect.width) * 100;
+                  const yPercent = (y / rect.height) * 100;
+                  onPlaceFieldAtCoordinates(
+                    pageNum,
+                    parseFloat(xPercent.toFixed(2)),
+                    parseFloat(yPercent.toFixed(2)),
+                    (droppedType || undefined) as any
+                  );
+                }
+              }
+            }}
             className={`relative bg-white shadow-xl border border-slate-300 rounded-xl select-none transition-shadow duration-300 ${
               isDesignerMode ? 'cursor-crosshair hover:shadow-indigo-100/50 hover:border-indigo-400' : ''
             }`}

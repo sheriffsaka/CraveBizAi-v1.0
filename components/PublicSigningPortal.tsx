@@ -2,6 +2,8 @@ import React, { useState, useEffect, useRef, useMemo } from 'react';
 import { StoredGeneratedDoc, DocumentBlock, SignatureInfo, DbDocument, DbDocumentSignatory, DbDocumentSignature } from '../types';
 import { api } from '../lib/api';
 import { DocumentSignifyViewer } from './DocumentSignifyViewer';
+import { overlaySignaturesOnPdf, downloadPdfBytes } from '../lib/pdfOverlay';
+import { Download } from 'lucide-react';
 
 const base64ToUtf8 = (str: string): string => {
     try {
@@ -923,6 +925,35 @@ export default function PublicSigningPortal({ docId, token, prefilledRecipient, 
                                 </ul>
                                 <p className="text-[10px] text-indigo-700 font-extrabold pt-0.5">Explore CraveBiZ today - It's 100% free!</p>
                             </div>
+
+                            {/* Download Signed PDF Button */}
+                            <button
+                                onClick={async () => {
+                                    try {
+                                        setLoading(true);
+                                        const fields = (dbDoc?.content_json?.fields || []).map((f: any) => {
+                                            const sig = dbSignatures.find(s => s.signatory_id === f.assigned_signer_id);
+                                            return {
+                                                ...f,
+                                                value: f.value || sig?.signature_image_url || ''
+                                            };
+                                        });
+                                        const pdfSource = dbDoc?.original_file_url || dbDoc?.signed_file_url;
+                                        if (pdfSource) {
+                                            const pdfBytes = await overlaySignaturesOnPdf(pdfSource, fields);
+                                            downloadPdfBytes(pdfBytes, `${dbDoc?.title || 'signed_document'}.pdf`);
+                                        }
+                                    } catch (e) {
+                                        console.error("Error generating signed PDF overlay:", e);
+                                    } finally {
+                                        setLoading(false);
+                                    }
+                                }}
+                                className="w-full py-3 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-black uppercase tracking-widest rounded-xl transition-all shadow-md flex items-center justify-center gap-2"
+                            >
+                                <Download className="w-4 h-4" />
+                                Download Signed PDF
+                            </button>
 
                             {onBackToLogin && (
                                 <button
