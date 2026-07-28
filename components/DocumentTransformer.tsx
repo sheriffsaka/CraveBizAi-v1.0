@@ -179,37 +179,50 @@ const TEMPLATES = [
     }
 ];
 
-function compileDocumentOffline(purpose: string, companyContext: any, selectedPreset?: string): GeneratedDocument {
+function compileDocumentOffline(purpose: string, companyContext: any, selectedPreset?: string, selectedIndustry?: string): GeneratedDocument {
     const today = new Date().toLocaleDateString();
     const ctx = companyContext || {};
+    const industry = selectedIndustry || "Technology";
     
     // Determine Document Type and Title
     let docType = selectedPreset || "Service Agreement";
     let docTitle = (selectedPreset || "PROFESSIONAL SERVICES AGREEMENT").toUpperCase();
-    if (!docTitle.includes("AGREEMENT") && !docTitle.includes("CONTRACT") && !docTitle.includes("PROPOSAL") && !docTitle.includes("INVOICE") && !docTitle.includes("REPORT") && !docTitle.includes("MOU")) {
-        docTitle = docTitle + " AGREEMENT";
+    if (!docTitle.includes("AGREEMENT") && !docTitle.includes("CONTRACT") && !docTitle.includes("PROPOSAL") && !docTitle.includes("INVOICE") && !docTitle.includes("LETTER") && !docTitle.includes("MOU") && !docTitle.includes("NDA") && !docTitle.includes("QUOTATION") && !docTitle.includes("RECEIPT")) {
+        docTitle = docTitle + " DOCUMENT";
     }
     
     const lowerText = purpose.toLowerCase();
     if (!selectedPreset) {
         if (lowerText.includes("nda") || lowerText.includes("disclosure") || lowerText.includes("confidentiality")) {
-            docType = "Non-Disclosure Agreement";
+            docType = "Non-Disclosure Agreement (NDA)";
             docTitle = "MUTUAL NON-DISCLOSURE AGREEMENT";
-        } else if (lowerText.includes("invoice") || lowerText.includes("bill") || lowerText.includes("receipt") || lowerText.includes("payment")) {
+        } else if (lowerText.includes("invoice") || lowerText.includes("bill")) {
             docType = "Invoice";
             docTitle = "COMMERCIAL TAX INVOICE";
-        } else if (lowerText.includes("proposal") || lowerText.includes("quote") || lowerText.includes("estimate") || lowerText.includes("valuation")) {
+        } else if (lowerText.includes("receipt")) {
+            docType = "Receipt";
+            docTitle = "OFFICIAL PAYMENT RECEIPT";
+        } else if (lowerText.includes("quotation") || lowerText.includes("quote")) {
+            docType = "Quotation";
+            docTitle = "COMMERCIAL PRICE QUOTATION";
+        } else if (lowerText.includes("proposal") || lowerText.includes("estimate")) {
             docType = "Proposal";
-            docTitle = "BUSINESS DEVELOPMENT PROPOSAL";
-        } else if (lowerText.includes("employment") || lowerText.includes("offer") || lowerText.includes("job") || lowerText.includes("hire")) {
-            docType = "Employment Agreement";
-            docTitle = "OFFER OF EMPLOYMENT & CONTRACT";
+            docTitle = "BUSINESS & TECHNICAL PROPOSAL";
+        } else if (lowerText.includes("employment") || lowerText.includes("letter") || lowerText.includes("offer")) {
+            docType = "Employment Letter";
+            docTitle = "FORMAL LETTER OF EMPLOYMENT & OFFER";
+        } else if (lowerText.includes("partnership")) {
+            docType = "Partnership Agreement";
+            docTitle = "STRATEGIC PARTNERSHIP COVENANT";
+        } else if (lowerText.includes("memorandum") || lowerText.includes("memo") || lowerText.includes("mou")) {
+            docType = "Memorandum";
+            docTitle = "MEMORANDUM OF UNDERSTANDING & COOPERATION";
+        } else if (lowerText.includes("letter")) {
+            docType = "Business Letter";
+            docTitle = "OFFICIAL EXECUTIVE BUSINESS LETTER";
         } else if (lowerText.includes("contract") || lowerText.includes("agreement")) {
-            docType = "Contract Agreement";
-            docTitle = "FORMAL BUSINESS COVENANT";
-        } else if (lowerText.includes("report") || lowerText.includes("analysis") || lowerText.includes("audit")) {
-            docType = "Report";
-            docTitle = "STRATEGIC AUDIT & SUMMARY REPORT";
+            docType = "Contract";
+            docTitle = "MASTER SERVICES CONTRACT";
         }
     }
 
@@ -438,8 +451,46 @@ const DocumentTransformer: React.FC<DocumentTransformerProps> = ({
     const [loadingMessage, setLoadingMessage] = useState('');
     const [error, setError] = useState<string | null>(null);
 
-    // Feature i: Generate Document by Purpose
+    // Feature i: Generate Document by Purpose & Industry Selection
     const [documentPurpose, setDocumentPurpose] = useState('');
+    const [selectedDocType, setSelectedDocType] = useState<string>("Service Agreement");
+    const [docTypeSearch, setDocTypeSearch] = useState<string>("");
+    const [isDocTypeDropdownOpen, setIsDocTypeDropdownOpen] = useState<boolean>(false);
+
+    const [selectedIndustry, setSelectedIndustry] = useState<string>("Technology");
+    const [industrySearch, setIndustrySearch] = useState<string>("");
+    const [isIndustryDropdownOpen, setIsIndustryDropdownOpen] = useState<boolean>(false);
+
+    const PREDEFINED_DOCUMENT_TYPES = [
+        { id: "contract", title: "Contract", emoji: "📜", description: "Binding formal business contract with legal covenants." },
+        { id: "service-agreement", title: "Service Agreement", emoji: "📝", description: "Agreement for technical, creative, or operational services." },
+        { id: "employment-letter", title: "Employment Letter", emoji: "✉️", description: "Formal offer letter and employment terms for staff or contractors." },
+        { id: "proposal", title: "Proposal", emoji: "💼", description: "Client proposal detailing project scope, strategy, and commercial terms." },
+        { id: "quotation", title: "Quotation", emoji: "🏷️", description: "Official price quote and breakdown of deliverables." },
+        { id: "invoice", title: "Invoice", emoji: "🧾", description: "Commercial tax invoice for products or billable services." },
+        { id: "receipt", title: "Receipt", emoji: "💳", description: "Official payment receipt and transaction confirmation." },
+        { id: "memorandum", title: "Memorandum", emoji: "📑", description: "Internal or cross-organization Memorandum of Understanding (MOU)." },
+        { id: "nda", title: "Non-Disclosure Agreement (NDA)", emoji: "🔒", description: "Mutual or one-way confidentiality agreement protecting trade secrets." },
+        { id: "partnership-agreement", title: "Partnership Agreement", emoji: "🤝", description: "Shared governance, profit distribution, and equity covenant." },
+        { id: "business-letter", title: "Business Letter", emoji: "✉️", description: "Official executive correspondence, notice, or letter." },
+        { id: "custom", title: "Custom Document", emoji: "⚙️", description: "Bespoke document with fully user-defined structure and clauses." },
+    ];
+
+    const PREDEFINED_INDUSTRIES = [
+        { id: "technology", title: "Technology", emoji: "💻", description: "Software, SaaS, IT, Hardware, AI & Cybersecurity" },
+        { id: "education", title: "Education", emoji: "🎓", description: "Schools, Universities, EdTech & Academic Training" },
+        { id: "healthcare", title: "Healthcare", emoji: "🏥", description: "Medical practices, HealthTech, Pharma & Patient Services" },
+        { id: "legal", title: "Legal", emoji: "⚖️", description: "Law firms, Corporate Counsel & Statutory Compliance" },
+        { id: "construction", title: "Construction", emoji: "🏗️", description: "Architecture, Building Works, Engineering & Contracting" },
+        { id: "finance", title: "Finance", emoji: "🏦", description: "Banking, Investment, Accounting & Financial Tech" },
+        { id: "real-estate", title: "Real Estate", emoji: "🏢", description: "Property Leasing, Brokerage, Sales & Facility Management" },
+        { id: "retail", title: "Retail", emoji: "🛍️", description: "E-Commerce, Consumer Products, Wholesaling & Merchandising" },
+        { id: "hospitality", title: "Hospitality", emoji: "🏨", description: "Hotels, Tourism, Catering, Dining & Event Management" },
+        { id: "consulting", title: "Consulting", emoji: "📊", description: "Management Advisory, Strategy, HR & Business Auditing" },
+        { id: "non-profit", title: "Non-Profit", emoji: "🌱", description: "NGOs, Charities, Foundations & Public Interest Work" },
+        { id: "government", title: "Government", emoji: "🏛️", description: "Public Procurement, Civic Agencies & Federal Contracting" },
+        { id: "other", title: "Other", emoji: "🌐", description: "General Commercial & Multi-Sector Covenants" },
+    ];
 
     // Custom Presets State
     const [presets, setPresets] = useState<any[]>(() => {
@@ -1479,28 +1530,30 @@ const DocumentTransformer: React.FC<DocumentTransformerProps> = ({
             setError('Please enter the nature or purpose of the document to generate.');
             return;
         }
-        setLoadingMessage("Gemini-3.5-Flash is currently creating realistic legal terms, filling metadata and mapping layout structures.");
+        setLoadingMessage(`Gemini AI is drafting a professional ${selectedDocType} tailored for the ${selectedIndustry} sector...`);
         setIsLoading(true);
         setError(null);
         setGeneratedDoc(null);
         setAppliedSignature(null); // Reset signature for new document
         
         const context = getCompanyContext();
-        const selectedPresetName = presets[selectedPresetIndex]?.title;
 
         try {
-            const result = await generateDocumentFromPurpose(documentPurpose, context, selectedPresetName);
+            const result = await generateDocumentFromPurpose(documentPurpose, context, selectedDocType, selectedIndustry);
             if (result) {
                 handleLoadNewDocument(result);
+                onSaveDoc(result).then(savedId => { if (savedId) setEditingDocId(savedId); });
             } else {
                 console.warn("AI returned empty, falling back to local offline template compiler.");
-                const fallbackResult = compileDocumentOffline(documentPurpose, context, selectedPresetName);
+                const fallbackResult = compileDocumentOffline(documentPurpose, context, selectedDocType, selectedIndustry);
                 handleLoadNewDocument(fallbackResult);
+                onSaveDoc(fallbackResult).then(savedId => { if (savedId) setEditingDocId(savedId); });
             }
         } catch (e) {
             console.warn("Failsafe triggers offline local compiler:", e);
-            const fallbackResult = compileDocumentOffline(documentPurpose, context, selectedPresetName);
+            const fallbackResult = compileDocumentOffline(documentPurpose, context, selectedDocType, selectedIndustry);
             handleLoadNewDocument(fallbackResult);
+            onSaveDoc(fallbackResult).then(savedId => { if (savedId) setEditingDocId(savedId); });
         } finally {
             setIsLoading(false);
         }
@@ -2032,6 +2085,120 @@ const DocumentTransformer: React.FC<DocumentTransformerProps> = ({
         (window as any).html2pdf().set(opt).from(element).save();
     };
 
+    const handleDownloadDocx = () => {
+        if (!generatedDoc) return;
+        const title = generatedDoc.documentType || 'Business_Document';
+        const fileName = `${title.replace(/[^a-zA-Z0-9_-]/g, '_')}_${Date.now()}.docx`;
+
+        let html = `
+          <html xmlns:o='urn:schemas-microsoft-microsoft-com:office:office' xmlns:w='urn:schemas-microsoft-microsoft-com:office:word' xmlns='http://www.w3.org/TR/REC-html40'>
+          <head>
+            <meta charset="utf-8">
+            <title>${title}</title>
+            <style>
+              body { font-family: 'Calibri', 'Arial', sans-serif; font-size: 11pt; line-height: 1.5; color: #1e293b; margin: 1in; }
+              h1 { font-size: 18pt; color: #0f172a; border-bottom: 2px solid #2563eb; padding-bottom: 6px; font-weight: bold; margin-top: 18pt; }
+              h2 { font-size: 14pt; color: #1e293b; margin-top: 14pt; font-weight: bold; }
+              h3 { font-size: 12pt; color: #334155; margin-top: 12pt; font-weight: bold; }
+              p { margin-bottom: 10pt; text-align: justify; white-space: pre-wrap; }
+              table { width: 100%; border-collapse: collapse; margin-top: 12pt; margin-bottom: 12pt; }
+              th { background-color: #f1f5f9; border: 1px solid #cbd5e1; padding: 8pt; font-weight: bold; text-align: left; font-size: 10pt; }
+              td { border: 1px solid #cbd5e1; padding: 8pt; font-size: 10pt; vertical-align: top; }
+              .meta-table td { border: none; padding: 4pt; }
+              .summary-box { background: #f8fafc; padding: 12pt; border: 1px solid #e2e8f0; border-radius: 4pt; margin-top: 12pt; }
+              .footer-note { font-size: 9pt; color: #64748b; margin-top: 24pt; border-top: 1px solid #e2e8f0; padding-top: 12pt; text-align: center; }
+            </style>
+          </head>
+          <body>
+        `;
+
+        generatedDoc.blocks.forEach((block) => {
+          if (block.type === 'cover_page') {
+            const cover = block.content as any;
+            html += `
+              <div style="border: 3px solid #0f172a; padding: 24pt; margin-bottom: 24pt; background: #f8fafc;">
+                <h1 style="border: none; font-size: 24pt; text-transform: uppercase;">${cover.title || title}</h1>
+                <p style="font-weight: bold; color: #64748b; text-transform: uppercase;">${cover.subtitle || ''}</p>
+                <hr style="border: 0; border-top: 1px solid #cbd5e1; margin: 18pt 0;" />
+                <table class="meta-table" style="width:100%;">
+                  <tr><td><strong>Prepared By:</strong> ${cover.preparedBy || ''}</td><td><strong>Prepared For:</strong> ${cover.preparedFor || ''}</td></tr>
+                  <tr><td><strong>Date:</strong> ${cover.date || ''}</td><td><strong>Organization:</strong> ${cover.companyName || ''}</td></tr>
+                </table>
+              </div>
+              <br style="page-break-before: always;" />
+            `;
+          } else if (block.type === 'header') {
+            const header = block.content as any;
+            html += `
+              <table class="meta-table" style="width:100%; border-bottom: 2px solid #0f172a; padding-bottom: 12pt; margin-bottom: 18pt;">
+                <tr>
+                  <td>
+                    <h2 style="margin:0; color:#0f172a; font-size: 16pt;">${header.companyName || company?.name || 'CRAVEBIZ'}</h2>
+                    <p style="margin:0; font-size:9pt; color:#64748b;">${header.address || ''} | ${header.email || ''} | ${header.phone || ''} ${header.website ? '| ' + header.website : ''}</p>
+                  </td>
+                </tr>
+              </table>
+            `;
+          } else if (block.type === 'metadata') {
+            const meta = block.content as any;
+            html += `
+              <div style="background:#f8fafc; padding:10pt; border:1px solid #e2e8f0; margin-bottom:15pt;">
+                <table class="meta-table" style="width:100%;">
+                  <tr>
+                    <td><h2 style="margin:0; font-size:14pt;">${meta.documentTitle || title}</h2><p style="margin:0; font-size:9pt; color:#64748b;">Ref: ${meta.reference || ''}</p></td>
+                    <td style="text-align:right;">
+                      <p style="margin:0; font-size:9pt;"><strong>Prepared For:</strong> ${meta.clientName || ''}</p>
+                      <p style="margin:0; font-size:9pt;"><strong>Date Issued:</strong> ${meta.date || ''}</p>
+                      <p style="margin:0; font-size:9pt;"><strong>Prepared By:</strong> ${meta.preparedBy || ''}</p>
+                    </td>
+                  </tr>
+                </table>
+              </div>
+            `;
+          } else if (block.type === 'title') {
+            html += `<h1>${(block.content as any).text || title}</h1>`;
+          } else if (block.type === 'paragraph') {
+            const text = (block.content as any).text || '';
+            html += `<p>${text.replace(/\n/g, '<br/>')}</p>`;
+          } else if (block.type === 'table') {
+            const tbl = block.content as any;
+            html += `<table><thead><tr>`;
+            (tbl.headers || []).forEach((h: string) => { html += `<th>${h}</th>`; });
+            html += `</tr></thead><tbody>`;
+            (tbl.rows || []).forEach((row: string[]) => {
+              html += `<tr>`;
+              row.forEach((cell: string) => { html += `<td>${cell}</td>`; });
+              html += `</tr>`;
+            });
+            html += `</tbody></table>`;
+          } else if (block.type === 'summary') {
+            const sum = block.content as any;
+            html += `
+              <div class="summary-box">
+                ${sum.subtotal !== undefined ? `<p style="margin:2pt 0;"><strong>Subtotal:</strong> ${sum.currency || '$'}${sum.subtotal}</p>` : ''}
+                ${sum.tax !== undefined ? `<p style="margin:2pt 0;"><strong>Tax / VAT:</strong> ${sum.currency || '$'}${sum.tax}</p>` : ''}
+                <p style="margin:4pt 0; font-size:12pt;"><strong>Total:</strong> ${sum.currency || '$'}${sum.total || 0}</p>
+              </div>
+            `;
+          } else if (block.type === 'footer') {
+            html += `<div class="footer-note"><p>${(block.content as any).text || ''}</p></div>`;
+          }
+        });
+
+        html += `</body></html>`;
+
+        const blob = new Blob(['\ufeff', html], { type: 'application/msword' });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = fileName;
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        URL.revokeObjectURL(url);
+        triggerToast("🎉 Downloaded document as Word (.docx)!");
+    };
+
     const handleSendEmail = () => {
         const subject = `E-Signed Document Notification: ${generatedDoc?.documentType || 'Document'}`;
         const body = `Hello,
@@ -2503,81 +2670,166 @@ ${company?.name || 'CraveBiZ Vendor'}`;
                             <div>
                                 <h2 className="text-base font-bold text-gray-900 tracking-tight flex items-center gap-2">
                                     <span className="w-2.5 h-2.5 rounded-full bg-primary-600 animate-pulse"></span>
-                                    AI Document Architect (DocGenerator)
+                                    AI Document Generator
                                 </h2>
                                 <p className="text-xs text-gray-500 font-medium mt-1 leading-relaxed">
-                                    Redesigned Jotform-style instant builder. Choose your document type, add key terms, and compile a fully formatted corporate copy instantly.
+                                    Generate print-ready, industry-standard business documents tailored to your specific sector and requirements.
                                 </p>
                             </div>
 
-                            {/* Jotform-style Document Type Grid Selector */}
-                            <div className="space-y-2">
-                                <label className="block text-[10px] font-black uppercase text-gray-400 tracking-wider">
-                                    1. Select Document Type Template
+                            {/* 1. Searchable Document Type Selection */}
+                            <div className="space-y-1.5 relative">
+                                <label className="block text-[10px] font-black uppercase text-gray-500 tracking-wider">
+                                    1. Document Type
                                 </label>
-                                <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
-                                    {[
-                                        { index: 0, title: "Service Agreement", emoji: "📝" },
-                                        { index: 1, title: "NDA (Disclosure)", emoji: "🔒" },
-                                        { index: 2, title: "Consulting Proposal", emoji: "💼" },
-                                        { index: 4, title: "Employment Contract", emoji: "👥" },
-                                        { index: 6, title: "Statement of Work", emoji: "📋" },
-                                        { index: -1, title: "Custom Document", emoji: "⚙️" },
-                                    ].map((opt) => {
-                                        const isSelected = opt.index === -1 
-                                            ? selectedPresetIndex === -1 || (selectedPresetIndex >= 10)
-                                            : selectedPresetIndex === opt.index;
-                                        return (
-                                            <button
-                                                key={opt.title}
-                                                type="button"
-                                                onClick={() => {
-                                                    if (opt.index === -1) {
-                                                        setSelectedPresetIndex(-1);
-                                                        setDocumentPurpose('');
-                                                    } else {
-                                                        setSelectedPresetIndex(opt.index);
-                                                        if (presets[opt.index]) {
-                                                            setDocumentPurpose(presets[opt.index].prompt);
-                                                        }
-                                                    }
-                                                }}
-                                                className={`p-3 rounded-xl border text-left transition-all flex flex-col justify-between h-20 ${
-                                                    isSelected
-                                                        ? 'border-primary-600 bg-primary-50/40 ring-2 ring-primary-500/15'
-                                                        : 'border-gray-200 hover:border-gray-300 bg-white'
-                                                }`}
-                                            >
-                                                <span className="text-lg">{opt.emoji}</span>
-                                                <span className="text-[11px] font-bold text-gray-800 line-clamp-1">{opt.title}</span>
-                                            </button>
-                                        );
-                                    })}
+                                <div className="relative">
+                                    <button
+                                        type="button"
+                                        onClick={() => {
+                                            setIsDocTypeDropdownOpen(!isDocTypeDropdownOpen);
+                                            setIsIndustryDropdownOpen(false);
+                                        }}
+                                        className="w-full p-3 bg-white border border-gray-200 rounded-xl flex items-center justify-between text-xs font-bold text-gray-800 hover:border-gray-300 focus:outline-none focus:ring-2 focus:ring-primary-500/20 transition-all shadow-sm"
+                                    >
+                                        <div className="flex items-center gap-2 truncate">
+                                            <span className="text-base">
+                                                {PREDEFINED_DOCUMENT_TYPES.find(d => d.title === selectedDocType)?.emoji || "📄"}
+                                            </span>
+                                            <span className="truncate">{selectedDocType}</span>
+                                        </div>
+                                        <svg className={`w-4 h-4 text-gray-400 transition-transform ${isDocTypeDropdownOpen ? 'rotate-180' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 9l-7 7-7-7" />
+                                        </svg>
+                                    </button>
+
+                                    {isDocTypeDropdownOpen && (
+                                        <div className="absolute z-30 left-0 right-0 mt-1.5 bg-white border border-gray-200 rounded-xl shadow-xl max-h-72 overflow-hidden flex flex-col animate-in fade-in zoom-in-95 duration-150">
+                                            <div className="p-2 border-b border-gray-100 bg-gray-50/80">
+                                                <input
+                                                    type="text"
+                                                    value={docTypeSearch}
+                                                    onChange={(e) => setDocTypeSearch(e.target.value)}
+                                                    placeholder="Search document types..."
+                                                    className="w-full px-3 py-1.5 bg-white border border-gray-200 rounded-lg text-xs focus:outline-none focus:ring-2 focus:ring-primary-500/20"
+                                                    autoFocus
+                                                />
+                                            </div>
+                                            <div className="overflow-y-auto p-1 divide-y divide-gray-50">
+                                                {PREDEFINED_DOCUMENT_TYPES
+                                                    .filter(dt => !docTypeSearch.trim() || dt.title.toLowerCase().includes(docTypeSearch.toLowerCase()) || dt.description.toLowerCase().includes(docTypeSearch.toLowerCase()))
+                                                    .map((dt) => (
+                                                        <button
+                                                            key={dt.id}
+                                                            type="button"
+                                                            onClick={() => {
+                                                                setSelectedDocType(dt.title);
+                                                                setIsDocTypeDropdownOpen(false);
+                                                                setDocTypeSearch("");
+                                                                if (!documentPurpose.trim()) {
+                                                                    setDocumentPurpose(`Drafting a formal ${dt.title} between Provider and Client detailing project deliverables, terms, and conditions.`);
+                                                                }
+                                                            }}
+                                                            className={`w-full p-2.5 text-left rounded-lg text-xs transition-all flex items-start gap-2.5 ${
+                                                                selectedDocType === dt.title ? 'bg-primary-50 border-l-4 border-primary-600 font-bold text-primary-900' : 'hover:bg-gray-50 text-gray-700'
+                                                            }`}
+                                                        >
+                                                            <span className="text-lg mt-0.5">{dt.emoji}</span>
+                                                            <div>
+                                                                <div className="font-bold text-gray-800">{dt.title}</div>
+                                                                <div className="text-[10px] text-gray-500 line-clamp-1">{dt.description}</div>
+                                                            </div>
+                                                        </button>
+                                                    ))
+                                                }
+                                            </div>
+                                        </div>
+                                    )}
                                 </div>
                             </div>
 
-                            {/* Document terms details */}
+                            {/* 2. Searchable Industry Selection */}
+                            <div className="space-y-1.5 relative">
+                                <label className="block text-[10px] font-black uppercase text-gray-500 tracking-wider">
+                                    2. Target Industry
+                                </label>
+                                <div className="relative">
+                                    <button
+                                        type="button"
+                                        onClick={() => {
+                                            setIsIndustryDropdownOpen(!isIndustryDropdownOpen);
+                                            setIsDocTypeDropdownOpen(false);
+                                        }}
+                                        className="w-full p-3 bg-white border border-gray-200 rounded-xl flex items-center justify-between text-xs font-bold text-gray-800 hover:border-gray-300 focus:outline-none focus:ring-2 focus:ring-primary-500/20 transition-all shadow-sm"
+                                    >
+                                        <div className="flex items-center gap-2 truncate">
+                                            <span className="text-base">
+                                                {PREDEFINED_INDUSTRIES.find(i => i.title === selectedIndustry)?.emoji || "🏢"}
+                                            </span>
+                                            <span className="truncate">{selectedIndustry} Sector</span>
+                                        </div>
+                                        <svg className={`w-4 h-4 text-gray-400 transition-transform ${isIndustryDropdownOpen ? 'rotate-180' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 9l-7 7-7-7" />
+                                        </svg>
+                                    </button>
+
+                                    {isIndustryDropdownOpen && (
+                                        <div className="absolute z-30 left-0 right-0 mt-1.5 bg-white border border-gray-200 rounded-xl shadow-xl max-h-72 overflow-hidden flex flex-col animate-in fade-in zoom-in-95 duration-150">
+                                            <div className="p-2 border-b border-gray-100 bg-gray-50/80">
+                                                <input
+                                                    type="text"
+                                                    value={industrySearch}
+                                                    onChange={(e) => setIndustrySearch(e.target.value)}
+                                                    placeholder="Search industries..."
+                                                    className="w-full px-3 py-1.5 bg-white border border-gray-200 rounded-lg text-xs focus:outline-none focus:ring-2 focus:ring-primary-500/20"
+                                                    autoFocus
+                                                />
+                                            </div>
+                                            <div className="overflow-y-auto p-1 divide-y divide-gray-50">
+                                                {PREDEFINED_INDUSTRIES
+                                                    .filter(ind => !industrySearch.trim() || ind.title.toLowerCase().includes(industrySearch.toLowerCase()) || ind.description.toLowerCase().includes(industrySearch.toLowerCase()))
+                                                    .map((ind) => (
+                                                        <button
+                                                            key={ind.id}
+                                                            type="button"
+                                                            onClick={() => {
+                                                                setSelectedIndustry(ind.title);
+                                                                setIsIndustryDropdownOpen(false);
+                                                                setIndustrySearch("");
+                                                            }}
+                                                            className={`w-full p-2.5 text-left rounded-lg text-xs transition-all flex items-start gap-2.5 ${
+                                                                selectedIndustry === ind.title ? 'bg-primary-50 border-l-4 border-primary-600 font-bold text-primary-900' : 'hover:bg-gray-50 text-gray-700'
+                                                            }`}
+                                                        >
+                                                            <span className="text-lg mt-0.5">{ind.emoji}</span>
+                                                            <div>
+                                                                <div className="font-bold text-gray-800">{ind.title}</div>
+                                                                <div className="text-[10px] text-gray-500 line-clamp-1">{ind.description}</div>
+                                                            </div>
+                                                        </button>
+                                                    ))
+                                                }
+                                            </div>
+                                        </div>
+                                    )}
+                                </div>
+                            </div>
+
+                            {/* 3. Document Details & Specific Requirements */}
                             <div className="space-y-1.5">
-                                <label className="block text-[10px] font-black uppercase text-gray-400 tracking-wider">
-                                    2. Describe document terms & specific rules
+                                <label className="block text-[10px] font-black uppercase text-gray-500 tracking-wider">
+                                    3. Document Requirements & Key Terms
                                 </label>
                                 <textarea
                                     value={documentPurpose}
                                     onChange={(e) => setDocumentPurpose(e.target.value)}
-                                    placeholder={
-                                        selectedPresetIndex === -1 
-                                            ? "e.g. Mutual non-compete agreement between Company A and Consultant B capping competition within 5 miles for 2 years..."
-                                            : "Modify the prompt terms here. Describe parties, deliverables, milestones, payment schedules, and any custom rules..."
-                                    }
-                                    className="w-full h-40 p-3 border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-primary-500/20 text-xs leading-relaxed font-medium placeholder-gray-400 bg-gray-50/50"
+                                    placeholder={`Describe the terms, parties involved, pricing, milestones, or specific rules for this ${selectedDocType} in the ${selectedIndustry} industry...`}
+                                    className="w-full h-36 p-3 border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-primary-500/20 text-xs leading-relaxed font-medium placeholder-gray-400 bg-gray-50/50"
                                     disabled={isLoading}
                                 />
-                                {presets[selectedPresetIndex] && (
-                                    <div className="flex items-start gap-1.5 p-2.5 bg-primary-50/30 border border-primary-100 rounded-xl text-[10px] text-primary-800 font-medium">
-                                        <span>💡</span>
-                                        <span><strong>Template Prompt Tip:</strong> {presets[selectedPresetIndex].desc}</span>
-                                    </div>
-                                )}
+                                <div className="flex items-center gap-2 p-2 bg-gray-50 border border-gray-200/80 rounded-xl text-[10px] text-gray-600 font-medium">
+                                    <span>💡</span>
+                                    <span>The AI will generate rich, structured sections, fee schedules, and compliance covenants tailored to <strong>{selectedIndustry}</strong>.</span>
+                                </div>
                             </div>
 
                             {/* Preset actions */}
@@ -4145,6 +4397,10 @@ CraveBiZ DocSignify Mail Delivery Agent`}
                                             
                                             <button onClick={handlePrint} className="px-3 py-1.5 bg-white hover:bg-gray-100 text-gray-700 border border-gray-200 text-[10px] font-black uppercase tracking-wider rounded-lg transition-all">Print</button>
                                             <button onClick={handleDownloadPdf} className="px-3 py-1.5 bg-white hover:bg-gray-100 text-gray-700 border border-gray-200 text-[10px] font-black uppercase tracking-wider rounded-lg transition-all">PDF</button>
+                                            <button onClick={handleDownloadDocx} className="px-3 py-1.5 bg-white hover:bg-gray-100 text-gray-700 border border-gray-200 text-[10px] font-black uppercase tracking-wider rounded-lg transition-all flex items-center gap-1">
+                                                <svg className="w-3 h-3 text-blue-600" fill="currentColor" viewBox="0 0 24 24"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8l-6-6zM6 20V4h7v5h5v11H6z"/></svg>
+                                                Word (.docx)
+                                            </button>
                                             <button onClick={handleSendEmail} className="px-3 py-1.5 bg-white hover:bg-gray-100 text-gray-700 border border-gray-200 text-[10px] font-black uppercase tracking-wider rounded-lg transition-all">Email Link</button>
                                         </div>
                                     </div>

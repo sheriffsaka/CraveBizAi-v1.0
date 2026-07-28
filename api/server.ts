@@ -1769,7 +1769,7 @@ app.post("/api/ai/client-payment-health-report", verifyTenant, async (req: any, 
 
 app.post("/api/ai/generate-document-from-purpose", verifyTenant, async (req: any, res) => {
     try {
-        const { purpose, companyContext, selectedPreset } = req.body;
+        const { purpose, companyContext, selectedPreset, selectedIndustry } = req.body;
         const userId = req.user?.email || req.user?.id || req.tenantId;
         const tenantId = req.tenantId;
 
@@ -1782,7 +1782,7 @@ app.post("/api/ai/generate-document-from-purpose", verifyTenant, async (req: any
             userName: req.user?.name,
             token: req.token,
             action: async () => {
-                return await generateDocumentFromPurpose(purpose, companyContext, selectedPreset);
+                return await generateDocumentFromPurpose(purpose, companyContext, selectedPreset, selectedIndustry);
             }
         });
 

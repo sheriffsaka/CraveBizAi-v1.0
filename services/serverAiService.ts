@@ -162,41 +162,54 @@ async function callGeminiWithFallback(
     throw lastError;
 }
 
-function compileMockDocument(text: string, companyContext: any, selectedPreset?: string): GeneratedDocument {
+function compileMockDocument(text: string, companyContext: any, selectedPreset?: string, selectedIndustry?: string): GeneratedDocument {
     const today = new Date().toLocaleDateString();
     const ctx = companyContext || {};
+    const industry = selectedIndustry || "Technology";
     
     // Determine Document Type and Title
     let docType = selectedPreset || "Service Agreement";
     let docTitle = (selectedPreset || "PROFESSIONAL SERVICES AGREEMENT").toUpperCase();
-    if (!docTitle.includes("AGREEMENT") && !docTitle.includes("CONTRACT") && !docTitle.includes("PROPOSAL") && !docTitle.includes("INVOICE") && !docTitle.includes("REPORT") && !docTitle.includes("MOU")) {
-        docTitle = docTitle + " AGREEMENT";
+    if (!docTitle.includes("AGREEMENT") && !docTitle.includes("CONTRACT") && !docTitle.includes("PROPOSAL") && !docTitle.includes("INVOICE") && !docTitle.includes("LETTER") && !docTitle.includes("MOU") && !docTitle.includes("NDA") && !docTitle.includes("QUOTATION") && !docTitle.includes("RECEIPT")) {
+        docTitle = docTitle + " DOCUMENT";
     }
     
     const lowerText = text.toLowerCase();
     if (!selectedPreset) {
         if (lowerText.includes("nda") || lowerText.includes("disclosure") || lowerText.includes("confidentiality")) {
-            docType = "Non-Disclosure Agreement";
+            docType = "Non-Disclosure Agreement (NDA)";
             docTitle = "MUTUAL NON-DISCLOSURE AGREEMENT";
-        } else if (lowerText.includes("invoice") || lowerText.includes("bill") || lowerText.includes("receipt") || lowerText.includes("payment")) {
+        } else if (lowerText.includes("invoice") || lowerText.includes("bill")) {
             docType = "Invoice";
             docTitle = "COMMERCIAL TAX INVOICE";
-        } else if (lowerText.includes("proposal") || lowerText.includes("quote") || lowerText.includes("estimate") || lowerText.includes("valuation")) {
+        } else if (lowerText.includes("receipt")) {
+            docType = "Receipt";
+            docTitle = "OFFICIAL PAYMENT RECEIPT";
+        } else if (lowerText.includes("quotation") || lowerText.includes("quote")) {
+            docType = "Quotation";
+            docTitle = "COMMERCIAL PRICE QUOTATION";
+        } else if (lowerText.includes("proposal") || lowerText.includes("estimate")) {
             docType = "Proposal";
-            docTitle = "BUSINESS DEVELOPMENT PROPOSAL";
-        } else if (lowerText.includes("employment") || lowerText.includes("offer") || lowerText.includes("job") || lowerText.includes("hire")) {
-            docType = "Employment Agreement";
-            docTitle = "OFFER OF EMPLOYMENT & CONTRACT";
+            docTitle = "BUSINESS & TECHNICAL PROPOSAL";
+        } else if (lowerText.includes("employment") || lowerText.includes("letter") || lowerText.includes("offer")) {
+            docType = "Employment Letter";
+            docTitle = "FORMAL LETTER OF EMPLOYMENT & OFFER";
+        } else if (lowerText.includes("partnership")) {
+            docType = "Partnership Agreement";
+            docTitle = "STRATEGIC PARTNERSHIP COVENANT";
+        } else if (lowerText.includes("memorandum") || lowerText.includes("memo") || lowerText.includes("mou")) {
+            docType = "Memorandum";
+            docTitle = "MEMORANDUM OF UNDERSTANDING & COOPERATION";
+        } else if (lowerText.includes("letter")) {
+            docType = "Business Letter";
+            docTitle = "OFFICIAL EXECUTIVE BUSINESS LETTER";
         } else if (lowerText.includes("contract") || lowerText.includes("agreement")) {
-            docType = "Contract Agreement";
-            docTitle = "FORMAL BUSINESS COVENANT";
-        } else if (lowerText.includes("report") || lowerText.includes("analysis") || lowerText.includes("audit")) {
-            docType = "Report";
-            docTitle = "STRATEGIC AUDIT & SUMMARY REPORT";
+            docType = "Contract";
+            docTitle = "MASTER SERVICES CONTRACT";
         }
     }
 
-    // Attempt to extract client name from text
+    // Extract client name if available
     let clientName = "Authorized Counterparty Client";
     const clientMatches = text.match(/(?:between|and|client|partner|for|with|to)\s+([A-Z][a-zA-Z0-9\s.]{2,30})/i);
     if (clientMatches && clientMatches[1]) {
@@ -207,11 +220,10 @@ function compileMockDocument(text: string, companyContext: any, selectedPreset?:
         }
     }
 
-    // Parse specific items & prices from text to construct a dynamic, beautiful table
+    // Parse specific items & prices from text to construct a dynamic table
     const tableRows: string[][] = [];
     let parsedSubtotal = 0;
     
-    // Split text by lines, semicolons, or bullet points
     const textSegments = text.split(/[.;\n•]/);
     for (const segment of textSegments) {
         const trimmed = segment.trim();
@@ -221,7 +233,6 @@ function compileMockDocument(text: string, companyContext: any, selectedPreset?:
             const priceStr = priceMatch[0];
             const priceVal = parseFloat(priceStr.replace(/[^0-9.]/g, '')) || 0;
             let desc = trimmed.replace(priceStr, '').replace(/(?:costing|for|price:?|cost:?|total:?|at|fee:?|of)\s*$/i, '').trim();
-            // Clean up separator characters or trailing/leading punctuation
             desc = desc.replace(/^[\s-:,]+/g, '').replace(/[\s-:,]+$/g, '').trim();
             if (desc.length > 3) {
                 tableRows.push([
@@ -235,20 +246,43 @@ function compileMockDocument(text: string, companyContext: any, selectedPreset?:
         }
     }
 
-    // If no tables rows were found but a single dollar amount is present, construct a general line
     if (tableRows.length === 0) {
         const singleFeeMatch = text.match(/\$[0-9,]+(?:\.[0-9]{2})?/);
         if (singleFeeMatch) {
             const feeVal = parseFloat(singleFeeMatch[0].replace(/[^0-9.]/g, '')) || 0;
             tableRows.push([
-                `Contract Services: ${docType}`,
+                `${docType} Professional Deliverables (${industry})`,
                 "1",
                 "$" + feeVal.toLocaleString('en-US', { minimumFractionDigits: 2 }),
                 "$" + feeVal.toLocaleString('en-US', { minimumFractionDigits: 2 })
             ]);
             parsedSubtotal = feeVal;
+        } else {
+            tableRows.push(
+                [`1. ${industry} Core Deliverable Phase 1`, "1", "$2,500.00", "$2,500.00"],
+                [`2. ${industry} Implementation & Compliance Audit`, "1", "$1,500.00", "$1,500.00"]
+            );
+            parsedSubtotal = 4000;
         }
     }
+
+    // Industry specific standard clause snippets
+    const industryComplianceMap: Record<string, string> = {
+        "Technology": "Both parties agree to uphold technical standards, source code encryption, 99.9% operational uptime SLAs, and strict cybersecurity practices conforming to ISO/IEC 27001 regulations.",
+        "Healthcare": "All services and patient/client data handling shall adhere strictly to HIPAA, HITECH, and applicable health data privacy standards, safeguarding protected health information (PHI) at all times.",
+        "Legal": "This instrument is drafted under formal statutory provisions, maintaining strict attorney-client privilege, legal confidentiality, and adherence to state bar professional standards.",
+        "Finance": "Financial records, fee calculations, and transaction settlement terms herein comply with GAAP accounting rules, FINRA/SEC oversight guidelines, and anti-money laundering (AML) protocols.",
+        "Construction": "All physical works, site developments, and structural modifications shall comply with OSHA workplace safety mandates, local building codes, lien releases, and architectural guidelines.",
+        "Education": "Academic, training, and student record handling shall strictly observe FERPA regulations and institution accreditation criteria for educational compliance.",
+        "Real Estate": "Property transfers, leases, and real estate disclosures shall conform to state real estate licensing laws, fair housing provisions, and title insurance standards.",
+        "Retail": "Commercial merchandising, consumer privacy, credit card processing (PCI-DSS), and return policies shall follow standard commercial codes and retail protection acts.",
+        "Hospitality": "Guest management, catering operations, and event services shall maintain health code compliance, public liability coverage, and hospitality service agreements.",
+        "Consulting": "Advisory services, strategy frameworks, and executive reports represent proprietary intellectual property tailored specifically for counterparty operations.",
+        "Non-Profit": "All funds, grants, and partnership contributions shall be deployed exclusively for charitable and public benefit objectives in compliance with 501(c)(3) tax codes.",
+        "Government": "Procurement, public disclosures, and contractual execution shall abide by FAR (Federal Acquisition Regulations) and state public bidding transparency statutes."
+    };
+
+    const industryNote = industryComplianceMap[industry] || "Services shall be executed in accordance with industry best practices and applicable commercial standards.";
 
     const blocks: DocumentBlock[] = [
         {
@@ -256,131 +290,108 @@ function compileMockDocument(text: string, companyContext: any, selectedPreset?:
             type: 'cover_page',
             content: {
                 title: docTitle,
-                subtitle: `Professional ${docType} Draft`,
-                companyName: ctx.name || "CRAVEBIZ SOLUTIONS",
-                preparedBy: ctx.name || "CRAVEBIZ",
+                subtitle: `${industry} Sector - Official ${docType}`,
+                companyName: ctx.name || "CRAVEBIZ AI ENTERPRISE",
+                preparedBy: ctx.name || "CraveBiZ AI Document Architect",
                 preparedFor: clientName,
                 date: today,
                 logoUrl: ctx.logoUrl || ctx.logo_url || ''
             }
         },
-        // {
-        //     id: 'hdr_' + Math.floor(Math.random() * 100000),
-        //     type: 'header',
-        //     content: {
-        //         companyName: ctx.name || "CRAVEBIZ SOLUTIONS",
-        //         address: ctx.address || "123 Technology Way",
-        //         email: ctx.email || "billing@cravebiz.com",
-        //         phone: ctx.phone || "+1 (555) 012-3456",
-        //         website: ctx.website || "https://cravebiz.com",
-        //         logoUrl: ctx.logoUrl || ""
-        //     }
-        // },
+        {
+            id: 'hdr_' + Math.floor(Math.random() * 100000),
+            type: 'header',
+            content: {
+                companyName: ctx.name || "CRAVEBIZ ENTERPRISE SOLUTIONS",
+                address: ctx.address || "100 Corporate Parkway, Suite 500",
+                email: ctx.email || "agreements@cravebiz.ai",
+                phone: ctx.phone || "+1 (800) 555-0199",
+                website: ctx.website || "www.cravebiz.ai",
+                logoUrl: ctx.logoUrl || ctx.logo_url || ''
+            }
+        },
         {
             id: 'meta_' + Math.floor(Math.random() * 100000),
             type: 'metadata',
             content: {
                 documentTitle: docTitle,
                 clientName: clientName,
-                preparedBy: ctx.name || "CRAVEBIZ",
+                preparedBy: ctx.name || "CraveBiZ AI Transformer",
                 date: today,
-                reference: "REF-" + Math.floor(Math.random() * 899999 + 100000)
+                reference: `REF-${industry.substring(0,3).toUpperCase()}-${Math.floor(100000 + Math.random() * 900000)}`
             }
         },
         {
-            id: 'title_1',
+            id: 'title_' + Math.floor(Math.random() * 100000),
             type: 'title',
-            content: { text: "1. RECITALS, PURPOSE AND SCOPE" }
+            content: {
+                text: docTitle
+            }
         },
         {
-            id: 'p_1',
+            id: 'p1_' + Math.floor(Math.random() * 100000),
             type: 'paragraph',
-            content: { text: `This document establishes the official parameters, provisions, and guidelines for the ${docType} requested under user specifications: "${text}".` }
+            content: {
+                text: `1. PREAMBLE & OBJECTIVES\nThis ${docType} ("Agreement") is executed on this ${today} by and between ${ctx.name || 'CraveBiZ Solutions'} ("Provider / Issuer") and ${clientName} ("Counterparty / Client"), operating within the ${industry} industry sector.\n\nWHEREAS, Provider possesses specialized capabilities in ${industry} operations, and Client desires to engage Provider for the execution of official business objectives set forth herein.`
+            }
         },
         {
-            id: 'p_1_details',
+            id: 'p2_' + Math.floor(Math.random() * 100000),
             type: 'paragraph',
-            content: { text: `The parties bound under this covenant—specifically ${ctx.name || "Provider"} ("Provider") and ${clientName} ("Client")—unilaterally covenant to maintain the compliance, specifications, and performance milestones outlined in this draft starting effective ${today}.` }
+            content: {
+                text: `2. SCOPE OF WORK & DETAILED REQUIREMENTS\nThe specific terms, requirements, and deliverables encompassed under this ${docType} include:\n${text}`
+            }
+        },
+        {
+            id: 'p3_' + Math.floor(Math.random() * 100000),
+            type: 'paragraph',
+            content: {
+                text: `3. INDUSTRY REGULATORY COMPLIANCE & STANDARDS (${industry.toUpperCase()})\n${industryNote}\n\nBoth parties covenant to strictly abide by all statutory laws, state guidelines, and environmental/data safety rules governing the ${industry} domain.`
+            }
+        },
+        {
+            id: 'p4_' + Math.floor(Math.random() * 100000),
+            type: 'paragraph',
+            content: {
+                text: `4. FINANCIAL CONSIDERATIONS & SCHEDULE OF FEES\nIn consideration of the satisfactory fulfillment of obligations under this document, the financial schedule and fee allocations are detailed below. All payments are due within thirty (30) days from invoice date.`
+            }
+        },
+        {
+            id: 'tbl_' + Math.floor(Math.random() * 100000),
+            type: 'table',
+            content: {
+                headers: ["Itemized Deliverable / Service", "Qty", "Unit Rate", "Total Amount"],
+                rows: tableRows
+            }
+        },
+        {
+            id: 'sum_' + Math.floor(Math.random() * 100000),
+            type: 'summary',
+            content: {
+                subtotal: parsedSubtotal,
+                tax: Math.round(parsedSubtotal * 0.05 * 100) / 100,
+                total: Math.round(parsedSubtotal * 1.05 * 100) / 100,
+                currency: "$"
+            }
+        },
+        {
+            id: 'p5_' + Math.floor(Math.random() * 100000),
+            type: 'paragraph',
+            content: {
+                text: `5. CONFIDENTIALITY, INTELLECTUAL PROPERTY & TERMINATION\nAll proprietary documents, algorithms, client data, trade secrets, and financial terms shared between the parties shall remain strictly confidential. This ${docType} may be terminated by either party upon thirty (30) days written notice in event of material breach.`
+            }
+        },
+        {
+            id: 'ftr_' + Math.floor(Math.random() * 100000),
+            type: 'footer',
+            content: {
+                text: `IN WITNESS WHEREOF, the authorized representatives of both parties have executed this ${docType} as of the date first written above. Conforms to ${industry} Industry Standard Covenants.`
+            }
         }
     ];
 
-    // If the prompt has explicit sentences without pricing, write them as structured clauses so they are represented perfectly!
-    const nonPriceSentences = textSegments.filter(s => {
-        const t = s.trim();
-        return t.length > 15 && !t.match(/\$[0-9,]+/);
-    });
-
-    if (nonPriceSentences.length > 0) {
-        blocks.push({
-            id: 'title_clauses',
-            type: 'title',
-            content: { text: "2. CUSTOM USER-SPECIFIED PROVISIONS" }
-        });
-        
-        for (let idx = 0; idx < nonPriceSentences.length; idx++) {
-            const cleanSentence = nonPriceSentences[idx].trim();
-            const capitalized = cleanSentence.charAt(0).toUpperCase() + cleanSentence.slice(1);
-            blocks.push({
-                id: `p_user_clause_${idx}`,
-                type: 'paragraph',
-                content: { text: `Clause 2.${idx + 1}: ${capitalized}.` }
-            });
-        }
-    }
-
-    // Add table if there is any fee/pricing extracted or if it's a proposal/invoice
-    if (tableRows.length > 0) {
-        const tableId = 'title_table_sect';
-        blocks.push(
-            {
-                id: tableId,
-                type: 'title',
-                content: { text: docType.toLowerCase().includes('invoice') ? "3. ITEMIZATION OF SERVICES" : "3. FEE SCHEDULE & COST REIMBURSEMENT" }
-            },
-            {
-                id: 'tbl_dynamic_1',
-                type: 'table',
-                content: {
-                    headers: ["Line Item Description", "Qty", "Unit Price", "Total Price"],
-                    rows: tableRows
-                }
-            },
-            {
-                id: 'sum_dynamic_1',
-                type: 'summary',
-                content: {
-                    subtotal: parsedSubtotal,
-                    tax: 0,
-                    total: parsedSubtotal,
-                    currency: "USD",
-                    notes: `This dynamic schedule represents the precise cost items described in user specifications. Balance is payable in Net-30 remittance conditions.`
-                }
-            }
-        );
-    } else {
-        blocks.push(
-            {
-                id: 'title_legal',
-                type: 'title',
-                content: { text: "3. GOVERNING LAW AND RESOLUTION" }
-            },
-            {
-                id: 'p_legal_1',
-                type: 'paragraph',
-                content: { text: "This Draft Agreement is governed by the prevailing commercial codes and regulations of the specified home jurisdiction. Any disagreements arising under this contract shall be settled via binding arbitration before a designated tribunal." }
-            }
-        );
-    }
-
-    // Footer
-    blocks.push({
-        id: 'footer_dyn',
-        type: 'footer',
-        content: { text: `Generated perfectly based on custom specifications for ${docType} with Client ${clientName}. All rights and covenants preserved.` }
-    });
-
     return {
-        documentType: docType,
+        documentType: `${industry} - ${docType}`,
         blocks: blocks
     };
 }
@@ -637,29 +648,39 @@ ${latePayments > 0 ? `- **Action Required**: Historical invoices show delayed pa
     }
 }
 
-export async function generateDocumentFromPurpose(purpose: string, companyContext: any, selectedPreset?: string): Promise<GeneratedDocument | null> {
+export async function generateDocumentFromPurpose(
+    purpose: string, 
+    companyContext: any, 
+    selectedPreset?: string,
+    selectedIndustry?: string
+): Promise<GeneratedDocument | null> {
     const apiKey = getApiKey();
     const ctx = companyContext || {};
     if (!apiKey) {
-        return compileMockDocument(purpose, ctx, selectedPreset);
+        return compileMockDocument(purpose, ctx, selectedPreset, selectedIndustry);
     }
 
     const model = 'gemini-3.6-flash';
 
-    const systemInstruction = `You are an expert corporate lawyer and document preparer. Your task is to generate a professional business document based entirely on the user's stated purpose/requirements.
+    const systemInstruction = `You are an expert corporate lawyer, industry advisor, and professional document preparer.
+    Your task is to generate a comprehensive, print-ready, high-quality business document that adheres to standard practices of the selected document type and industry sector.
     Your output MUST be a structured business document in JSON format matching the schema.
-    ${selectedPreset ? `The requested document type is exactly: "${selectedPreset}". Make sure the output document corresponds to this type.` : ''}
-    - Generate correct blocks: [header, metadata, title, paragraph, table, summary, footer].
-    - Automatically create realistic details to make the document whole, e.g. sections/paragraphs with standard legal boilerplate if it is an agreement, realistic table items with prices if it is a proposal/fee breakdown, and clean summary values.
-    - Automatically fill company detail fields from the companyContext.
-    - Use metadata block with current date and preparedBy.
-    - Ensure that all custom sentences, specific pricing, milestones, and parties mentioned in the user's description are fully represented in the blocks.
-    - Return a professional, clean, legally sound document design.`;
-
-    const prompt = `Generate a business document based on this purpose: "${purpose}".
-    ${selectedPreset ? `The chosen document type preset is: "${selectedPreset}".` : ''}
+    ${selectedPreset ? `Document Type: "${selectedPreset}".` : ''}
+    ${selectedIndustry ? `Industry Sector: "${selectedIndustry}".` : ''}
     
-    Here is the company context that MUST be placed in the header block:
+    Generation Guidelines:
+    - Generate rich, detailed, non-generic content.
+    - Structure the document into clean, numbered sections (e.g. '1. Purpose & Scope', '2. Deliverables & Specifications', '3. Financial Terms & Fee Schedule', '4. Industry Regulatory Compliance', '5. Confidentiality & Intellectual Property', '6. Term & Termination', '7. Governing Law').
+    - Incorporate standard terminology, compliance rules, and best practices relevant to the ${selectedIndustry || 'General Business'} industry (e.g., HIPAA for Healthcare, SLAs for Tech, OSHA for Construction, GAAP for Finance, FERPA for Education).
+    - Generate appropriate blocks: [header, metadata, title, multiple paragraph blocks with numbered section headings, table with itemized breakdown, summary block, footer].
+    - Automatically fill company details from companyContext into the header block.
+    - Ensure all custom pricing, milestones, parties, and rules mentioned in the prompt are accurately represented.`;
+
+    const prompt = `Generate a comprehensive business document based on this purpose: "${purpose}".
+    Document Type: ${selectedPreset || 'Business Document'}
+    Target Industry: ${selectedIndustry || 'General'}
+    
+    Company Context for Header:
     Company Name: ${ctx.name || "CRAVEBIZ AI CLIENT"}
     Address: ${ctx.address || ""}
     Email: ${ctx.email || ""}
