@@ -4,6 +4,7 @@ import { Client, Service, Invoice, InvoiceStatus, InvoiceItem, Company, InvoiceF
 import { getSubscriptionInfo } from '../services/subscriptionService';
 import Icon from './common/Icon';
 import InvoiceDetail from './InvoiceDetail';
+import SearchableServiceSelect from './common/SearchableServiceSelect';
 
 interface InvoiceFormProps {
   initialInvoice?: Invoice | null;
@@ -124,10 +125,33 @@ const InvoiceForm: React.FC<InvoiceFormProps> = ({ initialInvoice, clients, serv
         const s = services.find(srv => srv.id === value);
         if (s) {
             newItems[index].price = s.price;
-            newItems[index].description = s.description || '';
+            newItems[index].description = s.description || s.name;
             newItems[index].directCost = s.directCost || 0;
         }
     }
+    setItems(newItems);
+  };
+
+  const handleSelectServiceForItem = (index: number, selectedService: Service | null) => {
+    const newItems = [...items];
+    if (selectedService) {
+      newItems[index].serviceId = selectedService.id;
+      newItems[index].price = selectedService.price;
+      newItems[index].description = selectedService.description || selectedService.name;
+      newItems[index].directCost = selectedService.directCost || 0;
+      if (!newItems[index].quantity || newItems[index].quantity <= 0) {
+        newItems[index].quantity = 1;
+      }
+    } else {
+      newItems[index].serviceId = 'custom';
+    }
+    setItems(newItems);
+  };
+
+  const handleCustomServiceForItem = (index: number, customTerm: string) => {
+    const newItems = [...items];
+    newItems[index].serviceId = 'custom';
+    newItems[index].description = customTerm;
     setItems(newItems);
   };
 
@@ -179,9 +203,19 @@ const InvoiceForm: React.FC<InvoiceFormProps> = ({ initialInvoice, clients, serv
   const handleSaveInternal = (status: InvoiceStatus) => {
       if (!clientId) { alert("Client selection required."); return; }
       if (!dueDate) { alert("Due date required."); return; }
-      if (items.some(it => !it.serviceId)) { alert("All items must have a service selection."); return; }
+      if (items.some(it => !it.serviceId && !it.description.trim())) {
+        alert("All line items must have a service selected or a description.");
+        return;
+      }
       
-      const data = getPreviewData(status);
+      const sanitizedItems = items.map(it => ({
+        ...it,
+        serviceId: it.serviceId || 'custom'
+      }));
+
+      const previewData = getPreviewData(status);
+      const data = { ...previewData, items: sanitizedItems };
+
       clearDraft();
       if (!initialInvoice) {
           const { id, invoiceNumber, ...finalData } = data;
@@ -273,20 +307,20 @@ const InvoiceForm: React.FC<InvoiceFormProps> = ({ initialInvoice, clients, serv
             <h3 className="text-xl font-black text-gray-800 uppercase tracking-tighter border-b pb-4">Line Items</h3>
             {items.map((item, index) => (
                 <div key={index} className="p-6 border rounded-xl space-y-4 bg-white shadow-sm border-gray-100">
-                    <div className="flex gap-4">
+                    <div className="flex gap-4 items-start">
                         <div className="flex-1">
-                            <label className="block text-[10px] font-black text-gray-400 uppercase mb-1">Service</label>
-                            <select value={item.serviceId} onChange={e => handleItemChange(index, 'serviceId', e.target.value)} className="w-full p-3.5 border rounded-lg bg-gray-50 text-gray-900 font-bold outline-none focus:ring-2 focus:ring-primary-500">
-                                <option value="" disabled>Select service...</option>
-                                {services.map(s => (
-                                  <option key={s.id} value={s.id}>
-                                    {s.name}{s.packageName ? ` (${s.packageName})` : ''} - ₦{s.price.toLocaleString()}
-                                  </option>
-                                ))}
-                            </select>
+                            <SearchableServiceSelect
+                              label="Service / Product / Package"
+                              services={services}
+                              selectedServiceId={item.serviceId}
+                              onSelectService={(srv) => handleSelectServiceForItem(index, srv)}
+                              onCustomItemSelect={(customTerm) => handleCustomServiceForItem(index, customTerm)}
+                              placeholder="Search line item, service, or package..."
+                              allowCustomItem={true}
+                            />
                         </div>
-                        <button type="button" onClick={() => removeItem(index)} className="self-end mb-1 p-3 text-red-400 hover:bg-red-50 hover:text-red-600 rounded-lg transition-all">
-                            <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"></path></svg>
+                        <button type="button" onClick={() => removeItem(index)} title="Remove Line Item" className="mt-6 p-3 text-red-400 hover:bg-red-50 hover:text-red-600 rounded-lg transition-all">
+                            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"></path></svg>
                         </button>
                     </div>
                     <div>
