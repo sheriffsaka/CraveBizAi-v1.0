@@ -19,11 +19,13 @@ function calculateNextRecurrenceDate(currentDate: Date, frequency: InvoiceFreque
   const nextDate = new Date(currentDate);
   nextDate.setHours(0, 0, 0, 0);
   switch (frequency) {
+    case 'daily': nextDate.setDate(currentDate.getDate() + 1); break;
     case 'weekly': nextDate.setDate(currentDate.getDate() + 7); break;
     case 'monthly': nextDate.setMonth(currentDate.getMonth() + 1); break;
     case 'quarterly': nextDate.setMonth(currentDate.getMonth() + 3); break;
     case 'biannually': nextDate.setMonth(currentDate.getMonth() + 6); break;
-    case 'annually': nextDate.setFullYear(currentDate.getFullYear() + 1); break;
+    case 'annually':
+    case 'yearly': nextDate.setFullYear(currentDate.getFullYear() + 1); break;
     default: return '';
   }
   return nextDate.toISOString().split('T')[0];
@@ -266,19 +268,45 @@ const InvoiceForm: React.FC<InvoiceFormProps> = ({ initialInvoice, clients, serv
                     </select>
                 </div>
                 <div>
-                    <label className="block text-[10px] font-black text-gray-500 uppercase mb-2">Subscription Cycle</label>
+                    <label className="block text-[10px] font-black text-gray-500 uppercase mb-2">Invoice Recurrence / Frequency</label>
                     <select value={frequency} onChange={e => {
                         const f = e.target.value as InvoiceFrequency;
                         setFrequency(f);
-                        if (f !== 'one-time') setNextRecurrenceDate(calculateNextRecurrenceDate(new Date(), f));
+                        if (f !== 'one-time') {
+                          const baseDate = issueDate ? new Date(issueDate) : new Date();
+                          setNextRecurrenceDate(calculateNextRecurrenceDate(isNaN(baseDate.getTime()) ? new Date() : baseDate, f));
+                        } else {
+                          setNextRecurrenceDate('');
+                        }
                     }} className="w-full p-3.5 border rounded-lg bg-white text-gray-900 shadow-sm outline-none focus:ring-2 focus:ring-primary-500 font-bold">
-                        <option value="one-time">One-time</option>
+                        <option value="one-time">One-Time</option>
+                        <option value="daily">Daily</option>
                         <option value="weekly">Weekly</option>
                         <option value="monthly">Monthly</option>
-                        <option value="annually">Annually</option>
+                        <option value="quarterly">Quarterly (Every 3 Months)</option>
+                        <option value="biannually">Bi-Annually (Every 6 Months)</option>
+                        <option value="annually">Yearly</option>
                     </select>
                 </div>
             </div>
+
+            {frequency !== 'one-time' && (
+                <div className="mt-4 p-4 bg-primary-50/70 border border-primary-100 rounded-xl flex flex-col sm:flex-row sm:items-center justify-between gap-3 animate-in fade-in">
+                    <div>
+                        <p className="text-xs font-extrabold text-primary-900">Recurring Billing Active</p>
+                        <p className="text-[11px] text-primary-700 font-medium">An automated recurring invoice will be scheduled according to this cycle.</p>
+                    </div>
+                    <div className="shrink-0 flex items-center gap-2">
+                        <label className="text-xs font-bold text-gray-700 whitespace-nowrap">Next Bill Date:</label>
+                        <input
+                            type="date"
+                            value={nextRecurrenceDate}
+                            onChange={e => setNextRecurrenceDate(e.target.value)}
+                            className="px-3 py-1.5 border border-primary-200 rounded-lg bg-white text-gray-900 font-bold text-xs outline-none focus:ring-2 focus:ring-primary-500 shadow-sm"
+                        />
+                    </div>
+                </div>
+            )}
 
             {selectedBankAccountId === 'manual' && (
                 <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mt-6 p-6 bg-white rounded-lg border border-primary-100 shadow-sm animate-in slide-in-from-top-2">

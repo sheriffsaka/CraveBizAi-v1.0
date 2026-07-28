@@ -16,6 +16,23 @@ interface RecurringInvoiceListProps {
 type SortKey = 'invoiceNumber' | 'clientName' | 'frequency' | 'nextRecurrenceDate' | 'total' | 'balance' | 'status';
 type SortDirection = 'asc' | 'desc';
 
+export function formatFrequencyLabel(freq?: string): string {
+  if (!freq) return 'One-Time';
+  const f = freq.toLowerCase();
+  switch (f) {
+    case 'one-time': return 'One-Time';
+    case 'daily': return 'Daily';
+    case 'weekly': return 'Weekly';
+    case 'monthly': return 'Monthly';
+    case 'quarterly': return 'Quarterly';
+    case 'biannually':
+    case 'bi-annually': return 'Bi-Annually';
+    case 'yearly':
+    case 'annually': return 'Yearly';
+    default: return f.charAt(0).toUpperCase() + f.slice(1);
+  }
+}
+
 const RecurringInvoicesTable: React.FC<{
   invoices: Invoice[];
   clients: Client[];
@@ -66,7 +83,11 @@ const RecurringInvoicesTable: React.FC<{
                   {invoice.invoiceNumber}
                 </th>
                 <td className="px-6 py-4">{getClientName(invoice.clientId)}</td>
-                <td className="px-6 py-4 capitalize">{invoice.frequency}</td>
+                <td className="px-6 py-4">
+                  <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-bold bg-primary-50 text-primary-700 border border-primary-100">
+                    {formatFrequencyLabel(invoice.frequency)}
+                  </span>
+                </td>
                 <td className="px-6 py-4">{invoice.nextRecurrenceDate || 'N/A'}</td>
                 <td className="px-6 py-4 font-medium">₦{invoice.total.toLocaleString()}</td>
                 <td className={`px-6 py-4 font-bold ${balance > 0 ? 'text-red-600' : 'text-green-600'}`}>
@@ -87,7 +108,7 @@ const RecurringInvoicesTable: React.FC<{
               </tr>
             );
           })}
-           {invoices.length === 0 && (
+          {invoices.length === 0 && (
               <tr>
                   <td colSpan={8} className="text-center py-10 text-gray-500">No recurring invoice templates found.</td>
               </tr>
@@ -195,9 +216,11 @@ const RecurringInvoiceList: React.FC<RecurringInvoiceListProps> = ({ invoices, c
     let draftCount = 0;
     let overdueCount = 0;
     const frequencies: Record<string, { count: number; total: number }> = {
+      daily: { count: 0, total: 0 },
       weekly: { count: 0, total: 0 },
       monthly: { count: 0, total: 0 },
       quarterly: { count: 0, total: 0 },
+      biannually: { count: 0, total: 0 },
       yearly: { count: 0, total: 0 }
     };
 
@@ -211,20 +234,35 @@ const RecurringInvoiceList: React.FC<RecurringInvoiceListProps> = ({ invoices, c
         overdueCount++;
       }
 
-      const freq = inv.frequency?.toLowerCase() || 'monthly';
-      if (frequencies[freq]) {
-        frequencies[freq].count++;
-        frequencies[freq].total += inv.total;
+      let rawFreq = inv.frequency?.toLowerCase() || 'monthly';
+      if (rawFreq === 'annually') rawFreq = 'yearly';
+      if (rawFreq === 'bi-annually') rawFreq = 'biannually';
+
+      if (frequencies[rawFreq]) {
+        frequencies[rawFreq].count++;
+        frequencies[rawFreq].total += inv.total;
       } else {
-        frequencies[freq] = { count: 1, total: inv.total };
+        frequencies[rawFreq] = { count: 1, total: inv.total };
       }
     });
 
-    const frequencyData = Object.entries(frequencies).map(([name, data]) => ({
-      name: name.charAt(0).toUpperCase() + name.slice(1),
+    const getFrequencyColor = (freqKey: string) => {
+      switch (freqKey) {
+        case 'daily': return '#14B8A6'; // Teal
+        case 'weekly': return '#10B981'; // Emerald
+        case 'monthly': return '#3B82F6'; // Blue
+        case 'quarterly': return '#F59E0B'; // Amber
+        case 'biannually': return '#EC4899'; // Pink
+        case 'yearly': return '#8B5CF6'; // Purple
+        default: return '#6B7280';
+      }
+    };
+
+    const frequencyData = Object.entries(frequencies).map(([key, data]) => ({
+      name: formatFrequencyLabel(key),
       count: data.count,
       value: data.total,
-      color: name === 'monthly' ? '#3B82F6' : name === 'weekly' ? '#10B981' : name === 'quarterly' ? '#F59E0B' : '#8B5CF6'
+      color: getFrequencyColor(key)
     })).filter(d => d.count > 0);
 
     return {

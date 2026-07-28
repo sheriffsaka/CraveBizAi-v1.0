@@ -5,6 +5,7 @@ import InvoiceStatusBadge from './InvoiceStatusBadge';
 import Icon from './common/Icon';
 import PaymentModal from './PaymentModal';
 import { api } from '../lib/api';
+import { formatFrequencyLabel } from './RecurringInvoiceList';
 
 interface InvoiceDetailProps {
   invoice: Invoice;
@@ -190,7 +191,14 @@ const InvoiceDetail: React.FC<InvoiceDetailProps> = ({ invoice, client, services
           <div className="text-right">
             <h1 className="text-4xl font-black text-gray-900 uppercase tracking-tighter">Document</h1>
             <p className="text-sm text-gray-400 mt-1 font-black"># {invoice.invoiceNumber}</p>
-            <div className="mt-3"><InvoiceStatusBadge status={invoice.status} /></div>
+            <div className="mt-3 flex flex-wrap items-center justify-end gap-2">
+              <InvoiceStatusBadge status={invoice.status} />
+              {invoice.frequency && invoice.frequency !== 'one-time' && (
+                <span className="inline-flex items-center px-2.5 py-1 rounded-full text-xs font-bold bg-primary-100 text-primary-800 border border-primary-200">
+                  {formatFrequencyLabel(invoice.frequency)} Recurring
+                </span>
+              )}
+            </div>
           </div>
         </header>
 
@@ -206,10 +214,16 @@ const InvoiceDetail: React.FC<InvoiceDetailProps> = ({ invoice, client, services
                  <h3 className="text-[10px] font-black text-gray-400 uppercase tracking-widest mb-1">Issue Date</h3>
                  <p className="text-gray-800 font-black">{invoice.issueDate}</p>
              </div>
-             <div>
+             <div className="mb-4">
                  <h3 className="text-[10px] font-black text-gray-400 uppercase tracking-widest mb-1">Due Date</h3>
                  <p className="text-gray-800 font-black">{invoice.dueDate}</p>
              </div>
+             {invoice.nextRecurrenceDate && invoice.frequency !== 'one-time' && (
+               <div>
+                   <h3 className="text-[10px] font-black text-primary-500 uppercase tracking-widest mb-1">Next Recurrence</h3>
+                   <p className="text-primary-700 font-black">{invoice.nextRecurrenceDate}</p>
+               </div>
+             )}
           </div>
         </div>
 

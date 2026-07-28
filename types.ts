@@ -7,7 +7,7 @@ export enum InvoiceStatus {
   Sent = 'Sent'
 }
 
-export type InvoiceFrequency = 'one-time' | 'weekly' | 'monthly' | 'quarterly' | 'biannually' | 'annually';
+export type InvoiceFrequency = 'one-time' | 'daily' | 'weekly' | 'monthly' | 'quarterly' | 'biannually' | 'annually' | 'yearly';
 export type BillingCycle = 'monthly' | 'quarterly' | 'annually' | 'custom';
 
 export interface User {
