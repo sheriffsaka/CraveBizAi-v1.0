@@ -1540,20 +1540,16 @@ const DocumentTransformer: React.FC<DocumentTransformerProps> = ({
 
         try {
             const result = await generateDocumentFromPurpose(documentPurpose, context, selectedDocType, selectedIndustry);
-            if (result) {
+            if (result && result.blocks && result.blocks.length > 0) {
                 handleLoadNewDocument(result);
                 onSaveDoc(result).then(savedId => { if (savedId) setEditingDocId(savedId); });
             } else {
-                console.warn("AI returned empty, falling back to local offline template compiler.");
-                const fallbackResult = compileDocumentOffline(documentPurpose, context, selectedDocType, selectedIndustry);
-                handleLoadNewDocument(fallbackResult);
-                onSaveDoc(fallbackResult).then(savedId => { if (savedId) setEditingDocId(savedId); });
+                setError(`AI Document Generation Failed: The AI service returned an empty document. Please try again with additional details or refine your requirements.`);
             }
-        } catch (e) {
-            console.warn("Failsafe triggers offline local compiler:", e);
-            const fallbackResult = compileDocumentOffline(documentPurpose, context, selectedDocType, selectedIndustry);
-            handleLoadNewDocument(fallbackResult);
-            onSaveDoc(fallbackResult).then(savedId => { if (savedId) setEditingDocId(savedId); });
+        } catch (e: any) {
+            console.error("AI Document Generation error:", e);
+            const rootCause = e?.message || e?.error || "AI Service unavailable or failed to process prompt.";
+            setError(`AI Document Generation Failed: ${rootCause}`);
         } finally {
             setIsLoading(false);
         }

@@ -29,6 +29,7 @@ interface GlobalFilterBarProps {
   filteredInvoicesCount: number;
   title?: string;
   description?: string;
+  extraHeaderActions?: React.ReactNode;
 }
 
 export const GlobalFilterBar: React.FC<GlobalFilterBarProps> = ({
@@ -39,7 +40,8 @@ export const GlobalFilterBar: React.FC<GlobalFilterBarProps> = ({
   totalInvoicesCount,
   filteredInvoicesCount,
   title = "Global Filter Bar",
-  description
+  description,
+  extraHeaderActions
 }) => {
   const [isMobileExpanded, setIsMobileExpanded] = useState(false);
   const [clientSearch, setClientSearch] = useState('');
@@ -177,8 +179,8 @@ export const GlobalFilterBar: React.FC<GlobalFilterBarProps> = ({
           </div>
         </div>
 
-        {/* Status Count Badge & Mobile Expand Button */}
-        <div className="flex items-center space-x-3">
+        {/* Status Count Badge, Extra Actions & Mobile Expand Button */}
+        <div className="flex items-center space-x-3 flex-wrap">
           <div className="text-xs font-bold bg-gray-50 border border-gray-200/80 px-3 py-1.5 rounded-lg text-gray-700 flex items-center space-x-1">
             <span className="text-gray-400 font-extrabold uppercase text-[10px]">Showing:</span>
             <span className="font-black text-primary-600">{filteredInvoicesCount}</span>
@@ -186,6 +188,8 @@ export const GlobalFilterBar: React.FC<GlobalFilterBarProps> = ({
             <span className="text-gray-600">{totalInvoicesCount}</span>
             <span className="text-gray-400 font-medium">records</span>
           </div>
+
+          {extraHeaderActions}
 
           <button
             onClick={() => setIsMobileExpanded(!isMobileExpanded)}

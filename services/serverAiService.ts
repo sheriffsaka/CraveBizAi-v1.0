@@ -423,7 +423,7 @@ export async function transformDocument(rawContent: string, companyContext: any)
     const apiKey = getApiKey();
     const ctx = companyContext || {};
     if (!apiKey) {
-        return compileMockDocument(rawContent, ctx);
+        throw new Error("Gemini API key is not configured. Please set GEMINI_API_KEY in environment variables to transform documents via AI.");
     }
 
     const ai = getGeminiClient();
@@ -502,9 +502,9 @@ export async function transformDocument(rawContent: string, companyContext: any)
         const cleanedJsonString = jsonString.replace(/^```json\s*|```\s*$/g, '');
         const parsedJson = JSON.parse(cleanedJsonString);
         return parsedJson as GeneratedDocument;
-    } catch (error) {
-        console.error("Gemini AI Error during document transformation. Falling back to structured heuristic draft:", error);
-        return compileMockDocument(rawContent, ctx);
+    } catch (error: any) {
+        console.error("Gemini AI Error during document transformation:", error);
+        throw new Error(`AI Document Transformation failed: ${error?.message || 'Gemini model failed to transform document'}`);
     }
 }
 
@@ -657,7 +657,7 @@ export async function generateDocumentFromPurpose(
     const apiKey = getApiKey();
     const ctx = companyContext || {};
     if (!apiKey) {
-        return compileMockDocument(purpose, ctx, selectedPreset, selectedIndustry);
+        throw new Error("Gemini API key is not configured. Please set GEMINI_API_KEY in environment variables to enable AI Document Generation.");
     }
 
     const model = 'gemini-3.6-flash';
@@ -775,9 +775,9 @@ export async function generateDocumentFromPurpose(
             }
         }
         return parsed;
-    } catch (error) {
-        console.error("Gemini AI Error generating document from purpose. Falling back to structured heuristic draft:", error);
-        return compileMockDocument(purpose, ctx);
+    } catch (error: any) {
+        console.error("Gemini AI Error generating document from purpose:", error);
+        throw new Error(`AI Document Generation failed: ${error?.message || 'Gemini model was unable to generate document contents'}`);
     }
 }
 

@@ -639,7 +639,7 @@ User Inquiry: "${queryToUse}"`;
 
   return (
     <div className="space-y-6 font-sans">
-      {/* Global Filter Bar */}
+      {/* Merged Vault Analytics & Global Filter Header */}
       <GlobalFilterBar
         filter={currentFilter}
         onFilterChange={handleFilterChange}
@@ -647,51 +647,18 @@ User Inquiry: "${queryToUse}"`;
         services={services}
         totalInvoicesCount={invoices.length}
         filteredInvoicesCount={globallyFilteredInvoices.length}
-        title="Vault Analytics Global Filter"
-        description="Filter all report cards, profit margins, revenue trends, and AI analysis across selected clients, services, or dates"
-      />
-
-      {/* Main Header & Date/Export Controls */}
-      <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 bg-white p-6 rounded-xl border border-gray-100 shadow-sm">
-        <div>
-          <h1 className="text-2xl font-black text-gray-900 uppercase tracking-tight flex items-center gap-2">
-            Vault Analytics
-            <span className="text-[10px] font-extrabold uppercase tracking-widest px-2.5 py-0.5 rounded-full bg-primary-50 text-primary-700 border border-primary-100">
-              Financial Intelligence
-            </span>
-          </h1>
-          <p className="text-xs text-gray-500 font-medium mt-1">
-            Real-time financial reporting, direct cost margins, pipeline conversion, and AI performance analysis.
-          </p>
-        </div>
-
-        <div className="flex items-center flex-wrap gap-3 self-start md:self-auto">
-          {/* Date Context Selector */}
-          <div className="flex items-center space-x-2 bg-gray-50 p-1.5 rounded-xl border border-gray-200">
-            <Calendar className="w-3.5 h-3.5 text-gray-400 ml-1" />
-            <select
-              id="dateRange"
-              value={dateRange}
-              onChange={(e) => setDateRange(e.target.value as DateRange)}
-              className="px-2 py-1 bg-transparent text-xs font-bold uppercase tracking-wider text-gray-700 outline-none cursor-pointer"
-            >
-              <option value="all_time">Archive (All Time)</option>
-              <option value="last_30_days">Last 30 Days</option>
-              <option value="this_quarter">Current Quarter</option>
-              <option value="this_year">Current Fiscal Year</option>
-            </select>
-          </div>
-
-          {/* Export Data Ledger Button */}
+        title="Vault Analytics"
+        description="Real-time financial intelligence, direct cost margins, pipeline conversion, and multi-criteria global filtering."
+        extraHeaderActions={
           <button
             onClick={handleExportTabCsv}
-            className="bg-slate-900 hover:bg-slate-800 text-white px-4 py-2.5 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all shadow-sm flex items-center gap-2 cursor-pointer active:scale-95"
+            className="bg-slate-900 hover:bg-slate-800 text-white px-3.5 py-2 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all shadow-sm flex items-center gap-1.5 cursor-pointer active:scale-95"
           >
             <Download className="w-3.5 h-3.5 text-slate-300" />
             Export Tab CSV
           </button>
-        </div>
-      </div>
+        }
+      />
 
       {/* Clean Tabbed Navigation Bar */}
       <div className="bg-white p-2 rounded-xl border border-gray-100 shadow-sm overflow-x-auto no-scrollbar">
