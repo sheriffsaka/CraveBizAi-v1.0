@@ -732,6 +732,31 @@ export default function PublicSigningPortal({ docId, token, prefilledRecipient, 
                         </span>
                     </div>
 
+                    {alreadySigned && (
+                        <div className="bg-emerald-50 border border-emerald-200 rounded-2xl p-4 flex flex-col md:flex-row items-center justify-between gap-4 mb-4">
+                            <div className="flex items-center gap-3">
+                                <div className="w-10 h-10 rounded-xl bg-emerald-500 text-white flex items-center justify-center font-bold text-lg shadow-sm">
+                                    ✓
+                                </div>
+                                <div>
+                                    <h4 className="text-sm font-extrabold text-emerald-950">Document Signed & Completed</h4>
+                                    <p className="text-xs text-emerald-700 font-medium">Your signature has been recorded securely. You can view or download the executed agreement anytime.</p>
+                                </div>
+                            </div>
+                            {dbDoc?.signed_file_url && (
+                                <a
+                                    href={dbDoc.signed_file_url}
+                                    download={`${dbDoc.file_name || 'document'}_signed.pdf`}
+                                    target="_blank"
+                                    rel="noreferrer"
+                                    className="px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold rounded-xl shadow transition-all flex items-center gap-2 whitespace-nowrap"
+                                >
+                                    📥 Download Signed PDF
+                                </a>
+                            )}
+                        </div>
+                    )}
+
                     {dbDoc ? (
                     <div className="w-full mb-6">
                         <DocumentSignifyViewer

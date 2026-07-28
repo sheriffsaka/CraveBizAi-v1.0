@@ -30,7 +30,7 @@ import {
     deductReceiptQuota
 } from "../services/documentUsageModule.js";
 import { SignifyService } from "../services/signifyService.js";
-import { sendReceiptEmailDirect, sendInvoiceEmailDirect } from "../services/emailService.js";
+import { sendReceiptEmailDirect, sendInvoiceEmailDirect, sendSignifyEmailDirect } from "../services/emailService.js";
 
 const SUPABASE_URL = "https://dfqvgezjhudmnlyeycju.supabase.co";
 const SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImRmcXZnZXpqaHVkbW5seWV5Y2p1Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjYyNDAyOTMsImV4cCI6MjA4MTgxNjI5M30.8VsHsDpychdSMJmrfnmkxi5ed8CygwErX3-RkVPXkUI";
@@ -1195,47 +1195,52 @@ app.get("/api/signify/token-validation", async (req, res) => {
 });
 
 // 4.5 Dispatch invitation emails for signatories
-app.post("/api/signify/send-emails", (req, res) => {
+app.post("/api/signify/send-emails", async (req, res) => {
     try {
-        const { docId, signatories, title } = req.body;
+        const { docId, signatories, title, senderName, message, emailType } = req.body;
         if (!docId || !signatories || !Array.isArray(signatories)) {
             return res.status(400).json({ error: "docId and signatories array are required" });
         }
 
         const emailsSent = [];
+        const protocol = req.headers['x-forwarded-proto'] || req.protocol || 'http';
+        const host = req.get('host');
+        const baseUrl = `${protocol}://${host}`;
+
         for (const sig of signatories) {
-            const secureLink = `${req.protocol}://${req.get('host')}?token=${sig.token}`;
-            const emailBody = `
-================================================================================
-📧 OUTGOING EMAIL INVITATION DISPATCHED via CRAVEBIZ SSL
-================================================================================
-Timestamp: ${new Date().toISOString()}
-Document ID: ${docId}
-To: ${sig.name} <${sig.email}>
-Subject: Action Required: Secure E-Sign Invitation for '${title}'
+            if (!sig.email) continue;
+            const secureLink = `${baseUrl}/?token=${sig.token}`;
+            
+            try {
+                const result = await sendSignifyEmailDirect({
+                    recipientEmail: sig.email,
+                    recipientName: sig.name || 'Signer',
+                    documentTitle: title || 'Document',
+                    secureLink: secureLink,
+                    message: message,
+                    senderName: senderName || 'CraveBiZ Workspace',
+                    type: emailType || 'invitation'
+                });
 
-Dear ${sig.name},
-
-You have been invited by CraveBiZ Workspace to sign the document: '${title}'.
-
-To access the secure document viewer and sign without creating an account or logging in, 
-please click the secure link below:
-${secureLink}
-
-This link is secured by SSL and unique to you. Do not share this link.
-
-Best regards,
-CraveBiZ Document Team
-================================================================================
-`;
-            console.log(emailBody);
-            emailsSent.push({
-                email: sig.email,
-                name: sig.name,
-                role: sig.role,
-                status: "sent",
-                timestamp: new Date().toISOString()
-            });
+                emailsSent.push({
+                    email: sig.email,
+                    name: sig.name,
+                    role: sig.role,
+                    status: result.success ? "sent" : "failed",
+                    message: result.message,
+                    timestamp: new Date().toISOString()
+                });
+            } catch (dispatchErr: any) {
+                console.error(`Error sending email to ${sig.email}:`, dispatchErr);
+                emailsSent.push({
+                    email: sig.email,
+                    name: sig.name,
+                    role: sig.role,
+                    status: "failed",
+                    error: dispatchErr.message,
+                    timestamp: new Date().toISOString()
+                });
+            }
         }
 
         res.json({ success: true, emailsSent });
@@ -1382,6 +1387,44 @@ app.post("/api/signify/signatories/:id/status", async (req, res) => {
         }
         
         const result = await SignifyService.updateSignatoryStatus(req.params.id, status, signatures || []);
+        
+        // Dispatch notifications on status transition
+        try {
+            const protocol = req.headers['x-forwarded-proto'] || req.protocol || 'http';
+            const host = req.get('host');
+            const baseUrl = `${protocol}://${host}`;
+            const details = SignifyService.getDocumentDetails(result.document.id);
+
+            if (result.document.status === 'completed') {
+                // Send completion emails to all signatories
+                for (const sig of details.signatories) {
+                    if (sig.email) {
+                        sendSignifyEmailDirect({
+                            recipientEmail: sig.email,
+                            recipientName: sig.name,
+                            documentTitle: result.document.title,
+                            secureLink: `${baseUrl}/?token=${sig.token}`,
+                            type: 'completion'
+                        }).catch(e => console.warn('Completion email dispatch failed:', e));
+                    }
+                }
+            } else if (result.document.status === 'awaiting_owner') {
+                // Send owner sign request
+                const ownerSig = details.signatories.find(s => s.role === 'owner');
+                if (ownerSig && ownerSig.email) {
+                    sendSignifyEmailDirect({
+                        recipientEmail: ownerSig.email,
+                        recipientName: ownerSig.name,
+                        documentTitle: result.document.title,
+                        secureLink: `${baseUrl}/?token=${ownerSig.token}`,
+                        type: 'owner_sign_request'
+                    }).catch(e => console.warn('Owner sign request email failed:', e));
+                }
+            }
+        } catch (notifErr) {
+            console.warn('Status change notification error:', notifErr);
+        }
+
         res.json({
             success: true,
             document: result.document,

@@ -114,13 +114,16 @@ export class SignifyService {
   ): { document: DbDocument; signatories: DbDocumentSignatory[] } {
     const store = loadStore();
     
+    const signingOrder = contentJson?.signing_order || contentJson?.signingOrder || 'owner_first';
+    const initialStatus = signingOrder === 'owner_first' ? 'awaiting_owner' : 'awaiting_signer';
+
     const document: DbDocument = {
       id: docId,
       title,
       original_file_url: originalFileUrl,
       signed_file_url: null,
       owner_id: ownerId,
-      status: "pending",
+      status: initialStatus as any,
       created_at: new Date().toISOString(),
       file_type: fileType,
       file_name: fileName,
@@ -346,8 +349,9 @@ export class SignifyService {
     
     // Check all signatories for this document
     const docSignatories = Object.values(store.signatories).filter(s => s.document_id === docId);
-    const totalToSign = docSignatories.filter(s => s.role !== 'owner').length;
-    const signedCount = docSignatories.filter(s => s.role !== 'owner' && s.status === 'signed').length;
+    const totalToSign = docSignatories.length;
+    const signedCount = docSignatories.filter(s => s.status === 'signed').length;
+    const signingOrder = document.content_json?.signing_order || document.content_json?.signingOrder || 'owner_first';
     
     if (status === 'declined') {
       document.status = 'declined';
@@ -367,8 +371,25 @@ export class SignifyService {
       } catch (err) {
         console.error("PDF signature merging failed:", err);
       }
-    } else if (signedCount > 0) {
-      document.status = 'partially_signed';
+    } else {
+      const ownerSig = docSignatories.find(s => s.role === 'owner');
+      const nonOwnerSigs = docSignatories.filter(s => s.role !== 'owner');
+      const nonOwnerSignedCount = nonOwnerSigs.filter(s => s.status === 'signed').length;
+
+      if (signingOrder === 'owner_last') {
+        if (nonOwnerSigs.length > 0 && nonOwnerSignedCount === nonOwnerSigs.length && ownerSig && ownerSig.status !== 'signed') {
+          document.status = 'awaiting_owner' as any;
+        } else {
+          document.status = nonOwnerSignedCount > 0 ? 'partially_signed' : 'awaiting_signer';
+        }
+      } else {
+        // owner_first or default
+        if (ownerSig && ownerSig.status !== 'signed') {
+          document.status = 'awaiting_owner' as any;
+        } else {
+          document.status = signedCount > 0 ? 'partially_signed' : 'awaiting_signer';
+        }
+      }
     }
     
     saveStore(store);

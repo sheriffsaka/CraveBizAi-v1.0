@@ -6,6 +6,7 @@ import {
   Send, ExternalLink, FileCheck, Layers, FileCode
 } from 'lucide-react';
 import { api } from '../lib/api';
+import { SigningWorkflowTester } from './SigningWorkflowTester';
 import { DocumentSignifyViewer, PreparedField } from './DocumentSignifyViewer';
 import { overlaySignaturesOnPdf, downloadPdfBytes } from '../lib/pdfOverlay';
 import { Company, User, GeneratedDocument, DbDocument, DbDocumentSignatory, SignatureInfo } from '../types';
@@ -27,8 +28,9 @@ interface DashboardDocItem {
 
 export default function DocSignify({ company, user, prefillProject, prefillClient, initialFile, onBackToDashboard }: DocSignifyProps) {
   // Main view navigation
-  const [activeTab, setActiveTab] = useState<'dashboard' | 'wizard'>(initialFile ? 'wizard' : 'dashboard');
+  const [activeTab, setActiveTab] = useState<'dashboard' | 'wizard' | 'tester'>(initialFile ? 'wizard' : 'dashboard');
   const [wizardStep, setWizardStep] = useState<'upload' | 'prepare' | 'complete'>('upload');
+  const [signingOrder, setSigningOrder] = useState<'owner_first' | 'owner_last'>('owner_first');
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [toastMessage, setToastMessage] = useState<string | null>(null);
@@ -355,7 +357,8 @@ export default function DocSignify({ company, user, prefillProject, prefillClien
         fields: mappedFields,
         brandColor: "#4f46e5",
         subject: emailSubject,
-        message: emailMessage
+        message: emailMessage,
+        signing_order: signingOrder
       };
 
       const response = await api.createDocSignifyDocument(
@@ -540,6 +543,17 @@ export default function DocSignify({ company, user, prefillProject, prefillClien
             >
               <Plus className="w-3.5 h-3.5" />
               New Document
+            </button>
+            <button
+              onClick={() => setActiveTab('tester')}
+              className={`px-4 py-2 text-xs font-bold rounded-lg transition-all flex items-center gap-1.5 ${
+                activeTab === 'tester'
+                  ? 'bg-emerald-600 text-white shadow-md shadow-emerald-100 font-extrabold'
+                  : 'text-slate-600 hover:text-slate-900'
+              }`}
+            >
+              <ShieldCheck className="w-3.5 h-3.5 text-emerald-500" />
+              Workflow Tester
             </button>
           </div>
 
@@ -974,6 +988,58 @@ export default function DocSignify({ company, user, prefillProject, prefillClien
                   </div>
                 </div>
 
+                {/* Signing Order Selection */}
+                <div className="p-4 bg-slate-50 rounded-xl border border-slate-200/80 space-y-3">
+                  <p className="text-[10px] font-black uppercase text-slate-400 tracking-wider">Configurable Signing Order</p>
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                    <div
+                      onClick={() => setSigningOrder('owner_first')}
+                      className={`p-3 rounded-xl border cursor-pointer transition-all ${
+                        signingOrder === 'owner_first'
+                          ? 'bg-indigo-50/60 border-indigo-500 shadow-sm'
+                          : 'bg-white border-slate-200 hover:border-slate-300'
+                      }`}
+                    >
+                      <div className="flex items-center gap-2">
+                        <input
+                          type="radio"
+                          name="signingOrder"
+                          checked={signingOrder === 'owner_first'}
+                          onChange={() => setSigningOrder('owner_first')}
+                          className="text-indigo-600 focus:ring-indigo-500"
+                        />
+                        <span className="text-xs font-extrabold text-slate-900">Option A: Owner Signs First</span>
+                      </div>
+                      <p className="text-[11px] text-slate-500 mt-1 pl-5 leading-relaxed font-medium">
+                        Workspace Owner signs first, then the document is automatically sent to the invited recipients.
+                      </p>
+                    </div>
+
+                    <div
+                      onClick={() => setSigningOrder('owner_last')}
+                      className={`p-3 rounded-xl border cursor-pointer transition-all ${
+                        signingOrder === 'owner_last'
+                          ? 'bg-indigo-50/60 border-indigo-500 shadow-sm'
+                          : 'bg-white border-slate-200 hover:border-slate-300'
+                      }`}
+                    >
+                      <div className="flex items-center gap-2">
+                        <input
+                          type="radio"
+                          name="signingOrder"
+                          checked={signingOrder === 'owner_last'}
+                          onChange={() => setSigningOrder('owner_last')}
+                          className="text-indigo-600 focus:ring-indigo-500"
+                        />
+                        <span className="text-xs font-extrabold text-slate-900">Option B: Owner Signs Last</span>
+                      </div>
+                      <p className="text-[11px] text-slate-500 mt-1 pl-5 leading-relaxed font-medium">
+                        Invited recipients receive document first. After all signers complete, Owner is notified to sign last.
+                      </p>
+                    </div>
+                  </div>
+                </div>
+
                 {/* Proceed Button */}
                 <button
                   onClick={handleProceedToPrepare}
@@ -1278,6 +1344,11 @@ export default function DocSignify({ company, user, prefillProject, prefillClien
             </div>
           )}
         </div>
+      )}
+
+      {/* TAB 3: WORKFLOW TESTER */}
+      {activeTab === 'tester' && (
+        <SigningWorkflowTester companyId={company?.id} />
       )}
 
       {/* DOCUMENT AUDIT & REVIEW MODAL */}

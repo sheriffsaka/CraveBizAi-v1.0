@@ -631,3 +631,182 @@ export async function sendInvoiceEmailDirect(data: InvoiceEmailData): Promise<{ 
     }
 }
 
+export interface SignifyEmailData {
+    recipientEmail: string;
+    recipientName: string;
+    documentTitle: string;
+    secureLink: string;
+    message?: string;
+    senderName?: string;
+    expirationDate?: string;
+    type?: 'invitation' | 'completion' | 'owner_sign_request' | 'notification';
+}
+
+/**
+ * Sends DocSignify e-signature invitation & notification emails via Resend API with Nodemailer fallback
+ */
+export async function sendSignifyEmailDirect(data: SignifyEmailData): Promise<{ success: boolean; message: string; messageId?: string }> {
+    try {
+        const senderName = data.senderName || 'CraveBiZ Workspace';
+        const docTitle = data.documentTitle || 'Document';
+        
+        let subject = `Action Required: E-Signature Invitation for '${docTitle}'`;
+        let actionHeading = "You've been invited to review and sign a document";
+        let actionButtonText = "Review & Sign Document";
+        
+        if (data.type === 'completion') {
+            subject = `Completed: '${docTitle}' has been fully signed`;
+            actionHeading = "Great news! All parties have signed the document.";
+            actionButtonText = "View & Download Signed PDF";
+        } else if (data.type === 'owner_sign_request') {
+            subject = `Action Required: All signers completed '${docTitle}' - Please sign to finish`;
+            actionHeading = "All invited signers have completed signing. Your signature is now required as Workspace Owner.";
+            actionButtonText = "Sign & Complete Document";
+        }
+
+        const html = `
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>${subject}</title>
+</head>
+<body style="margin: 0; padding: 0; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; background-color: #f8fafc; color: #1e293b;">
+    <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="background-color: #f8fafc; padding: 40px 16px;">
+        <tr>
+            <td align="center">
+                <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="max-width: 600px; background-color: #ffffff; border-radius: 16px; border: 1px solid #e2e8f0; overflow: hidden; box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.05);">
+                    <!-- Header -->
+                    <tr>
+                        <td style="background-color: #4f46e5; padding: 32px 32px; text-align: left;">
+                            <div style="color: #ffffff; font-size: 22px; font-weight: 800; tracking-tight: -0.02em;">
+                                CraveBiZ <span style="font-weight: 400; opacity: 0.9;">DocSignify</span>
+                            </div>
+                            <div style="color: #c7d2fe; font-size: 13px; font-weight: 600; margin-top: 4px;">
+                                Secure Electronic Signature Portal
+                            </div>
+                        </td>
+                    </tr>
+
+                    <!-- Body Content -->
+                    <tr>
+                        <td style="padding: 32px 32px;">
+                            <h2 style="margin: 0 0 16px 0; font-size: 18px; font-weight: 800; color: #0f172a;">
+                                ${actionHeading}
+                            </h2>
+
+                            <p style="margin: 0 0 20px 0; font-size: 14px; line-height: 1.6; color: #475569;">
+                                Dear <strong>${data.recipientName}</strong>,
+                            </p>
+
+                            <p style="margin: 0 0 20px 0; font-size: 14px; line-height: 1.6; color: #475569;">
+                                <strong>${senderName}</strong> has prepared <strong>'${docTitle}'</strong> for e-signature. Please click the button below to view the original PDF and place your signature securely.
+                            </p>
+
+                            ${data.message ? `
+                            <div style="background-color: #f1f5f9; border-left: 4px solid #4f46e5; padding: 16px; border-radius: 0 8px 8px 0; margin-bottom: 24px;">
+                                <div style="font-size: 11px; font-weight: 800; color: #4f46e5; text-transform: uppercase; margin-bottom: 4px;">Message from ${senderName}:</div>
+                                <div style="font-size: 13px; color: #334155; font-style: italic;">"${data.message}"</div>
+                            </div>
+                            ` : ''}
+
+                            <!-- CTA Button -->
+                            <div style="text-align: center; margin: 32px 0;">
+                                <a href="${data.secureLink}" target="_blank" style="display: inline-block; background-color: #4f46e5; color: #ffffff; font-size: 15px; font-weight: 700; text-decoration: none; padding: 14px 32px; border-radius: 12px; box-shadow: 0 4px 12px rgba(79, 70, 229, 0.3);">
+                                    ${actionButtonText} &rarr;
+                                </a>
+                            </div>
+
+                            ${data.expirationDate ? `
+                            <p style="margin: 0 0 20px 0; font-size: 12px; color: #64748b; text-align: center;">
+                                ⏱️ This secure link will expire on <strong>${data.expirationDate}</strong>.
+                            </p>
+                            ` : ''}
+
+                            <div style="background-color: #f8fafc; border: 1px dashed #cbd5e1; padding: 12px 16px; border-radius: 8px; margin-top: 24px;">
+                                <div style="font-size: 11px; font-weight: 700; color: #64748b; margin-bottom: 4px;">Direct Link Backup:</div>
+                                <div style="font-size: 11px; word-break: break-all; color: #4f46e5;">
+                                    ${data.secureLink}
+                                </div>
+                            </div>
+                        </td>
+                    </tr>
+
+                    <!-- Footer -->
+                    <tr>
+                        <td style="background-color: #f8fafc; padding: 24px 32px; border-top: 1px solid #e2e8f0; text-align: center;">
+                            <p style="margin: 0 0 6px 0; font-size: 12px; font-weight: 700; color: #475569;">
+                                Powered by CraveBiZ DocSignify SSL Encryption
+                            </p>
+                            <p style="margin: 0; font-size: 11px; color: #94a3b8;">
+                                Secured by SHA-256 cryptographic hashes & audit trail logs.
+                            </p>
+                        </td>
+                    </tr>
+                </table>
+            </td>
+        </tr>
+    </table>
+</body>
+</html>
+        `;
+
+        const textContent = `${subject}\n\nDear ${data.recipientName},\n\nYou have been invited by ${senderName} to sign '${docTitle}'.\n\nPlease click the secure link below to review and sign:\n${data.secureLink}\n\nBest regards,\nCraveBiZ Team`;
+
+        const resend = getResendClient();
+        if (resend) {
+            const fromAddress = process.env.RESEND_FROM || process.env.SMTP_FROM || `CraveBiZ DocSignify <onboarding@resend.dev>`;
+            try {
+                const resendRes = await resend.emails.send({
+                    from: fromAddress,
+                    to: [data.recipientEmail],
+                    subject: subject,
+                    html: html,
+                    text: textContent
+                });
+
+                if (resendRes.error) {
+                    console.error(`[Resend Signify Error] ${data.recipientEmail}:`, resendRes.error);
+                } else {
+                    console.log(`[Resend Signify Success] Sent to ${data.recipientEmail}, Id:`, resendRes.data?.id);
+                    return {
+                        success: true,
+                        message: `DocSignify invitation dispatched via Resend to ${data.recipientEmail}`,
+                        messageId: resendRes.data?.id
+                    };
+                }
+            } catch (resendErr: any) {
+                console.error(`[Resend Signify Exception] ${data.recipientEmail}:`, resendErr);
+            }
+        }
+
+        // Fallback to Nodemailer/SMTP
+        const transporter = createTransporter();
+        const fromAddress = process.env.SMTP_FROM || `CraveBiZ DocSignify <no-reply@cravebiz.ai>`;
+        
+        const mailOptions = {
+            from: fromAddress,
+            to: `${data.recipientName} <${data.recipientEmail}>`,
+            subject: subject,
+            html: html,
+            text: textContent
+        };
+
+        const info = await transporter.sendMail(mailOptions);
+        console.log(`[Signify Email Direct Dispatch] Sent to ${data.recipientEmail}. MessageId:`, info.messageId || 'sent');
+
+        return {
+            success: true,
+            message: `DocSignify invitation dispatched directly to ${data.recipientEmail}!`,
+            messageId: info.messageId
+        };
+    } catch (err: any) {
+        console.error(`[Signify Email Dispatch Error] Failed to send to ${data.recipientEmail}:`, err);
+        return {
+            success: false,
+            message: err.message || "Failed to send e-sign email invitation."
+        };
+    }
+}
+
