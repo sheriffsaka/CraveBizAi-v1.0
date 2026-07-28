@@ -116,6 +116,8 @@ export default function PublicSigningPortal({ docId, token, prefilledRecipient, 
                         // Check if already completed signing
                         if (data.signatory && data.signatory.status === 'signed') {
                             setAlreadySigned(true);
+                        } else if (token) {
+                            api.markDocSignifyViewed(token);
                         }
                     } else {
                         setError("This secure signing link is invalid or has expired.");

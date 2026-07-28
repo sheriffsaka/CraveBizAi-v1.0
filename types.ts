@@ -227,7 +227,7 @@ export interface DbDocument {
   original_file_url: string;
   signed_file_url: string | null;
   owner_id: string;
-  status: 'pending' | 'partially_signed' | 'completed' | 'declined';
+  status: 'draft' | 'pending' | 'viewed' | 'partially_signed' | 'completed' | 'declined' | 'expired';
   created_at: string;
   file_type?: string; // e.g. pdf, docx, png, jpg, jpeg
   file_name?: string;
@@ -242,7 +242,7 @@ export interface DbDocumentSignatory {
   email: string;
   role: 'owner' | 'main_signatory' | 'witness' | 'additional_signatory';
   token: string;
-  status: 'pending' | 'signed' | 'declined';
+  status: 'pending' | 'viewed' | 'signed' | 'declined';
   signed_at: string | null;
 }
 

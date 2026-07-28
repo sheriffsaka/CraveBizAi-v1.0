@@ -170,6 +170,54 @@ export class SignifyService {
   }
 
   /**
+   * Retrieve all documents along with their signatories and signature counts.
+   */
+  static getAllDocuments(): { document: DbDocument; signatories: DbDocumentSignatory[]; signaturesCount: number }[] {
+    const store = loadStore();
+    const docs = Object.values(store.documents);
+    return docs.map(document => {
+      const signatories = Object.values(store.signatories).filter(s => s.document_id === document.id);
+      const signaturesCount = store.signatures.filter(s => s.document_id === document.id).length;
+      return { document, signatories, signaturesCount };
+    }).sort((a, b) => new Date(b.document.created_at).getTime() - new Date(a.document.created_at).getTime());
+  }
+
+  /**
+   * Delete a document and its associated signatories & signatures.
+   */
+  static deleteDocument(docId: string): boolean {
+    const store = loadStore();
+    if (!store.documents[docId]) return false;
+    delete store.documents[docId];
+    for (const key in store.signatories) {
+      if (store.signatories[key].document_id === docId) {
+        delete store.signatories[key];
+      }
+    }
+    store.signatures = store.signatures.filter(s => s.document_id !== docId);
+    saveStore(store);
+    return true;
+  }
+
+  /**
+   * Record viewed event for a document/signatory.
+   */
+  static recordViewed(token: string): boolean {
+    const store = loadStore();
+    const signatory = Object.values(store.signatories).find(s => s.token === token);
+    if (!signatory) return false;
+    if (signatory.status === 'pending') {
+      signatory.status = 'viewed' as any;
+      const document = store.documents[signatory.document_id];
+      if (document && document.status === 'pending') {
+        document.status = 'viewed';
+      }
+      saveStore(store);
+    }
+    return true;
+  }
+
+  /**
    * Retrieve a document along with all its signatories and current placed signatures.
    */
   static getDocumentDetails(docId: string): { document: DbDocument | null; signatories: DbDocumentSignatory[]; signatures: DbDocumentSignature[] } {

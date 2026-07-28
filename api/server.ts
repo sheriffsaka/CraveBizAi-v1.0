@@ -1064,6 +1064,17 @@ app.post("/api/signify/parse-document", verifyTenant, async (req, res) => {
     }
 });
 
+// 1.5 Get all documents list for DocSignify Dashboard
+app.get("/api/signify/documents", verifyTenant, (req, res) => {
+    try {
+        const documents = SignifyService.getAllDocuments();
+        res.json({ success: true, documents });
+    } catch (err: any) {
+        console.error("DocSignify fetch all documents error:", err);
+        res.status(500).json({ error: err.message || "Internal server error" });
+    }
+});
+
 // 2. Create/register a document for signing
 app.post("/api/signify/documents", verifyTenant, (req, res) => {
     try {
@@ -1095,6 +1106,30 @@ app.get("/api/signify/documents/:id", verifyTenant, (req, res) => {
     } catch (err: any) {
         console.error("DocSignify fetch document details error:", err);
         res.status(500).json({ error: err.message || "Internal server error" });
+    }
+});
+
+// 3.5 Delete document
+app.delete("/api/signify/documents/:id", verifyTenant, (req, res) => {
+    try {
+        const success = SignifyService.deleteDocument(req.params.id);
+        res.json({ success });
+    } catch (err: any) {
+        console.error("DocSignify delete document error:", err);
+        res.status(500).json({ error: err.message || "Internal server error" });
+    }
+});
+
+// 3.6 Record viewed status for signatory token
+app.post("/api/signify/mark-viewed", (req, res) => {
+    try {
+        const { token } = req.body;
+        if (token) {
+            SignifyService.recordViewed(token);
+        }
+        res.json({ success: true });
+    } catch (err: any) {
+        res.json({ success: false });
     }
 });
 

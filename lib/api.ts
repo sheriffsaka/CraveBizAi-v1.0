@@ -2156,6 +2156,50 @@ class CraveBizApi {
     }
   }
 
+  async getAllDocSignifyDocuments(companyId?: string): Promise<{ document: DbDocument; signatories: DbDocumentSignatory[]; signaturesCount: number }[]> {
+    try {
+      const response = await fetch('/api/signify/documents', {
+        headers: await this.getAuthHeaders(companyId)
+      });
+      if (!response.ok) {
+        return [];
+      }
+      const data = await response.json();
+      return data.documents || [];
+    } catch (err) {
+      console.error("getAllDocSignifyDocuments error:", err);
+      return [];
+    }
+  }
+
+  async deleteDocSignifyDocument(docId: string, companyId?: string): Promise<boolean> {
+    try {
+      const response = await fetch(`/api/signify/documents/${docId}`, {
+        method: 'DELETE',
+        headers: await this.getAuthHeaders(companyId)
+      });
+      const data = await response.json();
+      return !!data.success;
+    } catch (err) {
+      console.error("deleteDocSignifyDocument error:", err);
+      return false;
+    }
+  }
+
+  async markDocSignifyViewed(token: string): Promise<boolean> {
+    try {
+      const response = await fetch('/api/signify/mark-viewed', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ token })
+      });
+      const data = await response.json();
+      return !!data.success;
+    } catch (err) {
+      return false;
+    }
+  }
+
   async getWorkspaces(tenantId: string): Promise<any[]> {
     try {
       const response = await fetch(`/api/signify/workspaces/${tenantId}`, {
