@@ -80,11 +80,15 @@ export const GlobalFilterBar: React.FC<GlobalFilterBarProps> = ({
   );
 
   // Filtered Service Options
-  const filteredServiceOptions = services.filter((s) =>
-    s.name.toLowerCase().includes(serviceSearch.toLowerCase()) ||
-    (s.packageName && s.packageName.toLowerCase().includes(serviceSearch.toLowerCase())) ||
-    (s.category && s.category.toLowerCase().includes(serviceSearch.toLowerCase()))
-  );
+  const filteredServiceOptions = useMemo(() => {
+    return services
+      .filter((s) =>
+        s.name.toLowerCase().includes(serviceSearch.toLowerCase()) ||
+        (s.packageName && s.packageName.toLowerCase().includes(serviceSearch.toLowerCase())) ||
+        (s.category && s.category.toLowerCase().includes(serviceSearch.toLowerCase()))
+      )
+      .sort((a, b) => a.name.localeCompare(b.name, undefined, { sensitivity: 'base' }));
+  }, [services, serviceSearch]);
 
   const handleResetFilters = () => {
     onFilterChange(DEFAULT_GLOBAL_FILTER);

@@ -401,6 +401,19 @@ const Reports: React.FC<ReportsProps> = ({
       invoiceIds: Set<string>;
     }>();
 
+    // Seed serviceMap with all catalog services to ensure new services are automatically included in A-Z position
+    services.forEach(s => {
+      serviceMap.set(s.id, {
+        serviceId: s.id,
+        serviceName: s.name,
+        category: s.category || 'General',
+        revenue: 0,
+        directCost: 0,
+        unitsSold: 0,
+        invoiceIds: new Set<string>()
+      });
+    });
+
     const categoryMap = new Map<string, { category: string; directCost: number; revenue: number }>();
 
     paidInvoices.forEach(inv => {
@@ -462,7 +475,7 @@ const Reports: React.FC<ReportsProps> = ({
         profitMarginPct: margin,
         badge: getMarginBadge(margin)
       };
-    }).sort((a, b) => b.revenue - a.revenue);
+    }).sort((a, b) => a.serviceName.localeCompare(b.serviceName, undefined, { sensitivity: 'base' }));
 
     const cBreakdown = Array.from(categoryMap.values()).sort((a, b) => b.directCost - a.directCost);
 
@@ -559,7 +572,7 @@ const Reports: React.FC<ReportsProps> = ({
       revenue: s.revenue,
       directCost: s.directCost,
       unitsSold: s.unitsSold
-    })).slice(0, 6);
+    }));
   }, [serviceBreakdown]);
 
   const averageInvoiceValueOverTime = useMemo(() => {
@@ -715,7 +728,7 @@ const Reports: React.FC<ReportsProps> = ({
         revenue: rev,
         marginPct: margin
       };
-    }).sort((a, b) => b.revenue - a.revenue);
+    }).sort((a, b) => a.name.localeCompare(b.name, undefined, { sensitivity: 'base' }));
   }, [services, serviceBreakdown]);
 
   const topVolumeService = useMemo(() => {

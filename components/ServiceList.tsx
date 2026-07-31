@@ -173,8 +173,7 @@ const ServiceList: React.FC<ServiceListProps> = ({ companyId, services, invoices
         revenue: serviceRevenueMap[s.id] || 0,
         volume: serviceUsageMap[s.id] || 0
       }))
-      .sort((a, b) => b.revenue - a.revenue)
-      .slice(0, 5)
+      .sort((a, b) => a.name.localeCompare(b.name, undefined, { sensitivity: 'base' }))
       .filter(p => p.revenue > 0);
 
     return {
