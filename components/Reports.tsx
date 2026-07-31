@@ -8,7 +8,8 @@ import {
   LayoutDashboard, TrendingUp, Receipt, Percent, FileText,
   Users, Briefcase, Sparkles, Download, Calendar, ArrowUpRight,
   ArrowDownRight, AlertTriangle, CheckCircle2, Search, Filter,
-  Clock, DollarSign, Layers, PieChart as PieIcon, Copy, Check, ShieldAlert
+  Clock, DollarSign, Layers, PieChart as PieIcon, Copy, Check, ShieldAlert,
+  Repeat, RefreshCw
 } from 'lucide-react';
 import { Invoice, Client, Service, InvoiceStatus } from '../types';
 import { generateTextResponse } from '../services/aiGenerationService';
@@ -200,10 +201,157 @@ const Reports: React.FC<ReportsProps> = ({
     return { startDate: start, endDate: end };
   }, [dateRange]);
 
+  const [invoiceSubTab, setInvoiceSubTab] = useState<'both' | 'onetime' | 'recurring'>('both');
+
   const filteredInvoices = useMemo(() => {
     if (dateRange === 'all_time') return globallyFilteredInvoices;
     return globallyFilteredInvoices.filter(inv => isInvoiceInDateRange(inv, startDate, endDate));
   }, [globallyFilteredInvoices, dateRange, startDate, endDate, isInvoiceInDateRange]);
+
+  // Comprehensive invoice dataset for Invoice tab including recurring templates
+  const allGloballyFilteredInvoices = useMemo(() => {
+    return filterInvoices(invoices, services, clients, currentFilter, true);
+  }, [invoices, services, clients, currentFilter]);
+
+  const allFilteredInvoices = useMemo(() => {
+    if (dateRange === 'all_time') return allGloballyFilteredInvoices;
+    return allGloballyFilteredInvoices.filter(inv => isInvoiceInDateRange(inv, startDate, endDate));
+  }, [allGloballyFilteredInvoices, dateRange, startDate, endDate, isInvoiceInDateRange]);
+
+  // Partition invoices into One-Time and Recurring
+  const oneTimeInvoices = useMemo(() => {
+    return allFilteredInvoices.filter(
+      inv => !inv.isRecurringTemplate && (!inv.frequency || inv.frequency === 'one-time') && !inv.parentInvoiceId
+    );
+  }, [allFilteredInvoices]);
+
+  const recurringInvoices = useMemo(() => {
+    return allFilteredInvoices.filter(
+      inv => inv.isRecurringTemplate || (inv.frequency && inv.frequency !== 'one-time') || !!inv.parentInvoiceId
+    );
+  }, [allFilteredInvoices]);
+
+  // Helper for independent section statistics
+  const calculateInvoiceSectionStats = useCallback((invList: Invoice[]) => {
+    const paid = invList.filter(i => i.status === InvoiceStatus.Paid);
+    const overdue = invList.filter(i => i.status === InvoiceStatus.Overdue);
+    const sent = invList.filter(i => i.status === InvoiceStatus.Sent);
+    const draft = invList.filter(i => i.status === InvoiceStatus.Draft);
+
+    const totalCount = invList.length;
+    const paidCount = paid.length;
+    const overdueCount = overdue.length;
+    const sentCount = sent.length;
+    const draftCount = draft.length;
+
+    const totalRevenue = paid.reduce((sum, i) => sum + i.total, 0);
+    const totalOverdueRevenue = overdue.reduce((sum, i) => sum + i.total, 0);
+    const totalSentRevenue = sent.reduce((sum, i) => sum + i.total, 0);
+    const totalVolume = invList.reduce((sum, i) => sum + i.total, 0);
+
+    const averageTicket = paidCount > 0 ? Math.round(totalRevenue / paidCount) : 0;
+
+    let averagePaymentTermDays = 0;
+    if (paid.length > 0) {
+      const totalDays = paid.reduce((sum, invoice) => {
+        const issue = new Date(invoice.issueDate);
+        const due = new Date(invoice.dueDate);
+        const diffTime = Math.abs(due.getTime() - issue.getTime());
+        return sum + Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+      }, 0);
+      averagePaymentTermDays = Math.round(totalDays / paid.length);
+    }
+
+    const statusData = [
+      { name: 'Paid', value: paidCount, color: '#22c55e' },
+      { name: 'Overdue', value: overdueCount, color: '#ef4444' },
+      { name: 'Sent', value: sentCount, color: '#3b82f6' },
+      { name: 'Draft', value: draftCount, color: '#6b7280' }
+    ].filter(d => d.value > 0);
+
+    const now = new Date();
+    now.setHours(0, 0, 0, 0);
+    const ageGroups = {
+      '1-30 Days': { count: 0, amount: 0 },
+      '31-60 Days': { count: 0, amount: 0 },
+      '61-90 Days': { count: 0, amount: 0 },
+      '90+ Days': { count: 0, amount: 0 },
+    };
+    overdue.forEach(invoice => {
+      const dueDate = new Date(invoice.dueDate);
+      dueDate.setHours(0, 0, 0, 0);
+      const diffDays = Math.ceil((now.getTime() - dueDate.getTime()) / (1000 * 60 * 60 * 24));
+      if (diffDays >= 1 && diffDays <= 30) { ageGroups['1-30 Days'].count++; ageGroups['1-30 Days'].amount += invoice.total; }
+      else if (diffDays >= 31 && diffDays <= 60) { ageGroups['31-60 Days'].count++; ageGroups['31-60 Days'].amount += invoice.total; }
+      else if (diffDays >= 61 && diffDays <= 90) { ageGroups['61-90 Days'].count++; ageGroups['61-90 Days'].amount += invoice.total; }
+      else if (diffDays > 90) { ageGroups['90+ Days'].count++; ageGroups['90+ Days'].amount += invoice.total; }
+    });
+    const overdueAgingData = Object.entries(ageGroups).map(([label, data]) => ({ label, ...data }));
+
+    const sentOrPaid = sentCount + paidCount + overdueCount;
+    const draftToSent = totalCount > 0 ? (sentOrPaid / totalCount) * 100 : 0;
+    const sentToPaid = sentOrPaid > 0 ? (paidCount / sentOrPaid) * 100 : 0;
+    const totalPaidRate = totalCount > 0 ? (paidCount / totalCount) * 100 : 0;
+
+    const monthlyDataMap = new Map<string, { total: number; count: number }>();
+    paid.forEach(invoice => {
+      const monthYear = new Date(invoice.issueDate).toLocaleString('en-US', { year: 'numeric', month: 'short' });
+      const currentData = monthlyDataMap.get(monthYear) || { total: 0, count: 0 };
+      monthlyDataMap.set(monthYear, { total: currentData.total + invoice.total, count: currentData.count + 1 });
+    });
+    const averageValueOverTime = Array.from(monthlyDataMap.entries())
+      .map(([name, data]) => ({ name, avgValue: Math.round(data.total / data.count) }))
+      .sort((a, b) => new Date(a.name).getTime() - new Date(b.name).getTime());
+
+    return {
+      totalCount,
+      paidCount,
+      overdueCount,
+      sentCount,
+      draftCount,
+      totalRevenue,
+      totalOverdueRevenue,
+      totalSentRevenue,
+      totalVolume,
+      averageTicket,
+      averagePaymentTermDays,
+      statusData,
+      overdueAgingData,
+      conversionRates: { draftToSent, sentToPaid, totalPaidRate },
+      averageValueOverTime
+    };
+  }, []);
+
+  const oneTimeStats = useMemo(() => calculateInvoiceSectionStats(oneTimeInvoices), [oneTimeInvoices, calculateInvoiceSectionStats]);
+  const recurringStats = useMemo(() => calculateInvoiceSectionStats(recurringInvoices), [recurringInvoices, calculateInvoiceSectionStats]);
+
+  const recurringExtraStats = useMemo(() => {
+    const activeSchedulesCount = recurringInvoices.filter(i => i.recurringStatus !== 'paused').length;
+    const pausedSchedulesCount = recurringInvoices.filter(i => i.recurringStatus === 'paused').length;
+    const totalContractValue = recurringInvoices.reduce((sum, i) => sum + i.total, 0);
+
+    const freqMap: Record<string, { count: number; value: number }> = {};
+    recurringInvoices.forEach(inv => {
+      const freqKey = inv.frequency || 'monthly';
+      const label = freqKey.charAt(0).toUpperCase() + freqKey.slice(1);
+      if (!freqMap[label]) freqMap[label] = { count: 0, value: 0 };
+      freqMap[label].count += 1;
+      freqMap[label].value += inv.total;
+    });
+
+    const frequencyDistribution = Object.entries(freqMap).map(([name, data]) => ({
+      name,
+      count: data.count,
+      value: data.value
+    }));
+
+    return {
+      activeSchedulesCount,
+      pausedSchedulesCount,
+      totalContractValue,
+      frequencyDistribution
+    };
+  }, [recurringInvoices]);
 
   // Invoice status subsets
   const paidInvoices = useMemo(() => filteredInvoices.filter(inv => inv.status === InvoiceStatus.Paid), [filteredInvoices]);
@@ -620,6 +768,29 @@ User Inquiry: "${queryToUse}"`;
         'Margin (%)': s.marginPct.toFixed(2)
       }));
       csvString = convertToCsv(data, headers);
+    } else if (activeTab === 'invoices') {
+      const headers = ['Invoice Number', 'Invoice Type', 'Client Name', 'Status', 'Frequency', 'Total (NGN)', 'Issue Date', 'Due Date'];
+      const targetInvoices = invoiceSubTab === 'onetime'
+        ? oneTimeInvoices
+        : invoiceSubTab === 'recurring'
+        ? recurringInvoices
+        : allFilteredInvoices;
+
+      const data = targetInvoices.map(inv => {
+        const isRec = inv.isRecurringTemplate || (inv.frequency && inv.frequency !== 'one-time') || !!inv.parentInvoiceId;
+        return {
+          'Invoice Number': inv.invoiceNumber || inv.id,
+          'Invoice Type': isRec ? 'Recurring' : 'One-Time',
+          'Client Name': clients.find(c => c.id === inv.clientId)?.companyName || 'Unknown',
+          'Status': inv.status,
+          'Frequency': inv.frequency ? inv.frequency.charAt(0).toUpperCase() + inv.frequency.slice(1) : 'One-Time',
+          'Total (NGN)': inv.total,
+          'Issue Date': inv.issueDate,
+          'Due Date': inv.dueDate,
+        };
+      });
+      csvString = convertToCsv(data, headers);
+      filename = `CraveBiz_InvoiceReport_${invoiceSubTab}_${dateRange}_${Date.now()}.csv`;
     } else {
       // Default invoice ledger export
       const headers = ['Invoice ID', 'Client Name', 'Status', 'Total (NGN)', 'Issue Date', 'Due Date'];
@@ -1268,125 +1439,338 @@ User Inquiry: "${queryToUse}"`;
 
       {/* TAB 5: INVOICES */}
       {activeTab === 'invoices' && (
-        <div className="space-y-6 animate-in fade-in duration-200">
-          {/* Summary Cards */}
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-            <KpiCard
-              title="Total Invoices Ledger"
-              value={totalInvoicesOverall.toString()}
-              subtitle="All Recorded Documents"
-              icon={<FileText className="w-5 h-5 text-gray-700" />}
-              accentColor="slate"
-            />
-            <KpiCard
-              title="Settled Paid Invoices"
-              value={paidInvoicesCount.toString()}
-              subtitle={`Volume: ₦${totalRevenue.toLocaleString()}`}
-              icon={<CheckCircle2 className="w-5 h-5 text-emerald-600" />}
-              accentColor="emerald"
-            />
-            <KpiCard
-              title="Overdue Accounts Alert"
-              value={overdueInvoicesCount.toString()}
-              subtitle={`Volume: ₦${totalOverdueRevenue.toLocaleString()}`}
-              icon={<AlertTriangle className="w-5 h-5 text-rose-600" />}
-              accentColor="rose"
-            />
-            <KpiCard
-              title="Average Payment Term"
-              value={`${averagePaymentTermDays} Days`}
-              subtitle="Issue to Due Duration"
-              icon={<Clock className="w-5 h-5 text-blue-600" />}
-              accentColor="blue"
-            />
+        <div className="space-y-8 animate-in fade-in duration-200">
+          {/* Top Bar with Sub-Tab Controls */}
+          <div className="bg-white p-4 rounded-xl border border-gray-100 shadow-sm flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
+            <div>
+              <div className="flex items-center gap-2">
+                <FileText className="w-5 h-5 text-primary-600" />
+                <h3 className="text-sm font-black text-gray-900 uppercase tracking-tight">
+                  Invoice Reports & Sectional Intelligence
+                </h3>
+              </div>
+              <p className="text-xs text-gray-500 font-medium mt-0.5">
+                Comparative analysis of One-Time vs. Recurring billing schedules, aging brackets, and pay-through efficiency.
+              </p>
+            </div>
+
+            <div className="flex items-center bg-gray-100 p-1 rounded-xl shrink-0 self-stretch sm:self-auto justify-center">
+              <button
+                onClick={() => setInvoiceSubTab('both')}
+                className={`px-3.5 py-2 rounded-lg text-xs font-black uppercase tracking-wider transition-all cursor-pointer ${
+                  invoiceSubTab === 'both'
+                    ? 'bg-white text-gray-900 shadow-sm'
+                    : 'text-gray-500 hover:text-gray-900'
+                }`}
+              >
+                All / Both Sections
+              </button>
+              <button
+                onClick={() => setInvoiceSubTab('onetime')}
+                className={`px-3.5 py-2 rounded-lg text-xs font-black uppercase tracking-wider transition-all cursor-pointer flex items-center gap-1.5 ${
+                  invoiceSubTab === 'onetime'
+                    ? 'bg-white text-primary-700 shadow-sm'
+                    : 'text-gray-500 hover:text-gray-900'
+                }`}
+              >
+                <FileText className="w-3.5 h-3.5" />
+                One-Time ({oneTimeStats.totalCount})
+              </button>
+              <button
+                onClick={() => setInvoiceSubTab('recurring')}
+                className={`px-3.5 py-2 rounded-lg text-xs font-black uppercase tracking-wider transition-all cursor-pointer flex items-center gap-1.5 ${
+                  invoiceSubTab === 'recurring'
+                    ? 'bg-white text-indigo-700 shadow-sm'
+                    : 'text-gray-500 hover:text-gray-900'
+                }`}
+              >
+                <Repeat className="w-3.5 h-3.5" />
+                Recurring ({recurringStats.totalCount})
+              </button>
+            </div>
           </div>
 
-          {/* Charts Row */}
-          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-            <ChartCard title="Invoice Status Breakdown">
-              <div style={{ width: '100%', height: 280 }}>
-                <ResponsiveContainer width="100%" height="100%" minWidth={0}>
-                  <PieChart>
-                    <Pie data={invoiceStatusData} cx="50%" cy="50%" outerRadius={85} dataKey="value" nameKey="name" label={(entry) => `${entry.name}: ${entry.value}`}>
-                      {invoiceStatusData.map((entry) => (
-                        <Cell key={entry.name} fill={entry.color} />
-                      ))}
-                    </Pie>
-                    <Tooltip />
-                    <Legend />
-                  </PieChart>
-                </ResponsiveContainer>
-              </div>
-            </ChartCard>
-
-            <ChartCard title="Outstanding / Overdue Aging Bracket">
-              <div style={{ width: '100%', height: 280 }}>
-                <ResponsiveContainer width="100%" height="100%" minWidth={0}>
-                  <BarChart data={overdueAgingData}>
-                    <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9" />
-                    <XAxis dataKey="label" tick={{ fill: '#64748b', fontSize: 10, fontWeight: 800 }} axisLine={false} tickLine={false} />
-                    <YAxis tickFormatter={(v) => `₦${(v / 1000).toFixed(0)}k`} tick={{ fill: '#64748b', fontSize: 10, fontWeight: 800 }} axisLine={false} tickLine={false} />
-                    <Tooltip formatter={(value: number) => [`₦${value.toLocaleString()}`, "Outstanding Amount"]} />
-                    <Bar dataKey="amount" fill="#ef4444" radius={[4, 4, 0, 0]} />
-                  </BarChart>
-                </ResponsiveContainer>
-              </div>
-            </ChartCard>
-          </div>
-
-          {/* Conversion & Ticket Size Section */}
-          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-            <ChartCard title="Invoice Dispatch & Pay-Through Efficiency">
-              <div className="space-y-4 p-2">
-                <div>
-                  <div className="flex justify-between items-center mb-1">
-                    <span className="text-xs font-bold uppercase text-gray-600">Draft ➔ Dispatch Rate</span>
-                    <span className="text-xs font-black text-primary-600">{invoiceConversionRates.draftToSent.toFixed(1)}%</span>
+          {/* SECTION 1: ONE-TIME INVOICES */}
+          {(invoiceSubTab === 'both' || invoiceSubTab === 'onetime') && (
+            <div className="space-y-6 bg-slate-50/50 p-6 rounded-2xl border border-slate-200/80 shadow-sm">
+              <div className="flex items-center justify-between border-b border-slate-200 pb-4">
+                <div className="flex items-center gap-3">
+                  <div className="p-2.5 bg-blue-100 text-blue-700 rounded-xl">
+                    <FileText className="w-5 h-5" />
                   </div>
-                  <div className="w-full bg-gray-100 h-2.5 rounded-full overflow-hidden">
-                    <div className="bg-primary-600 h-full rounded-full transition-all duration-500" style={{ width: `${Math.min(100, invoiceConversionRates.draftToSent)}%` }}></div>
-                  </div>
-                </div>
-
-                <div>
-                  <div className="flex justify-between items-center mb-1">
-                    <span className="text-xs font-bold uppercase text-gray-600">Dispatch ➔ Settlement Rate</span>
-                    <span className="text-xs font-black text-emerald-600">{invoiceConversionRates.sentToPaid.toFixed(1)}%</span>
-                  </div>
-                  <div className="w-full bg-gray-100 h-2.5 rounded-full overflow-hidden">
-                    <div className="bg-emerald-500 h-full rounded-full transition-all duration-500" style={{ width: `${Math.min(100, invoiceConversionRates.sentToPaid)}%` }}></div>
-                  </div>
-                </div>
-
-                <div>
-                  <div className="flex justify-between items-center mb-1">
-                    <span className="text-xs font-bold uppercase text-gray-600">Global Pay-Through Rate</span>
-                    <span className="text-xs font-black text-indigo-600">{invoiceConversionRates.totalPaidRate.toFixed(1)}%</span>
-                  </div>
-                  <div className="w-full bg-gray-100 h-2.5 rounded-full overflow-hidden">
-                    <div className="bg-indigo-600 h-full rounded-full transition-all duration-500" style={{ width: `${Math.min(100, invoiceConversionRates.totalPaidRate)}%` }}></div>
+                  <div>
+                    <div className="flex items-center gap-2">
+                      <h4 className="text-base font-black text-slate-900 uppercase tracking-tight">
+                        One-Time Invoices Section
+                      </h4>
+                      <span className="bg-blue-100 text-blue-800 text-[10px] font-black px-2.5 py-0.5 rounded-full uppercase tracking-wider">
+                        {oneTimeStats.totalCount} Invoices
+                      </span>
+                    </div>
+                    <p className="text-xs text-slate-500 font-medium">
+                      Single-issuance non-recurring billing documents, settlement ratios, and aging breakdown.
+                    </p>
                   </div>
                 </div>
               </div>
-            </ChartCard>
 
-            <ChartCard title="Average Ticket Size Line Trend">
-              {averageInvoiceValueOverTime.length > 0 ? (
-                <div style={{ width: '100%', height: 200 }}>
-                  <ResponsiveContainer width="100%" height="100%" minWidth={0}>
-                    <LineChart data={averageInvoiceValueOverTime}>
-                      <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9" />
-                      <XAxis dataKey="name" tick={{ fill: '#64748b', fontSize: 10, fontWeight: 800 }} axisLine={false} tickLine={false} />
-                      <Tooltip formatter={(value: number) => [`₦${value.toLocaleString()}`, "Avg Ticket"]} />
-                      <Line type="monotone" dataKey="avgValue" stroke="#6366f1" strokeWidth={3} dot={{ r: 4 }} />
-                    </LineChart>
-                  </ResponsiveContainer>
+              {/* Summary Cards */}
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+                <KpiCard
+                  title="Total One-Time Invoices"
+                  value={oneTimeStats.totalCount.toString()}
+                  subtitle="Recorded Documents"
+                  icon={<FileText className="w-5 h-5 text-gray-700" />}
+                  accentColor="slate"
+                />
+                <KpiCard
+                  title="Settled Paid Revenue"
+                  value={`₦${oneTimeStats.totalRevenue.toLocaleString()}`}
+                  subtitle={`${oneTimeStats.paidCount} Paid Invoices`}
+                  icon={<CheckCircle2 className="w-5 h-5 text-emerald-600" />}
+                  accentColor="emerald"
+                />
+                <KpiCard
+                  title="Overdue Accounts Alert"
+                  value={oneTimeStats.overdueCount.toString()}
+                  subtitle={`Volume: ₦${oneTimeStats.totalOverdueRevenue.toLocaleString()}`}
+                  icon={<AlertTriangle className="w-5 h-5 text-rose-600" />}
+                  accentColor="rose"
+                />
+                <KpiCard
+                  title="Average Payment Term"
+                  value={`${oneTimeStats.averagePaymentTermDays} Days`}
+                  subtitle="Issue to Due Duration"
+                  icon={<Clock className="w-5 h-5 text-blue-600" />}
+                  accentColor="blue"
+                />
+              </div>
+
+              {/* Charts Row 1 */}
+              <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                <ChartCard title="One-Time Status Breakdown">
+                  {oneTimeStats.statusData.length > 0 ? (
+                    <div style={{ width: '100%', height: 260 }}>
+                      <ResponsiveContainer width="100%" height="100%" minWidth={0}>
+                        <PieChart>
+                          <Pie data={oneTimeStats.statusData} cx="50%" cy="50%" outerRadius={85} dataKey="value" nameKey="name" label={(entry) => `${entry.name}: ${entry.value}`}>
+                            {oneTimeStats.statusData.map((entry) => (
+                              <Cell key={entry.name} fill={entry.color} />
+                            ))}
+                          </Pie>
+                          <Tooltip />
+                          <Legend />
+                        </PieChart>
+                      </ResponsiveContainer>
+                    </div>
+                  ) : (
+                    <EmptyState message="No One-Time Invoices Recorded" />
+                  )}
+                </ChartCard>
+
+                <ChartCard title="One-Time Outstanding / Overdue Aging Bracket">
+                  <div style={{ width: '100%', height: 260 }}>
+                    <ResponsiveContainer width="100%" height="100%" minWidth={0}>
+                      <BarChart data={oneTimeStats.overdueAgingData}>
+                        <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9" />
+                        <XAxis dataKey="label" tick={{ fill: '#64748b', fontSize: 10, fontWeight: 800 }} axisLine={false} tickLine={false} />
+                        <YAxis tickFormatter={(v) => `₦${(v / 1000).toFixed(0)}k`} tick={{ fill: '#64748b', fontSize: 10, fontWeight: 800 }} axisLine={false} tickLine={false} />
+                        <Tooltip formatter={(value: number) => [`₦${value.toLocaleString()}`, "Outstanding Amount"]} />
+                        <Bar dataKey="amount" fill="#3b82f6" radius={[4, 4, 0, 0]} />
+                      </BarChart>
+                    </ResponsiveContainer>
+                  </div>
+                </ChartCard>
+              </div>
+
+              {/* Conversion & Ticket Size Section */}
+              <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                <ChartCard title="One-Time Dispatch & Pay-Through Efficiency">
+                  <div className="space-y-4 p-2">
+                    <div>
+                      <div className="flex justify-between items-center mb-1">
+                        <span className="text-xs font-bold uppercase text-gray-600">Draft ➔ Dispatch Rate</span>
+                        <span className="text-xs font-black text-primary-600">{oneTimeStats.conversionRates.draftToSent.toFixed(1)}%</span>
+                      </div>
+                      <div className="w-full bg-gray-100 h-2.5 rounded-full overflow-hidden">
+                        <div className="bg-primary-600 h-full rounded-full transition-all duration-500" style={{ width: `${Math.min(100, oneTimeStats.conversionRates.draftToSent)}%` }}></div>
+                      </div>
+                    </div>
+
+                    <div>
+                      <div className="flex justify-between items-center mb-1">
+                        <span className="text-xs font-bold uppercase text-gray-600">Dispatch ➔ Settlement Rate</span>
+                        <span className="text-xs font-black text-emerald-600">{oneTimeStats.conversionRates.sentToPaid.toFixed(1)}%</span>
+                      </div>
+                      <div className="w-full bg-gray-100 h-2.5 rounded-full overflow-hidden">
+                        <div className="bg-emerald-500 h-full rounded-full transition-all duration-500" style={{ width: `${Math.min(100, oneTimeStats.conversionRates.sentToPaid)}%` }}></div>
+                      </div>
+                    </div>
+
+                    <div>
+                      <div className="flex justify-between items-center mb-1">
+                        <span className="text-xs font-bold uppercase text-gray-600">One-Time Pay-Through Rate</span>
+                        <span className="text-xs font-black text-indigo-600">{oneTimeStats.conversionRates.totalPaidRate.toFixed(1)}%</span>
+                      </div>
+                      <div className="w-full bg-gray-100 h-2.5 rounded-full overflow-hidden">
+                        <div className="bg-indigo-600 h-full rounded-full transition-all duration-500" style={{ width: `${Math.min(100, oneTimeStats.conversionRates.totalPaidRate)}%` }}></div>
+                      </div>
+                    </div>
+                  </div>
+                </ChartCard>
+
+                <ChartCard title="One-Time Average Ticket Size Line Trend">
+                  {oneTimeStats.averageValueOverTime.length > 0 ? (
+                    <div style={{ width: '100%', height: 200 }}>
+                      <ResponsiveContainer width="100%" height="100%" minWidth={0}>
+                        <LineChart data={oneTimeStats.averageValueOverTime}>
+                          <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9" />
+                          <XAxis dataKey="name" tick={{ fill: '#64748b', fontSize: 10, fontWeight: 800 }} axisLine={false} tickLine={false} />
+                          <Tooltip formatter={(value: number) => [`₦${value.toLocaleString()}`, "Avg Ticket"]} />
+                          <Line type="monotone" dataKey="avgValue" stroke="#2563eb" strokeWidth={3} dot={{ r: 4 }} />
+                        </LineChart>
+                      </ResponsiveContainer>
+                    </div>
+                  ) : (
+                    <EmptyState message="No One-Time Ticket Size Timeline Records" />
+                  )}
+                </ChartCard>
+              </div>
+            </div>
+          )}
+
+          {/* SECTION 2: RECURRING INVOICES */}
+          {(invoiceSubTab === 'both' || invoiceSubTab === 'recurring') && (
+            <div className="space-y-6 bg-indigo-50/40 p-6 rounded-2xl border border-indigo-100 shadow-sm">
+              <div className="flex items-center justify-between border-b border-indigo-100 pb-4">
+                <div className="flex items-center gap-3">
+                  <div className="p-2.5 bg-indigo-100 text-indigo-700 rounded-xl">
+                    <Repeat className="w-5 h-5" />
+                  </div>
+                  <div>
+                    <div className="flex items-center gap-2">
+                      <h4 className="text-base font-black text-slate-900 uppercase tracking-tight">
+                        Recurring Invoices & Contracts Section
+                      </h4>
+                      <span className="bg-indigo-100 text-indigo-800 text-[10px] font-black px-2.5 py-0.5 rounded-full uppercase tracking-wider">
+                        {recurringStats.totalCount} Templates & Schedules
+                      </span>
+                    </div>
+                    <p className="text-xs text-slate-500 font-medium">
+                      Subscription renewals, contract schedules, recurring cycle volumes, and frequency breakdown.
+                    </p>
+                  </div>
                 </div>
-              ) : (
-                <EmptyState message="No Timeline Ticket Size Records" />
-              )}
-            </ChartCard>
-          </div>
+              </div>
+
+              {/* Summary Cards */}
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+                <KpiCard
+                  title="Total Recurring Schedules"
+                  value={recurringStats.totalCount.toString()}
+                  subtitle={`${recurringExtraStats.activeSchedulesCount} Active | ${recurringExtraStats.pausedSchedulesCount} Paused`}
+                  icon={<Repeat className="w-5 h-5 text-indigo-700" />}
+                  accentColor="indigo"
+                />
+                <KpiCard
+                  title="Settled Recurring Revenue"
+                  value={`₦${recurringStats.totalRevenue.toLocaleString()}`}
+                  subtitle={`${recurringStats.paidCount} Settled Recurring Cycles`}
+                  icon={<CheckCircle2 className="w-5 h-5 text-emerald-600" />}
+                  accentColor="emerald"
+                />
+                <KpiCard
+                  title="Contract Value per Cycle"
+                  value={`₦${recurringExtraStats.totalContractValue.toLocaleString()}`}
+                  subtitle="Total Recurring Portfolio"
+                  icon={<DollarSign className="w-5 h-5 text-amber-600" />}
+                  accentColor="amber"
+                />
+                <KpiCard
+                  title="Overdue Renewal Alerts"
+                  value={recurringStats.overdueCount.toString()}
+                  subtitle={`Volume: ₦${recurringStats.totalOverdueRevenue.toLocaleString()}`}
+                  icon={<AlertTriangle className="w-5 h-5 text-rose-600" />}
+                  accentColor="rose"
+                />
+              </div>
+
+              {/* Charts Row 1 */}
+              <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                <ChartCard title="Recurring Schedule Status Breakdown">
+                  {recurringStats.statusData.length > 0 ? (
+                    <div style={{ width: '100%', height: 260 }}>
+                      <ResponsiveContainer width="100%" height="100%" minWidth={0}>
+                        <PieChart>
+                          <Pie data={recurringStats.statusData} cx="50%" cy="50%" outerRadius={85} dataKey="value" nameKey="name" label={(entry) => `${entry.name}: ${entry.value}`}>
+                            {recurringStats.statusData.map((entry) => (
+                              <Cell key={entry.name} fill={entry.color} />
+                            ))}
+                          </Pie>
+                          <Tooltip />
+                          <Legend />
+                        </PieChart>
+                      </ResponsiveContainer>
+                    </div>
+                  ) : (
+                    <EmptyState message="No Recurring Schedules Recorded" />
+                  )}
+                </ChartCard>
+
+                <ChartCard title="Recurring Overdue & Renewal Aging Bracket">
+                  <div style={{ width: '100%', height: 260 }}>
+                    <ResponsiveContainer width="100%" height="100%" minWidth={0}>
+                      <BarChart data={recurringStats.overdueAgingData}>
+                        <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9" />
+                        <XAxis dataKey="label" tick={{ fill: '#64748b', fontSize: 10, fontWeight: 800 }} axisLine={false} tickLine={false} />
+                        <YAxis tickFormatter={(v) => `₦${(v / 1000).toFixed(0)}k`} tick={{ fill: '#64748b', fontSize: 10, fontWeight: 800 }} axisLine={false} tickLine={false} />
+                        <Tooltip formatter={(value: number) => [`₦${value.toLocaleString()}`, "Outstanding Renewal"]} />
+                        <Bar dataKey="amount" fill="#6366f1" radius={[4, 4, 0, 0]} />
+                      </BarChart>
+                    </ResponsiveContainer>
+                  </div>
+                </ChartCard>
+              </div>
+
+              {/* Conversion & Frequency Section */}
+              <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                <ChartCard title="Recurring Frequency Distribution">
+                  {recurringExtraStats.frequencyDistribution.length > 0 ? (
+                    <div style={{ width: '100%', height: 200 }}>
+                      <ResponsiveContainer width="100%" height="100%" minWidth={0}>
+                        <BarChart data={recurringExtraStats.frequencyDistribution}>
+                          <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9" />
+                          <XAxis dataKey="name" tick={{ fill: '#64748b', fontSize: 10, fontWeight: 800 }} axisLine={false} tickLine={false} />
+                          <YAxis tick={{ fill: '#64748b', fontSize: 10, fontWeight: 800 }} axisLine={false} tickLine={false} />
+                          <Tooltip formatter={(val: number, name: string) => name === 'value' ? [`₦${val.toLocaleString()}`, "Cycle Value"] : [val, "Contracts"]} />
+                          <Bar dataKey="count" name="Schedules Count" fill="#818cf8" radius={[4, 4, 0, 0]} />
+                        </BarChart>
+                      </ResponsiveContainer>
+                    </div>
+                  ) : (
+                    <EmptyState message="No Frequency Distribution Data" />
+                  )}
+                </ChartCard>
+
+                <ChartCard title="Recurring Average Ticket Size Trend">
+                  {recurringStats.averageValueOverTime.length > 0 ? (
+                    <div style={{ width: '100%', height: 200 }}>
+                      <ResponsiveContainer width="100%" height="100%" minWidth={0}>
+                        <LineChart data={recurringStats.averageValueOverTime}>
+                          <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9" />
+                          <XAxis dataKey="name" tick={{ fill: '#64748b', fontSize: 10, fontWeight: 800 }} axisLine={false} tickLine={false} />
+                          <Tooltip formatter={(value: number) => [`₦${value.toLocaleString()}`, "Avg Cycle Ticket"]} />
+                          <Line type="monotone" dataKey="avgValue" stroke="#4f46e5" strokeWidth={3} dot={{ r: 4 }} />
+                        </LineChart>
+                      </ResponsiveContainer>
+                    </div>
+                  ) : (
+                    <EmptyState message="No Recurring Ticket Size Timeline Records" />
+                  )}
+                </ChartCard>
+              </div>
+            </div>
+          )}
         </div>
       )}
 

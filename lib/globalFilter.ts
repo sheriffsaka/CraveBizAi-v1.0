@@ -124,7 +124,8 @@ export function filterInvoices(
   invoices: Invoice[],
   services: Service[],
   clients: Client[],
-  filter: GlobalFilterState
+  filter: GlobalFilterState,
+  includeTemplates: boolean = false
 ): Invoice[] {
   const { startDate, endDate } = getDateBounds(
     filter.dateRange,
@@ -133,8 +134,8 @@ export function filterInvoices(
   );
 
   return invoices.filter((inv) => {
-    // 1. Recurring template check - ignore templates
-    if (inv.isRecurringTemplate) return false;
+    // 1. Recurring template check - ignore templates unless explicitly requested
+    if (!includeTemplates && inv.isRecurringTemplate) return false;
 
     // 2. Date Filter check (by issueDate)
     if (startDate || endDate) {
