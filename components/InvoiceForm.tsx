@@ -1,6 +1,6 @@
 
 import React, { useState, useMemo, useEffect } from 'react';
-import { Client, Service, Invoice, InvoiceStatus, InvoiceItem, Company, InvoiceFrequency } from '../types';
+import { Client, Service, Invoice, InvoiceStatus, InvoiceItem, Company, InvoiceFrequency, RecurringStatus } from '../types';
 import { getSubscriptionInfo } from '../services/subscriptionService';
 import Icon from './common/Icon';
 import InvoiceDetail from './InvoiceDetail';
@@ -15,8 +15,10 @@ interface InvoiceFormProps {
   onCancel: () => void;
 }
 
-function calculateNextRecurrenceDate(currentDate: Date, frequency: InvoiceFrequency): string {
+export function calculateNextRecurrenceDate(currentDateStrOrObj: string | Date, frequency: InvoiceFrequency): string {
+  const currentDate = typeof currentDateStrOrObj === 'string' ? new Date(currentDateStrOrObj) : currentDateStrOrObj;
   const nextDate = new Date(currentDate);
+  if (isNaN(nextDate.getTime())) return '';
   nextDate.setHours(0, 0, 0, 0);
   switch (frequency) {
     case 'daily': nextDate.setDate(currentDate.getDate() + 1); break;
@@ -53,6 +55,10 @@ const InvoiceForm: React.FC<InvoiceFormProps> = ({ initialInvoice, clients, serv
   const [discount, setDiscount] = useState<number>(0);
   const [frequency, setFrequency] = useState<InvoiceFrequency>('one-time');
   const [nextRecurrenceDate, setNextRecurrenceDate] = useState<string>('');
+  const [startDate, setStartDate] = useState<string>('');
+  const [endDate, setEndDate] = useState<string>('');
+  const [recurringStatus, setRecurringStatus] = useState<RecurringStatus>('active');
+  const [autoGenerate, setAutoGenerate] = useState<boolean>(true);
   const [isPreviewOpen, setIsPreviewOpen] = useState(false);
   
   // Persistence logic for drafts
@@ -109,7 +115,11 @@ const InvoiceForm: React.FC<InvoiceFormProps> = ({ initialInvoice, clients, serv
       setPaymentTerms(initialInvoice.paymentTerms || '');
       setDiscount(initialInvoice.discount || 0);
       setFrequency(initialInvoice.frequency || 'one-time');
-      setNextRecurrenceDate(initialInvoice.nextRecurrenceDate || '');
+      setNextRecurrenceDate(initialInvoice.nextRecurrenceDate || initialInvoice.nextDueDate || '');
+      setStartDate(initialInvoice.startDate || initialInvoice.issueDate || '');
+      setEndDate(initialInvoice.endDate || '');
+      setRecurringStatus(initialInvoice.recurringStatus || 'active');
+      setAutoGenerate(initialInvoice.autoGenerate !== undefined ? initialInvoice.autoGenerate : true);
     } else {
       setProjectId(undefined);
         if (company?.bankAccounts && company.bankAccounts.length > 0) {
@@ -199,6 +209,13 @@ const InvoiceForm: React.FC<InvoiceFormProps> = ({ initialInvoice, clients, serv
     manualAccountName: selectedBankAccountId === 'manual' ? manualAccountName : undefined,
     manualAccountNumber: selectedBankAccountId === 'manual' ? manualAccountNumber : undefined,
     paymentTerms, frequency, nextRecurrenceDate,
+    nextDueDate: nextRecurrenceDate,
+    startDate: frequency !== 'one-time' ? (startDate || issueDate) : undefined,
+    endDate: frequency !== 'one-time' ? (endDate || undefined) : undefined,
+    recurringStatus: frequency !== 'one-time' ? recurringStatus : undefined,
+    autoGenerate: frequency !== 'one-time' ? autoGenerate : undefined,
+    autoSend: frequency !== 'one-time' ? autoGenerate : undefined,
+    invoiceSchedule: frequency !== 'one-time' ? frequency : undefined,
     isRecurringTemplate: frequency !== 'one-time'
   });
 
@@ -291,19 +308,69 @@ const InvoiceForm: React.FC<InvoiceFormProps> = ({ initialInvoice, clients, serv
             </div>
 
             {frequency !== 'one-time' && (
-                <div className="mt-4 p-4 bg-primary-50/70 border border-primary-100 rounded-xl flex flex-col sm:flex-row sm:items-center justify-between gap-3 animate-in fade-in">
-                    <div>
-                        <p className="text-xs font-extrabold text-primary-900">Recurring Billing Active</p>
-                        <p className="text-[11px] text-primary-700 font-medium">An automated recurring invoice will be scheduled according to this cycle.</p>
+                <div className="mt-6 p-6 bg-white border border-primary-200 rounded-xl shadow-sm animate-in fade-in space-y-4">
+                    <div className="flex items-center justify-between border-b pb-3">
+                        <div>
+                            <p className="text-xs font-black text-primary-900 uppercase tracking-wider">Recurring Invoice Schedule & Automation</p>
+                            <p className="text-[11px] text-gray-500 font-medium mt-0.5">Automated invoice generation will be processed and saved directly to Supabase.</p>
+                        </div>
+                        <span className="px-2.5 py-1 text-[10px] font-black uppercase rounded-full bg-primary-100 text-primary-800 border border-primary-200">
+                          {frequency} Schedule
+                        </span>
                     </div>
-                    <div className="shrink-0 flex items-center gap-2">
-                        <label className="text-xs font-bold text-gray-700 whitespace-nowrap">Next Bill Date:</label>
+
+                    <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-4">
+                        <div>
+                            <label className="block text-[10px] font-black text-gray-500 uppercase mb-1">Start Date</label>
+                            <input
+                                type="date"
+                                value={startDate || issueDate}
+                                onChange={e => setStartDate(e.target.value)}
+                                className="w-full p-2.5 border rounded-lg bg-gray-50 text-gray-900 font-bold text-xs outline-none focus:ring-2 focus:ring-primary-500"
+                            />
+                        </div>
+                        <div>
+                            <label className="block text-[10px] font-black text-primary-700 uppercase mb-1">Next Due Date *</label>
+                            <input
+                                type="date"
+                                value={nextRecurrenceDate}
+                                onChange={e => setNextRecurrenceDate(e.target.value)}
+                                className="w-full p-2.5 border border-primary-300 rounded-lg bg-primary-50/50 text-primary-900 font-black text-xs outline-none focus:ring-2 focus:ring-primary-500"
+                            />
+                        </div>
+                        <div>
+                            <label className="block text-[10px] font-black text-gray-500 uppercase mb-1">End Date (Optional)</label>
+                            <input
+                                type="date"
+                                value={endDate}
+                                onChange={e => setEndDate(e.target.value)}
+                                className="w-full p-2.5 border rounded-lg bg-gray-50 text-gray-900 font-bold text-xs outline-none focus:ring-2 focus:ring-primary-500"
+                            />
+                        </div>
+                        <div>
+                            <label className="block text-[10px] font-black text-gray-500 uppercase mb-1">Recurring Status</label>
+                            <select
+                                value={recurringStatus}
+                                onChange={e => setRecurringStatus(e.target.value as RecurringStatus)}
+                                className="w-full p-2.5 border rounded-lg bg-gray-50 text-gray-900 font-bold text-xs outline-none focus:ring-2 focus:ring-primary-500"
+                            >
+                                <option value="active">Active</option>
+                                <option value="paused">Paused</option>
+                            </select>
+                        </div>
+                    </div>
+
+                    <div className="flex items-center gap-3 pt-2">
                         <input
-                            type="date"
-                            value={nextRecurrenceDate}
-                            onChange={e => setNextRecurrenceDate(e.target.value)}
-                            className="px-3 py-1.5 border border-primary-200 rounded-lg bg-white text-gray-900 font-bold text-xs outline-none focus:ring-2 focus:ring-primary-500 shadow-sm"
+                            type="checkbox"
+                            id="autoGenerateCheck"
+                            checked={autoGenerate}
+                            onChange={e => setAutoGenerate(e.target.checked)}
+                            className="w-4 h-4 text-primary-600 rounded border-gray-300 focus:ring-primary-500"
                         />
+                        <label htmlFor="autoGenerateCheck" className="text-xs font-bold text-gray-700 cursor-pointer">
+                            Auto-generate new invoice instances automatically when due date arrives
+                        </label>
                     </div>
                 </div>
             )}

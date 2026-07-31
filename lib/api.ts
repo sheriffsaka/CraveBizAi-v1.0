@@ -80,6 +80,93 @@ const extractMissingColumnName = (msg: string): string | null => {
   return null;
 };
 
+interface RecurringMeta {
+  frequency?: InvoiceFrequency;
+  nextRecurrenceDate?: string;
+  nextDueDate?: string;
+  lastGeneratedDate?: string;
+  startDate?: string;
+  endDate?: string;
+  recurringStatus?: string;
+  autoGenerate?: boolean;
+  autoSend?: boolean;
+  invoiceSchedule?: string;
+}
+
+const parsePaymentTermsMeta = (termsStr: string | null | undefined): { cleanTerms: string; meta: RecurringMeta } => {
+  if (!termsStr) return { cleanTerms: '', meta: {} };
+  const match = termsStr.match(/\[RECURRING_META:(.*?)\]/);
+  if (!match) return { cleanTerms: termsStr, meta: {} };
+  try {
+    const meta = JSON.parse(match[1]);
+    const cleanTerms = termsStr.replace(/\[RECURRING_META:.*?\]/, '').trim();
+    return { cleanTerms, meta };
+  } catch {
+    return { cleanTerms: termsStr, meta: {} };
+  }
+};
+
+const buildPaymentTermsWithMeta = (termsStr: string | null | undefined, meta: RecurringMeta): string => {
+  const base = (termsStr || '').replace(/\[RECURRING_META:.*?\]/, '').trim();
+  const hasMeta = Object.values(meta).some(v => v !== undefined && v !== null);
+  if (!hasMeta) return base;
+  const metaStr = JSON.stringify(meta);
+  return base ? `${base} [RECURRING_META:${metaStr}]` : `[RECURRING_META:${metaStr}]`;
+};
+
+const mapDbInvoiceToInvoice = (inv: any): Invoice => {
+  const { cleanTerms, meta } = parsePaymentTermsMeta(inv.payment_terms);
+  const nextRecDate = inv.next_recurrence_date || inv.next_due_date || meta.nextRecurrenceDate || meta.nextDueDate || undefined;
+
+  return {
+    id: inv.id,
+    companyId: inv.company_id,
+    invoiceNumber: inv.invoice_number,
+    clientId: inv.client_id,
+    projectId: inv.project_id || undefined,
+    issueDate: inv.issue_date,
+    dueDate: inv.due_date,
+    total: Number(inv.total),
+    status: inv.status as InvoiceStatus,
+    discount: Number(inv.discount || 0),
+    amountPaid: Number(inv.amount_paid || 0),
+    paymentTerms: cleanTerms,
+    selectedBankAccountId: inv.selected_bank_account_id || undefined,
+    manualBankName: inv.manual_bank_name || undefined,
+    manualAccountName: inv.manual_account_name || undefined,
+    manualAccountNumber: inv.manual_account_number || undefined,
+    frequency: (inv.frequency || meta.frequency || 'one-time') as InvoiceFrequency,
+    isRecurringTemplate: inv.is_recurring_template !== undefined ? !!inv.is_recurring_template : (meta.frequency && meta.frequency !== 'one-time'),
+    isReceiptSent: !!inv.is_receipt_sent,
+    nextRecurrenceDate: nextRecDate,
+    nextDueDate: nextRecDate,
+    lastGeneratedDate: inv.last_generated_date || meta.lastGeneratedDate || undefined,
+    startDate: inv.start_date || meta.startDate || inv.issue_date,
+    endDate: inv.end_date || meta.endDate || undefined,
+    recurringStatus: (inv.recurring_status || meta.recurringStatus || (inv.is_recurring_template ? 'active' : undefined)) as any,
+    autoGenerate: inv.auto_generate !== undefined ? inv.auto_generate : (meta.autoGenerate !== undefined ? meta.autoGenerate : true),
+    autoSend: inv.auto_send !== undefined ? inv.auto_send : (meta.autoSend !== undefined ? meta.autoSend : true),
+    invoiceSchedule: inv.invoice_schedule || meta.invoiceSchedule || inv.frequency || undefined,
+    parentInvoiceId: inv.parent_invoice_id || undefined,
+    lastSentDate: inv.last_sent_date || undefined,
+    items: (inv.invoice_items || []).map((item: any) => ({
+      id: item.id,
+      serviceId: item.service_id,
+      description: item.description,
+      quantity: item.quantity,
+      price: Number(item.price),
+      discount: Number(item.discount || 0),
+      directCost: item.direct_cost !== undefined && item.direct_cost !== null ? Number(item.direct_cost) : Number(item.directCost || 0),
+      billingCycle: item.billing_cycle,
+      periodStartDate: item.period_start_date,
+      periodEndDate: item.period_end_date,
+      durationInMonths: item.duration_in_months,
+      autoRenew: item.auto_renew,
+      renewalReminderDaysBefore: item.renewal_reminder_days_before
+    }))
+  };
+};
+
 class CraveBizApi {
   private static instance: CraveBizApi;
   private constructor() {}
@@ -413,27 +500,7 @@ class CraveBizApi {
     const { data, error } = await supabase.from('invoices').select('*, invoice_items(*)').order('created_at', { ascending: false });
     if (error) throw error;
     
-    return (data || []).map(inv => ({
-      id: inv.id, companyId: inv.company_id, invoiceNumber: inv.invoice_number, clientId: inv.client_id, 
-      projectId: inv.project_id,
-      issueDate: inv.issue_date, dueDate: inv.due_date, total: Number(inv.total), status: inv.status as InvoiceStatus,
-      discount: Number(inv.discount || 0),
-      amountPaid: Number(inv.amount_paid || 0), 
-      paymentTerms: inv.payment_terms || '', selectedBankAccountId: inv.selected_bank_account_id,
-      manualBankName: inv.manual_bank_name, manualAccountName: inv.manual_account_name, manualAccountNumber: inv.manual_account_number,
-      frequency: inv.frequency || 'one-time', isRecurringTemplate: inv.is_recurring_template, isReceiptSent: inv.is_receipt_sent,
-      items: (inv.invoice_items || []).map((item: any) => ({
-        id: item.id, serviceId: item.service_id, description: item.description, quantity: item.quantity, price: Number(item.price),
-        discount: Number(item.discount || 0),
-        directCost: item.direct_cost !== undefined && item.direct_cost !== null ? Number(item.direct_cost) : Number(item.directCost || 0),
-        billingCycle: item.billing_cycle,
-        periodStartDate: item.period_start_date,
-        periodEndDate: item.period_end_date,
-        durationInMonths: item.duration_in_months,
-        autoRenew: item.auto_renew,
-        renewalReminderDaysBefore: item.renewal_reminder_days_before
-      }))
-    }));
+    return (data || []).map(mapDbInvoiceToInvoice);
   }
 
   async getMyCompanies(): Promise<Company[]> {
@@ -553,33 +620,27 @@ class CraveBizApi {
       }).catch(err => console.warn("Deferred import failed:", err));
     }
     
-    return (data || []).map(inv => ({
-      id: inv.id, companyId: inv.company_id, invoiceNumber: inv.invoice_number, clientId: inv.client_id, 
-      projectId: inv.project_id,
-      issueDate: inv.issue_date, dueDate: inv.due_date, total: Number(inv.total), status: inv.status as InvoiceStatus,
-      discount: Number(inv.discount || 0),
-      amountPaid: Number(inv.amount_paid || 0), 
-      paymentTerms: inv.payment_terms || '', selectedBankAccountId: inv.selected_bank_account_id,
-      manualBankName: inv.manual_bank_name, manualAccountName: inv.manual_account_name, manualAccountNumber: inv.manual_account_number,
-      frequency: inv.frequency || 'one-time', isRecurringTemplate: inv.is_recurring_template, isReceiptSent: inv.is_receipt_sent,
-      items: (inv.invoice_items || []).map((item: any) => ({
-        id: item.id, serviceId: item.service_id, description: item.description, quantity: item.quantity, price: Number(item.price),
-        discount: Number(item.discount || 0),
-        directCost: item.direct_cost !== undefined && item.direct_cost !== null ? Number(item.direct_cost) : Number(item.directCost || 0),
-        billingCycle: item.billing_cycle,
-        periodStartDate: item.period_start_date,
-        periodEndDate: item.period_end_date,
-        durationInMonths: item.duration_in_months,
-        autoRenew: item.auto_renew,
-        renewalReminderDaysBefore: item.renewal_reminder_days_before
-      }))
-    }));
+    return (data || []).map(mapDbInvoiceToInvoice);
   }
 
   async createInvoice(companyId: string, invoice: Omit<Invoice, 'id' | 'invoiceNumber'>): Promise<Invoice> {
     const invId = generateId();
     const invNum = `INV-${Date.now().toString().slice(-6)}`;
     
+    const nextRec = invoice.nextRecurrenceDate || invoice.nextDueDate || null;
+    const recMeta: RecurringMeta = {
+      frequency: invoice.frequency,
+      nextRecurrenceDate: invoice.nextRecurrenceDate || invoice.nextDueDate,
+      nextDueDate: invoice.nextDueDate || invoice.nextRecurrenceDate,
+      lastGeneratedDate: invoice.lastGeneratedDate,
+      startDate: invoice.startDate || invoice.issueDate,
+      endDate: invoice.endDate,
+      recurringStatus: invoice.recurringStatus || (invoice.isRecurringTemplate ? 'active' : 'completed'),
+      autoGenerate: invoice.autoGenerate !== undefined ? invoice.autoGenerate : true,
+      autoSend: invoice.autoSend,
+      invoiceSchedule: invoice.invoiceSchedule || invoice.frequency
+    };
+
     let payload: any = {
         id: invId,
         company_id: cleanCompanyId(companyId),
@@ -592,9 +653,18 @@ class CraveBizApi {
         discount: invoice.discount || 0,
         amount_paid: Number(invoice.amountPaid || 0),
         status: invoice.status,
-        payment_terms: invoice.paymentTerms || null,
+        payment_terms: buildPaymentTermsWithMeta(invoice.paymentTerms, recMeta),
         frequency: invoice.frequency || 'one-time',
-        is_recurring_template: !!invoice.isRecurringTemplate
+        is_recurring_template: !!invoice.isRecurringTemplate,
+        next_recurrence_date: nextRec,
+        next_due_date: nextRec,
+        parent_invoice_id: invoice.parentInvoiceId || null,
+        last_generated_date: invoice.lastGeneratedDate || null,
+        start_date: invoice.startDate || invoice.issueDate || null,
+        end_date: invoice.endDate || null,
+        recurring_status: invoice.recurringStatus || (invoice.isRecurringTemplate ? 'active' : null),
+        auto_generate: invoice.autoGenerate !== undefined ? invoice.autoGenerate : true,
+        invoice_schedule: invoice.invoiceSchedule || invoice.frequency || null
     };
 
     if (invoice.selectedBankAccountId) payload.selected_bank_account_id = invoice.selectedBankAccountId;
@@ -664,6 +734,20 @@ class CraveBizApi {
   }
 
   async updateInvoice(invoice: Invoice): Promise<void> {
+    const nextRec = invoice.nextRecurrenceDate || invoice.nextDueDate || null;
+    const recMeta: RecurringMeta = {
+      frequency: invoice.frequency,
+      nextRecurrenceDate: invoice.nextRecurrenceDate || invoice.nextDueDate,
+      nextDueDate: invoice.nextDueDate || invoice.nextRecurrenceDate,
+      lastGeneratedDate: invoice.lastGeneratedDate,
+      startDate: invoice.startDate || invoice.issueDate,
+      endDate: invoice.endDate,
+      recurringStatus: invoice.recurringStatus || (invoice.isRecurringTemplate ? 'active' : 'completed'),
+      autoGenerate: invoice.autoGenerate !== undefined ? invoice.autoGenerate : true,
+      autoSend: invoice.autoSend,
+      invoiceSchedule: invoice.invoiceSchedule || invoice.frequency
+    };
+
     const fullPayload: any = {
         client_id: invoice.clientId,
         project_id: invoice.projectId || null,
@@ -673,9 +757,18 @@ class CraveBizApi {
         discount: invoice.discount || 0,
         amount_paid: Number(invoice.amountPaid || 0),
         status: invoice.status,
-        payment_terms: invoice.paymentTerms || null,
+        payment_terms: buildPaymentTermsWithMeta(invoice.paymentTerms, recMeta),
         frequency: invoice.frequency || null,
         is_recurring_template: !!invoice.isRecurringTemplate,
+        next_recurrence_date: nextRec,
+        next_due_date: nextRec,
+        parent_invoice_id: invoice.parentInvoiceId || null,
+        last_generated_date: invoice.lastGeneratedDate || null,
+        start_date: invoice.startDate || invoice.issueDate || null,
+        end_date: invoice.endDate || null,
+        recurring_status: invoice.recurringStatus || (invoice.isRecurringTemplate ? 'active' : null),
+        auto_generate: invoice.autoGenerate !== undefined ? invoice.autoGenerate : true,
+        invoice_schedule: invoice.invoiceSchedule || invoice.frequency || null,
         selected_bank_account_id: invoice.selectedBankAccountId || null,
         manual_bank_name: invoice.manualBankName || null,
         manual_account_name: invoice.manualAccountName || null,

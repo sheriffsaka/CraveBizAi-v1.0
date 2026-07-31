@@ -83,6 +83,8 @@ export interface InvoiceItem {
   renewalReminderDaysBefore?: number;
 }
 
+export type RecurringStatus = 'active' | 'paused' | 'completed' | 'cancelled';
+
 export interface Invoice {
   id: string;
   companyId: string;
@@ -104,6 +106,14 @@ export interface Invoice {
   paymentTerms: string;
   frequency: InvoiceFrequency;
   nextRecurrenceDate?: string;
+  nextDueDate?: string;
+  lastGeneratedDate?: string;
+  startDate?: string;
+  endDate?: string;
+  recurringStatus?: RecurringStatus;
+  autoGenerate?: boolean;
+  autoSend?: boolean;
+  invoiceSchedule?: string;
   isRecurringTemplate?: boolean;
   parentInvoiceId?: string;
   lastSentDate?: string;

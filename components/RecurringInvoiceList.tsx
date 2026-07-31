@@ -68,6 +68,7 @@ const RecurringInvoicesTable: React.FC<{
             <th scope="col" className="px-6 py-3 cursor-pointer" onClick={() => onSort('clientName')}>Client{getSortIcon('clientName')}</th>
             <th scope="col" className="px-6 py-3 cursor-pointer" onClick={() => onSort('frequency')}>Frequency{getSortIcon('frequency')}</th>
             <th scope="col" className="px-6 py-3 cursor-pointer" onClick={() => onSort('nextRecurrenceDate')}>Next Bill Date{getSortIcon('nextRecurrenceDate')}</th>
+            <th scope="col" className="px-6 py-3 font-semibold">Auto-Gen</th>
             <th scope="col" className="px-6 py-3 cursor-pointer" onClick={() => onSort('total')}>Amount{getSortIcon('total')}</th>
             <th scope="col" className="px-6 py-3 cursor-pointer" onClick={() => onSort('balance')}>Outstanding{getSortIcon('balance')}</th>
             <th scope="col" className="px-6 py-3 cursor-pointer" onClick={() => onSort('status')}>Status{getSortIcon('status')}</th>
@@ -88,13 +89,25 @@ const RecurringInvoicesTable: React.FC<{
                     {formatFrequencyLabel(invoice.frequency)}
                   </span>
                 </td>
-                <td className="px-6 py-4">{invoice.nextRecurrenceDate || 'N/A'}</td>
+                <td className="px-6 py-4 font-bold text-gray-800">{invoice.nextRecurrenceDate || invoice.nextDueDate || 'N/A'}</td>
+                <td className="px-6 py-4">
+                  <span className={`inline-flex items-center px-2 py-0.5 rounded text-[10px] font-black uppercase ${invoice.autoGenerate !== false ? 'bg-green-100 text-green-800' : 'bg-gray-100 text-gray-600'}`}>
+                    {invoice.autoGenerate !== false ? 'Auto' : 'Manual'}
+                  </span>
+                </td>
                 <td className="px-6 py-4 font-medium">₦{invoice.total.toLocaleString()}</td>
                 <td className={`px-6 py-4 font-bold ${balance > 0 ? 'text-red-600' : 'text-green-600'}`}>
                   ₦{balance.toLocaleString()}
                 </td>
                 <td className="px-6 py-4">
-                  <InvoiceStatusBadge status={invoice.status} />
+                  <div className="flex flex-col gap-1">
+                    <InvoiceStatusBadge status={invoice.status} />
+                    {invoice.recurringStatus && (
+                      <span className={`text-[9px] font-extrabold uppercase ${invoice.recurringStatus === 'active' ? 'text-green-600' : 'text-amber-600'}`}>
+                        Schedule: {invoice.recurringStatus}
+                      </span>
+                    )}
+                  </div>
                 </td>
                 <td className="px-6 py-4 text-right space-x-3">
                   <button onClick={() => onViewInvoice(invoice.id)} className="font-bold text-primary-600 hover:text-primary-800 transition-colors uppercase text-[10px] tracking-widest">View</button>

@@ -11,6 +11,7 @@ import Settings from './components/Settings';
 import CreateInvoice from './components/CreateInvoice';
 import EditInvoice from './components/EditInvoice';
 import InvoiceDetail from './components/InvoiceDetail';
+import { calculateNextRecurrenceDate } from './components/InvoiceForm';
 import AuthPage from './components/AuthPage';
 import ForgotPasswordModal from './components/ForgotPasswordModal';
 import ResetPasswordModal from './components/ResetPasswordModal';
@@ -210,11 +211,81 @@ export default function App() {
     if (!tenantId || !isMounted.current) return;
     setIsDataSyncing(true);
     try {
-      const [inv, cli, srv, docs, projs] = await Promise.all([
+      let [inv, cli, srv, docs, projs] = await Promise.all([
         api.fetchInvoices(tenantId), api.fetchClients(tenantId),
         api.fetchServices(tenantId), api.fetchGeneratedDocs(tenantId),
         api.fetchProjects(tenantId)
       ]);
+
+      // Automated recurring invoice processing
+      try {
+        const todayStr = new Date().toISOString().split('T')[0];
+        const templates = inv.filter(i => i.isRecurringTemplate && i.recurringStatus !== 'paused' && i.autoGenerate !== false && (i.nextRecurrenceDate || i.nextDueDate));
+        let createdAny = false;
+
+        for (const template of templates) {
+          const nextDueDateStr = template.nextRecurrenceDate || template.nextDueDate;
+          if (nextDueDateStr && nextDueDateStr <= todayStr) {
+            if (template.endDate && template.endDate < todayStr) {
+              await api.updateInvoice({ ...template, recurringStatus: 'completed' });
+              continue;
+            }
+
+            const alreadyGenerated = inv.some(i => i.parentInvoiceId === template.id && (i.issueDate === todayStr || i.dueDate === nextDueDateStr));
+            if (!alreadyGenerated) {
+              const newNextRecurrenceDate = calculateNextRecurrenceDate(nextDueDateStr, template.frequency || 'monthly');
+
+              const newInvoiceData: Omit<Invoice, 'id' | 'invoiceNumber'> = {
+                companyId: tenantId,
+                clientId: template.clientId,
+                projectId: template.projectId,
+                issueDate: todayStr,
+                dueDate: nextDueDateStr,
+                total: template.total,
+                status: InvoiceStatus.Draft,
+                discount: template.discount,
+                amountPaid: 0,
+                paymentTerms: template.paymentTerms,
+                selectedBankAccountId: template.selectedBankAccountId,
+                manualBankName: template.manualBankName,
+                manualAccountName: template.manualAccountName,
+                manualAccountNumber: template.manualAccountNumber,
+                frequency: 'one-time',
+                isRecurringTemplate: false,
+                parentInvoiceId: template.id,
+                items: (template.items || []).map(it => ({
+                  serviceId: it.serviceId || 'custom',
+                  description: it.description || '',
+                  quantity: it.quantity || 1,
+                  price: it.price || 0,
+                  discount: it.discount || 0,
+                  directCost: it.directCost || 0
+                }))
+              };
+
+              const createdChild = await api.createInvoice(tenantId, newInvoiceData);
+
+              await api.updateInvoice({
+                ...template,
+                lastGeneratedDate: todayStr,
+                nextRecurrenceDate: newNextRecurrenceDate,
+                nextDueDate: newNextRecurrenceDate,
+                recurringStatus: 'active'
+              });
+
+              await triggerAuditLog('AUTO_GENERATE_INVOICE', createdChild.id, `Auto-generated recurring invoice ${createdChild.invoiceNumber} from template ${template.invoiceNumber}`);
+              createdAny = true;
+            }
+          }
+        }
+
+        if (createdAny) {
+          inv = await api.fetchInvoices(tenantId);
+        }
+      } catch (recErr) {
+        console.warn("Automated recurring invoice processing error:", recErr);
+      }
+
       if (isMounted.current) {
           setTenantData({ invoices: inv, clients: cli, services: srv, generatedDocs: docs, projects: projs });
           setSyncError(null);
