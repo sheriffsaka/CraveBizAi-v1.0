@@ -398,6 +398,7 @@ const Reports: React.FC<ReportsProps> = ({
       revenue: number;
       directCost: number;
       unitsSold: number;
+      invoiceIds: Set<string>;
     }>();
 
     const categoryMap = new Map<string, { category: string; directCost: number; revenue: number }>();
@@ -428,13 +429,15 @@ const Reports: React.FC<ReportsProps> = ({
             category: sCategory,
             revenue: 0,
             directCost: 0,
-            unitsSold: 0
+            unitsSold: 0,
+            invoiceIds: new Set<string>()
           });
         }
         const sData = serviceMap.get(sKey)!;
         sData.revenue += itemRevenue;
         sData.directCost += itemDirectCost;
         sData.unitsSold += qty;
+        sData.invoiceIds.add(inv.id);
 
         if (!categoryMap.has(sCategory)) {
           categoryMap.set(sCategory, { category: sCategory, directCost: 0, revenue: 0 });
@@ -454,6 +457,7 @@ const Reports: React.FC<ReportsProps> = ({
       const margin = s.revenue > 0 ? (profit / s.revenue) * 100 : 0;
       return {
         ...s,
+        invoiceCount: s.invoiceIds.size,
         profit,
         profitMarginPct: margin,
         badge: getMarginBadge(margin)
@@ -995,35 +999,12 @@ User Inquiry: "${queryToUse}"`;
 
           {/* Charts Row 2 */}
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-            <ChartCard title="Top Service Revenue Drivers">
-              {revenueByServiceChart.length > 0 ? (
-                <div style={{ width: '100%', height: 300 }}>
-                  <ResponsiveContainer width="100%" height="100%" minWidth={0}>
-                    <PieChart>
-                      <Pie
-                        data={revenueByServiceChart}
-                        cx="50%"
-                        cy="50%"
-                        innerRadius={60}
-                        outerRadius={85}
-                        paddingAngle={5}
-                        dataKey="revenue"
-                        nameKey="name"
-                        label={(entry) => `${entry.name}: ₦${(entry.value / 1000).toFixed(0)}k`}
-                      >
-                        {revenueByServiceChart.map((entry, index) => (
-                          <Cell key={`cell-${index}`} fill={['#6366f1', '#10b981', '#f59e0b', '#ec4899', '#8b5cf6', '#06b6d4'][index % 6]} />
-                        ))}
-                      </Pie>
-                      <Tooltip formatter={(value: number) => `₦${value.toLocaleString()}`} />
-                      <Legend />
-                    </PieChart>
-                  </ResponsiveContainer>
-                </div>
-              ) : (
-                <EmptyState message="No Service Revenue Records Available" />
-              )}
-            </ChartCard>
+            <div className="lg:col-span-2">
+              <ServiceRevenueContributionCard
+                serviceBreakdown={serviceBreakdown}
+                title="Top Service Revenue Drivers"
+              />
+            </div>
 
             <ChartCard title="Pipeline Conversion & Pay-Through Efficiency">
               <div className="space-y-5 p-2">
@@ -1128,35 +1109,12 @@ User Inquiry: "${queryToUse}"`;
               </div>
             </ChartCard>
 
-            <ChartCard title="Service Revenue Contribution">
-              {revenueByServiceChart.length > 0 ? (
-                <div style={{ width: '100%', height: 300 }}>
-                  <ResponsiveContainer width="100%" height="100%" minWidth={0}>
-                    <PieChart>
-                      <Pie
-                        data={revenueByServiceChart}
-                        cx="50%"
-                        cy="50%"
-                        innerRadius={55}
-                        outerRadius={85}
-                        paddingAngle={5}
-                        dataKey="revenue"
-                        nameKey="name"
-                        label={(entry) => `${entry.name}: ₦${(entry.value / 1000).toFixed(0)}k`}
-                      >
-                        {revenueByServiceChart.map((entry, index) => (
-                          <Cell key={`cell-${index}`} fill={['#10b981', '#3b82f6', '#6366f1', '#f59e0b', '#ec4899', '#8b5cf6'][index % 6]} />
-                        ))}
-                      </Pie>
-                      <Tooltip formatter={(value: number) => `₦${value.toLocaleString()}`} />
-                      <Legend />
-                    </PieChart>
-                  </ResponsiveContainer>
-                </div>
-              ) : (
-                <EmptyState message="No Service Revenue Found" />
-              )}
-            </ChartCard>
+            <div className="lg:col-span-2">
+              <ServiceRevenueContributionCard
+                serviceBreakdown={serviceBreakdown}
+                title="Service Revenue Contribution"
+              />
+            </div>
           </div>
 
           {/* Charts Row 2 */}
@@ -2123,35 +2081,12 @@ User Inquiry: "${queryToUse}"`;
 
           {/* Charts Row */}
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-            <ChartCard title="Service Revenue Contribution">
-              {revenueByServiceChart.length > 0 ? (
-                <div style={{ width: '100%', height: 280 }}>
-                  <ResponsiveContainer width="100%" height="100%" minWidth={0}>
-                    <PieChart>
-                      <Pie
-                        data={revenueByServiceChart}
-                        cx="50%"
-                        cy="50%"
-                        innerRadius={50}
-                        outerRadius={80}
-                        paddingAngle={5}
-                        dataKey="revenue"
-                        nameKey="name"
-                        label={(entry) => `${entry.name}: ₦${(entry.value / 1000).toFixed(0)}k`}
-                      >
-                        {revenueByServiceChart.map((entry, index) => (
-                          <Cell key={`cell-${index}`} fill={['#6366f1', '#10b981', '#f59e0b', '#ec4899', '#8b5cf6'][index % 5]} />
-                        ))}
-                      </Pie>
-                      <Tooltip formatter={(value: number) => `₦${value.toLocaleString()}`} />
-                      <Legend />
-                    </PieChart>
-                  </ResponsiveContainer>
-                </div>
-              ) : (
-                <EmptyState message="No Service Revenue Records" />
-              )}
-            </ChartCard>
+            <div className="lg:col-span-2">
+              <ServiceRevenueContributionCard
+                serviceBreakdown={serviceBreakdown}
+                title="Service Revenue Contribution"
+              />
+            </div>
 
             <ChartCard title="Units Delivered Per Service">
               {revenueByServiceChart.length > 0 ? (
@@ -2465,5 +2400,313 @@ const EmptyState: React.FC<{ message: string }> = ({ message }) => (
     {message}
   </div>
 );
+
+interface ServiceBreakdownItem {
+  serviceId: string;
+  serviceName: string;
+  category: string;
+  revenue: number;
+  directCost: number;
+  unitsSold: number;
+  invoiceCount: number;
+  profit: number;
+  profitMarginPct: number;
+  badge: { bg: string; badge: string; dot: string; label: string; status: string };
+}
+
+interface ServiceRevenueContributionCardProps {
+  serviceBreakdown: ServiceBreakdownItem[];
+  title?: string;
+}
+
+const SERVICE_COLORS = [
+  '#2563eb', // Blue
+  '#10b981', // Emerald
+  '#f59e0b', // Amber
+  '#8b5cf6', // Purple
+  '#ec4899', // Pink
+  '#06b6d4', // Cyan
+  '#f97316', // Orange
+  '#6366f1', // Indigo
+  '#14b8a6', // Teal
+  '#64748b', // Slate
+];
+
+const ServiceRevenueContributionCard: React.FC<ServiceRevenueContributionCardProps> = ({
+  serviceBreakdown,
+  title = "Service Revenue Contribution & Detailed Intelligence"
+}) => {
+  const [selectedServiceId, setSelectedServiceId] = useState<string>('');
+
+  const totalServiceRevenue = useMemo(() => {
+    return serviceBreakdown.reduce((sum, s) => sum + s.revenue, 0);
+  }, [serviceBreakdown]);
+
+  const servicesWithDetails = useMemo(() => {
+    return serviceBreakdown.map((s, index) => {
+      const sharePct = totalServiceRevenue > 0 ? (s.revenue / totalServiceRevenue) * 100 : 0;
+      return {
+        ...s,
+        color: SERVICE_COLORS[index % SERVICE_COLORS.length],
+        sharePct,
+      };
+    });
+  }, [serviceBreakdown, totalServiceRevenue]);
+
+  useEffect(() => {
+    if (servicesWithDetails.length > 0) {
+      if (!selectedServiceId || !servicesWithDetails.some(s => s.serviceId === selectedServiceId)) {
+        setSelectedServiceId(servicesWithDetails[0].serviceId);
+      }
+    }
+  }, [servicesWithDetails, selectedServiceId]);
+
+  const selectedService = useMemo(() => {
+    return servicesWithDetails.find(s => s.serviceId === selectedServiceId) || servicesWithDetails[0] || null;
+  }, [servicesWithDetails, selectedServiceId]);
+
+  if (servicesWithDetails.length === 0) {
+    return (
+      <div className="bg-white p-6 rounded-xl border border-gray-100 shadow-sm">
+        <h3 className="text-base font-black text-gray-900 uppercase tracking-tight mb-4">{title}</h3>
+        <EmptyState message="No Service Revenue Records Available" />
+      </div>
+    );
+  }
+
+  return (
+    <div className="bg-white p-6 rounded-xl border border-gray-100 shadow-sm space-y-6">
+      {/* Header */}
+      <div className="flex flex-col sm:flex-row justify-between sm:items-center gap-3 border-b border-gray-100 pb-4">
+        <div>
+          <div className="flex items-center gap-2">
+            <h3 className="text-base font-black text-gray-900 uppercase tracking-tight">
+              {title}
+            </h3>
+            <span className="bg-primary-50 text-primary-700 text-[10px] font-black px-2.5 py-0.5 rounded-full uppercase tracking-wider">
+              {servicesWithDetails.length} Services
+            </span>
+          </div>
+          <p className="text-xs text-gray-500 font-medium mt-0.5">
+            Click on any slice in the chart or any legend item below to inspect detailed revenue, invoice count, direct cost, profit, and margin metrics.
+          </p>
+        </div>
+        {totalServiceRevenue > 0 && (
+          <div className="text-left sm:text-right bg-gray-50 px-3.5 py-1.5 rounded-xl border border-gray-100 flex-shrink-0">
+            <span className="text-[10px] uppercase font-black text-gray-400 block tracking-wider">Total Portfolio Revenue</span>
+            <span className="text-sm font-black text-emerald-600">₦{totalServiceRevenue.toLocaleString()}</span>
+          </div>
+        )}
+      </div>
+
+      <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
+        {/* Left Side: Interactive Doughnut Chart & Legend (5 cols on lg) */}
+        <div className="lg:col-span-5 flex flex-col items-center space-y-4">
+          <div style={{ width: '100%', height: 260 }} className="relative flex items-center justify-center">
+            <ResponsiveContainer width="100%" height="100%" minWidth={0}>
+              <PieChart>
+                <Pie
+                  data={servicesWithDetails}
+                  cx="50%"
+                  cy="50%"
+                  innerRadius={55}
+                  outerRadius={88}
+                  paddingAngle={4}
+                  dataKey="revenue"
+                  nameKey="serviceName"
+                  cursor="pointer"
+                  onClick={(entry: any) => {
+                    if (entry && entry.serviceId) {
+                      setSelectedServiceId(entry.serviceId);
+                    }
+                  }}
+                >
+                  {servicesWithDetails.map((entry) => {
+                    const isSelected = selectedService && entry.serviceId === selectedService.serviceId;
+                    return (
+                      <Cell
+                        key={entry.serviceId}
+                        fill={entry.color}
+                        stroke={isSelected ? '#0f172a' : '#ffffff'}
+                        strokeWidth={isSelected ? 3.5 : 1.5}
+                        style={{ filter: isSelected ? 'drop-shadow(0px 4px 8px rgba(0, 0, 0, 0.2))' : 'none' }}
+                        className="transition-all duration-200 hover:opacity-85"
+                      />
+                    );
+                  })}
+                </Pie>
+                <Tooltip
+                  formatter={(value: number) => [`₦${value.toLocaleString()}`, 'Revenue Generated']}
+                  contentStyle={{ borderRadius: '12px', border: '1px solid #e2e8f0', boxShadow: '0 10px 15px -3px rgba(0,0,0,0.1)' }}
+                />
+              </PieChart>
+            </ResponsiveContainer>
+
+            {/* Center Summary inside doughnut */}
+            <div className="absolute inset-0 flex flex-col items-center justify-center pointer-events-none text-center p-2">
+              <span className="text-[9px] uppercase font-black text-gray-400 tracking-wider">Active View</span>
+              <span className="text-xs font-black text-slate-900 max-w-[120px] truncate leading-tight mt-0.5">
+                {selectedService ? selectedService.serviceName : 'All'}
+              </span>
+              {selectedService && (
+                <span className="text-[11px] font-black text-primary-600 mt-0.5">
+                  {selectedService.sharePct.toFixed(1)}% Share
+                </span>
+              )}
+            </div>
+          </div>
+
+          {/* Interactive Legend Items */}
+          <div className="w-full space-y-1.5 max-h-56 overflow-y-auto pr-1 text-xs">
+            <div className="flex items-center justify-between text-[10px] uppercase font-black tracking-wider text-gray-400 px-1 mb-1">
+              <span>Select Service:</span>
+              <span>Revenue Share</span>
+            </div>
+            {servicesWithDetails.map((s) => {
+              const isSelected = selectedService && s.serviceId === selectedService.serviceId;
+              return (
+                <button
+                  key={s.serviceId}
+                  onClick={() => setSelectedServiceId(s.serviceId)}
+                  className={`w-full flex items-center justify-between px-3 py-2 rounded-xl text-left transition-all cursor-pointer ${
+                    isSelected
+                      ? 'bg-slate-900 text-white font-bold shadow-sm ring-1 ring-slate-800'
+                      : 'bg-gray-50 hover:bg-gray-100 text-gray-700 font-medium'
+                  }`}
+                >
+                  <div className="flex items-center gap-2 truncate pr-2">
+                    <span
+                      className="w-3 h-3 rounded-full flex-shrink-0"
+                      style={{ backgroundColor: s.color }}
+                    />
+                    <span className="truncate text-xs">{s.serviceName}</span>
+                  </div>
+                  <div className="flex items-center gap-2 flex-shrink-0 text-right">
+                    <span className={`font-black text-xs ${isSelected ? 'text-emerald-400' : 'text-gray-900'}`}>
+                      ₦{s.revenue.toLocaleString()}
+                    </span>
+                    <span className={`text-[10px] px-1.5 py-0.5 rounded font-extrabold ${isSelected ? 'bg-slate-800 text-slate-300' : 'bg-gray-200 text-gray-600'}`}>
+                      {s.sharePct.toFixed(1)}%
+                    </span>
+                  </div>
+                </button>
+              );
+            })}
+          </div>
+        </div>
+
+        {/* Right Side: Detailed Service Information Panel (7 cols on lg) */}
+        {selectedService && (
+          <div className="lg:col-span-7 bg-slate-900 text-white p-5 rounded-2xl border border-slate-800 shadow-md space-y-5">
+            {/* Service Header Info */}
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-slate-800 pb-4">
+              <div className="flex items-start gap-3">
+                <span
+                  className="w-4 h-4 rounded-full flex-shrink-0 mt-1 shadow-sm ring-2 ring-slate-700"
+                  style={{ backgroundColor: selectedService.color }}
+                />
+                <div>
+                  <h4 className="text-lg font-black text-white tracking-tight">
+                    {selectedService.serviceName}
+                  </h4>
+                  <div className="flex items-center gap-2 mt-1 flex-wrap">
+                    <span className="text-[10px] font-extrabold text-slate-400 uppercase tracking-wider bg-slate-800 px-2.5 py-0.5 rounded-full border border-slate-700">
+                      Category: {selectedService.category}
+                    </span>
+                    <span className={`text-[10px] font-black px-2.5 py-0.5 rounded-full uppercase tracking-wider ${selectedService.badge.bg} ${selectedService.badge.color}`}>
+                      {selectedService.badge.label}
+                    </span>
+                  </div>
+                </div>
+              </div>
+
+              <div className="bg-slate-800/80 px-3.5 py-1.5 rounded-xl border border-slate-700 text-left sm:text-right flex-shrink-0">
+                <span className="text-[10px] uppercase font-black text-slate-400 block tracking-wider">Revenue Contribution</span>
+                <span className="text-sm font-black text-emerald-400">{selectedService.sharePct.toFixed(1)}% of total</span>
+              </div>
+            </div>
+
+            {/* Contribution Progress Bar */}
+            <div className="space-y-1.5">
+              <div className="flex justify-between text-[11px] font-bold text-slate-400">
+                <span>Revenue Share Progress</span>
+                <span className="text-white font-black">{selectedService.sharePct.toFixed(1)}%</span>
+              </div>
+              <div className="w-full bg-slate-800 h-2.5 rounded-full overflow-hidden p-0.5 border border-slate-700">
+                <div
+                  className="h-full transition-all duration-300 rounded-full"
+                  style={{ width: `${Math.min(100, selectedService.sharePct)}%`, backgroundColor: selectedService.color }}
+                />
+              </div>
+            </div>
+
+            {/* Detailed Requirements Grid - All 6 metrics requested */}
+            <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
+              {/* 1. Service Name */}
+              <div className="bg-slate-800/90 p-3.5 rounded-xl border border-slate-700/80">
+                <span className="text-[10px] uppercase font-black tracking-wider text-slate-400 block">Service Name</span>
+                <span className="text-xs font-black text-white truncate block mt-1" title={selectedService.serviceName}>
+                  {selectedService.serviceName}
+                </span>
+              </div>
+
+              {/* 2. Revenue Generated */}
+              <div className="bg-slate-800/90 p-3.5 rounded-xl border border-slate-700/80">
+                <span className="text-[10px] uppercase font-black tracking-wider text-slate-400 block">Revenue Generated</span>
+                <span className="text-sm font-black text-emerald-400 block mt-1">
+                  ₦{selectedService.revenue.toLocaleString()}
+                </span>
+              </div>
+
+              {/* 3. Number of Invoices */}
+              <div className="bg-slate-800/90 p-3.5 rounded-xl border border-slate-700/80">
+                <span className="text-[10px] uppercase font-black tracking-wider text-slate-400 block">Number of Invoices</span>
+                <span className="text-sm font-black text-sky-400 block mt-1">
+                  {selectedService.invoiceCount} {selectedService.invoiceCount === 1 ? 'Invoice' : 'Invoices'}
+                </span>
+              </div>
+
+              {/* 4. Direct Cost */}
+              <div className="bg-slate-800/90 p-3.5 rounded-xl border border-slate-700/80">
+                <span className="text-[10px] uppercase font-black tracking-wider text-slate-400 block">Direct Cost</span>
+                <span className="text-sm font-black text-rose-400 block mt-1">
+                  ₦{selectedService.directCost.toLocaleString()}
+                </span>
+              </div>
+
+              {/* 5. Profit */}
+              <div className="bg-slate-800/90 p-3.5 rounded-xl border border-slate-700/80">
+                <span className="text-[10px] uppercase font-black tracking-wider text-slate-400 block">Profit</span>
+                <span className={`text-sm font-black block mt-1 ${selectedService.profit >= 0 ? 'text-emerald-400' : 'text-rose-400'}`}>
+                  ₦{selectedService.profit.toLocaleString()}
+                </span>
+              </div>
+
+              {/* 6. Profit Margin */}
+              <div className="bg-slate-800/90 p-3.5 rounded-xl border border-slate-700/80">
+                <span className="text-[10px] uppercase font-black tracking-wider text-slate-400 block">Profit Margin</span>
+                <span className={`text-sm font-black block mt-1 ${selectedService.profitMarginPct >= 40 ? 'text-emerald-400' : selectedService.profitMarginPct >= 20 ? 'text-amber-400' : 'text-rose-400'}`}>
+                  {selectedService.profitMarginPct.toFixed(1)}%
+                </span>
+              </div>
+            </div>
+
+            {/* Extra Footer Context */}
+            <div className="bg-slate-800/50 p-3 rounded-xl border border-slate-700/50 text-xs flex flex-wrap justify-between items-center gap-2 text-slate-400">
+              <span>
+                Total Units Delivered: <strong className="text-white font-black">{selectedService.unitsSold} units</strong>
+              </span>
+              <span>
+                Direct Cost Ratio: <strong className="text-white font-black">
+                  {selectedService.revenue > 0 ? ((selectedService.directCost / selectedService.revenue) * 100).toFixed(1) : '0.0'}%
+                </strong>
+              </span>
+            </div>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+};
 
 export default Reports;
