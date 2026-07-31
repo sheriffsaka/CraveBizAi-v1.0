@@ -3,7 +3,7 @@ import { syncSubscriptionInfoFromDb, ensureAiCreditsOrThrow } from "./subscripti
 
 function handleAiResponseUnits(companyId: string, data: any) {
     if (companyId && data && typeof data.newAiUnits === "number") {
-        localStorage.setItem(`cravebiz_units_${companyId}`, data.newAiUnits.toString());
+        syncSubscriptionInfoFromDb(companyId).catch(err => console.warn("AI response unit sync warning:", err));
         window.dispatchEvent(new Event('cravebiz_subscription_change'));
     }
 }

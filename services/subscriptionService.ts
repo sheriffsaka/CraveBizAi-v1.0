@@ -534,6 +534,9 @@ export async function syncGlobalPlanSettings(): Promise<void> {
  * Helper to get subscription details for a specific company
  */
 export function getSubscriptionInfo(companyId: string): SubscriptionInfo {
+  if (typeof window !== 'undefined') {
+    (window as any).cravebiz_get_sub_info = getSubscriptionInfo;
+  }
   const isSuperAdmin = typeof window !== 'undefined' && localStorage.getItem('cravebiz_is_super_admin') === 'true';
   const activeTenantId = typeof window !== 'undefined' ? localStorage.getItem('cravebiz_tenant') : null;
   const isCravebizInc = companyId === 'cravebiz-inc';
@@ -911,5 +914,57 @@ export function ensureAiCreditsOrThrow(companyId: string): void {
     throw new Error(msg);
   }
 }
+
+export function getMemberAiPermission(companyId: string, email: string): boolean {
+  if (!companyId || !email) return true;
+  const state = getOrCreateMemoryState(companyId);
+  const emailLower = email.toLowerCase().trim();
+  if (state.memberPermissions && state.memberPermissions[emailLower] !== undefined) {
+    return state.memberPermissions[emailLower];
+  }
+  return true; // default true
+}
+
+export function setMemberAiPermission(companyId: string, email: string, allowed: boolean): void {
+  if (!companyId || !email) return;
+  const state = getOrCreateMemoryState(companyId);
+  const emailLower = email.toLowerCase().trim();
+  if (!state.memberPermissions) state.memberPermissions = {};
+  state.memberPermissions[emailLower] = allowed;
+  saveSubscriptionInfoToDb(companyId).catch(err => console.warn("Failed to save member permissions:", err));
+}
+
+export function getInvitedMemberInfo(companyId: string, userId: string): { email: string; name: string } | null {
+  if (!companyId || !userId) return null;
+  const state = getOrCreateMemoryState(companyId);
+  return state.invitedMembers?.[userId] || null;
+}
+
+export function getAllInvitedMembers(companyId: string): Record<string, { email: string; name: string }> {
+  if (!companyId) return {};
+  const state = getOrCreateMemoryState(companyId);
+  return state.invitedMembers || {};
+}
+
+export function setInvitedMemberInfo(companyId: string, userId: string, info: { email: string; name: string }): void {
+  if (!companyId || !userId) return;
+  const state = getOrCreateMemoryState(companyId);
+  if (!state.invitedMembers) state.invitedMembers = {};
+  state.invitedMembers[userId] = info;
+  saveSubscriptionInfoToDb(companyId).catch(err => console.warn("Failed to save invited member info:", err));
+}
+
+export function removeInvitedMemberInfo(companyId: string, userId: string, email?: string): void {
+  if (!companyId) return;
+  const state = getOrCreateMemoryState(companyId);
+  if (state.invitedMembers && userId) {
+    delete state.invitedMembers[userId];
+  }
+  if (state.memberPermissions && email) {
+    delete state.memberPermissions[email.toLowerCase().trim()];
+  }
+  saveSubscriptionInfoToDb(companyId).catch(err => console.warn("Failed to save updated members after removal:", err));
+}
+
 
 

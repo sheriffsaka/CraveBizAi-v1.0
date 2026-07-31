@@ -218,7 +218,6 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ allTenantData, companie
       });
 
       await saveGlobalPlanSettings(TIER_LIMITS);
-      localStorage.setItem('cravebiz_custom_tier_limits', JSON.stringify(TIER_LIMITS));
 
       window.dispatchEvent(new Event('cravebiz_subscription_change'));
       reloadAiUsageData();

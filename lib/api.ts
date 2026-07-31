@@ -2216,10 +2216,18 @@ class CraveBizApi {
     };
     if (companyId) {
       headers['X-Tenant-Id'] = companyId;
-      const savedAiMode = localStorage.getItem(`cravebiz_aimode_${companyId}`);
-      if (savedAiMode) {
-        headers['X-AI-Mode-Enabled'] = savedAiMode;
+      let aiModeEnabled = 'true';
+      if (typeof window !== 'undefined' && (window as any).cravebiz_get_sub_info) {
+        try {
+          const sub = (window as any).cravebiz_get_sub_info(companyId);
+          if (sub && typeof sub.aiModeEnabled === 'boolean') {
+            aiModeEnabled = sub.aiModeEnabled ? 'true' : 'false';
+          }
+        } catch (e) {
+          // ignore
+        }
       }
+      headers['X-AI-Mode-Enabled'] = aiModeEnabled;
     }
     try {
       const session = await safeGetSession();

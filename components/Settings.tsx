@@ -4,7 +4,7 @@ import { supabase, api } from '../lib/api';
 import ImageCropperModal from './ImageCropperModal';
 import Icon from './common/Icon';
 import { AiCreditDashboard } from './AiCreditDashboard.tsx';
-import { getSubscriptionInfo, setSubscriptionInfo, SubscriptionTier, TIER_LIMITS, saveSubscriptionInfoToDb, secureUpgradeSubscriptionOnDb, secureRefillCreditsOnDb, safeFlutterwaveCheckout, getFlutterwavePublicKey, REFILL_PACKS, syncGlobalRefillPacks } from '../services/subscriptionService';
+import { getSubscriptionInfo, setSubscriptionInfo, SubscriptionTier, TIER_LIMITS, saveSubscriptionInfoToDb, secureUpgradeSubscriptionOnDb, secureRefillCreditsOnDb, safeFlutterwaveCheckout, getFlutterwavePublicKey, REFILL_PACKS, syncGlobalRefillPacks, getMemberAiPermission, setMemberAiPermission, getInvitedMemberInfo, getAllInvitedMembers, setInvitedMemberInfo, removeInvitedMemberInfo } from '../services/subscriptionService';
 
 const getPlanActionLabel = (targetTier: string, currentTier: string): string => {
   const TIER_RANKS: Record<string, number> = {
@@ -304,11 +304,10 @@ const Settings: React.FC<SettingsProps> = ({ company, onSaveChanges, onInviteUse
             let email = (profile as any)?.email;
             let name = (profile as any)?.full_name || (profile as any)?.name;
 
-            // Fallback to invited member local cache if profile is missing/unregistered
+            // Fallback to invited member memory state if profile is missing/unregistered
             if (!email || !name) {
-              const savedStr = localStorage.getItem(`cravebiz_invited_member_info_${activeTenantId}_${m.user_id}`);
-              if (savedStr) {
-                const saved = JSON.parse(savedStr);
+              const saved = getInvitedMemberInfo(activeTenantId, m.user_id);
+              if (saved) {
                 email = email || saved.email;
                 name = name || saved.name;
               }
@@ -353,31 +352,22 @@ const Settings: React.FC<SettingsProps> = ({ company, onSaveChanges, onInviteUse
           }
         }
 
-        // Merge in any other invited members stored in local storage (synced from DB settings)
-        for (let i = 0; i < localStorage.length; i++) {
-          const key = localStorage.key(i);
-          if (key && key.startsWith(`cravebiz_invited_member_info_${activeTenantId}_`)) {
-            const uId = key.replace(`cravebiz_invited_member_info_${activeTenantId}_`, '');
-            const val = localStorage.getItem(key);
-            if (val) {
-              try {
-                const info = JSON.parse(val);
-                const alreadyAdded = membersList.some(m => m.email && info.email && m.email.toLowerCase() === info.email.toLowerCase());
-                if (!alreadyAdded && info.email) {
-                  membersList.push({
-                    id: uId,
-                    name: info.name || 'Workspace Member',
-                    email: info.email,
-                    role: info.role ? (info.role.charAt(0).toUpperCase() + info.role.slice(1).toLowerCase()) : 'Member',
-                    status: info.status || 'Invited'
-                  });
-                }
-              } catch (e) {
-                console.warn("Error parsing invited member metadata:", e);
-              }
+        // Merge in any other invited members stored in workspace memory state (synced from DB settings)
+        const invitedMap = getAllInvitedMembers(activeTenantId);
+        Object.entries(invitedMap).forEach(([uId, info]) => {
+          if (info && info.email) {
+            const alreadyAdded = membersList.some(m => m.email && m.email.toLowerCase() === info.email.toLowerCase());
+            if (!alreadyAdded) {
+              membersList.push({
+                id: uId,
+                name: info.name || 'Workspace Member',
+                email: info.email,
+                role: 'Member',
+                status: 'Invited'
+              });
             }
           }
-        }
+        });
 
         // Ensure the logged-in user / workspace owner ("You") is always included
         const hasOwnerInList = membersList.some(m => company?.email && m.email.toLowerCase() === company.email.toLowerCase());
@@ -607,16 +597,14 @@ const Settings: React.FC<SettingsProps> = ({ company, onSaveChanges, onInviteUse
         console.warn("Database sync error for member insert, proceeding with metadata/settings cloud fallback:", dbErr);
       }
       
-      // Save invited user's AI Token permission to local storage
-      localStorage.setItem(`cravebiz_member_ai_allowed_${activeTenantId}_${inviteEmail.trim().toLowerCase()}`, inviteAiAllowed.toString());
+      // Save invited user's AI Token permission to memory state and sync to cloud
+      setMemberAiPermission(activeTenantId, inviteEmail.trim().toLowerCase(), inviteAiAllowed);
 
-      // Save invited user's metadata (email, name, role, status) to local storage so it's preserved dynamically and synced to cloud
-      localStorage.setItem(`cravebiz_invited_member_info_${activeTenantId}_${tempUserId}`, JSON.stringify({
+      // Save invited user's metadata (email, name, role, status) to memory state and sync to cloud
+      setInvitedMemberInfo(activeTenantId, tempUserId, {
         email: inviteEmail.trim().toLowerCase(),
-        name: inviteName.trim() || 'Workspace Member',
-        role: inviteRole,
-        status: isNewInvite ? 'Invited' : 'Joined'
-      }));
+        name: inviteName.trim() || 'Workspace Member'
+      });
 
       // Sync to cloud DB
       await saveSubscriptionInfoToDb(activeTenantId);
@@ -983,7 +971,7 @@ const Settings: React.FC<SettingsProps> = ({ company, onSaveChanges, onInviteUse
         <div className="space-y-4">
             {teamMembers.map(user => {
               const emailLower = user.email.toLowerCase();
-              const isUserAiAllowed = localStorage.getItem(`cravebiz_member_ai_allowed_${activeTenantId}_${emailLower}`) !== 'false';
+              const isUserAiAllowed = getMemberAiPermission(activeTenantId, emailLower);
               const isInvited = user.status === 'Invited';
               return (
                 <div key={user.id} className="flex justify-between items-center p-4 bg-gray-50 rounded-2xl border border-gray-100">
@@ -1007,12 +995,9 @@ const Settings: React.FC<SettingsProps> = ({ company, onSaveChanges, onInviteUse
                             const updatedMembers = teamMembers.map(m => m.id === user.id ? { ...m, role: newRole } : m);
                             setTeamMembers(updatedMembers);
                             
-                            const key = `cravebiz_invited_member_info_${activeTenantId}_${user.id}`;
-                            const cached = localStorage.getItem(key);
+                            const cached = getInvitedMemberInfo(activeTenantId, user.id);
                             if (cached) {
-                              const parsed = JSON.parse(cached);
-                              parsed.role = newRole;
-                              localStorage.setItem(key, JSON.stringify(parsed));
+                              setInvitedMemberInfo(activeTenantId, user.id, { ...cached, name: user.name });
                             }
                             
                             try {
@@ -1051,7 +1036,7 @@ const Settings: React.FC<SettingsProps> = ({ company, onSaveChanges, onInviteUse
                           type="button"
                           onClick={() => {
                             const nextVal = !isUserAiAllowed;
-                            localStorage.setItem(`cravebiz_member_ai_allowed_${activeTenantId}_${emailLower}`, nextVal.toString());
+                            setMemberAiPermission(activeTenantId, emailLower, nextVal);
                             setTeamMembers([...teamMembers]); // force re-render
                           }}
                           className={`text-[9px] font-black px-2.5 py-1 rounded-xl border transition-all ${isUserAiAllowed ? 'bg-emerald-50 text-emerald-700 border-emerald-100' : 'bg-red-50 text-red-700 border-red-100'}`}
@@ -1069,8 +1054,7 @@ const Settings: React.FC<SettingsProps> = ({ company, onSaveChanges, onInviteUse
                             const updatedMembers = teamMembers.filter(m => m.id !== user.id);
                             setTeamMembers(updatedMembers);
                             
-                            localStorage.removeItem(`cravebiz_invited_member_info_${activeTenantId}_${user.id}`);
-                            localStorage.removeItem(`cravebiz_member_ai_allowed_${activeTenantId}_${emailLower}`);
+                            removeInvitedMemberInfo(activeTenantId, user.id, emailLower);
                             
                             try {
                               await supabase

@@ -3,7 +3,7 @@ import React, { useState, useEffect } from 'react';
 import Modal from './Modal';
 import { Company, User } from '../types';
 import ImageCropperModal from './ImageCropperModal';
-import { getSubscriptionInfo, setSubscriptionInfo, SubscriptionTier, saveSubscriptionInfoToDb, TIER_LIMITS } from '../services/subscriptionService';
+import { getSubscriptionInfo, setSubscriptionInfo, SubscriptionTier, saveSubscriptionInfoToDb, TIER_LIMITS, getMemberAiPermission, setMemberAiPermission } from '../services/subscriptionService';
 
 interface CompanyDetailModalProps {
   isOpen: boolean;
@@ -43,8 +43,7 @@ const CompanyDetailModal: React.FC<CompanyDetailModalProps> = ({
 
     const perms: Record<string, boolean> = {};
     users.forEach(u => {
-      const saved = localStorage.getItem(`cravebiz_member_ai_allowed_${company.id}_${u.email.toLowerCase()}`);
-      perms[u.id] = saved !== 'false'; // default true
+      perms[u.id] = getMemberAiPermission(company.id, u.email);
     });
     setUserAiPermissions(perms);
   }, [company, users]);
@@ -84,7 +83,7 @@ const CompanyDetailModal: React.FC<CompanyDetailModalProps> = ({
     // Save user AI permissions
     users.forEach(u => {
       if (userAiPermissions[u.id] !== undefined) {
-        localStorage.setItem(`cravebiz_member_ai_allowed_${company.id}_${u.email.toLowerCase()}`, userAiPermissions[u.id] ? 'true' : 'false');
+        setMemberAiPermission(company.id, u.email, userAiPermissions[u.id]);
       }
     });
 

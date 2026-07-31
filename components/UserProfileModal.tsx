@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import Modal from './Modal';
 import { User } from '../types';
 import { supabase, api } from '../lib/api';
+import { getSubscriptionInfo } from '../services/subscriptionService';
 import Icon from './common/Icon';
 
 interface UserProfileModalProps {
@@ -63,10 +64,9 @@ const UserProfileModal: React.FC<UserProfileModalProps> = ({ isOpen, onClose, us
           setInvoicesCreated(content.invoicesCreated ?? 0);
           setReceiptsCreated(content.receiptsCreated ?? 0);
         } else if (activeTenantId) {
-          const invCount = parseInt(localStorage.getItem(`cravebiz_invoice_count_${activeTenantId}`) || '0', 10);
-          const recCount = parseInt(localStorage.getItem(`cravebiz_receipt_count_${activeTenantId}`) || '0', 10);
-          setInvoicesCreated(invCount);
-          setReceiptsCreated(recCount);
+          const sub = getSubscriptionInfo(activeTenantId);
+          setInvoicesCreated(sub.invoiceCount || 0);
+          setReceiptsCreated(sub.receiptCount || 0);
         }
       } catch (err) {
         console.error("Failed to load user usage from Supabase:", err);
