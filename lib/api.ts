@@ -589,12 +589,6 @@ class CraveBizApi {
       if (!cleanCompId) return;
       const { data } = await supabase.from('invoices').select('is_receipt_sent').eq('company_id', cleanCompId);
       if (data) {
-        const invoiceCount = data.length;
-        const receiptCount = data.filter((i: any) => i.is_receipt_sent).length;
-        
-        localStorage.setItem(`cravebiz_invoice_count_${cleanCompId}`, invoiceCount.toString());
-        localStorage.setItem(`cravebiz_receipt_count_${cleanCompId}`, receiptCount.toString());
-        
         const { saveSubscriptionInfoToDb } = await import("../services/subscriptionService");
         await saveSubscriptionInfoToDb(cleanCompId);
         window.dispatchEvent(new Event('cravebiz_subscription_change'));
@@ -610,11 +604,6 @@ class CraveBizApi {
 
     if (data) {
       const cleanCompId = cleanCompanyId(companyId);
-      const invoiceCount = data.length;
-      const receiptCount = data.filter((i: any) => i.is_receipt_sent).length;
-      localStorage.setItem(`cravebiz_invoice_count_${cleanCompId}`, invoiceCount.toString());
-      localStorage.setItem(`cravebiz_receipt_count_${cleanCompId}`, receiptCount.toString());
-      
       import("../services/subscriptionService").then(({ saveSubscriptionInfoToDb }) => {
         saveSubscriptionInfoToDb(cleanCompId).catch(err => console.warn("Background count sync failed:", err));
       }).catch(err => console.warn("Deferred import failed:", err));
@@ -922,16 +911,7 @@ class CraveBizApi {
         createdAt: p.created_at
       }));
     } catch (dbErr) {
-      console.warn("Supabase projects table missing or select failed, trying local fallback:", dbErr);
-      const localProjects = localStorage.getItem(`cravebiz_projects_${companyId}`);
-      if (localProjects) {
-        return JSON.parse(localProjects);
-      }
-      const { mockTenantData } = await import('./data');
-      const tenantMock = mockTenantData[companyId];
-      if (tenantMock && tenantMock.projects) {
-        return tenantMock.projects;
-      }
+      console.warn("Supabase projects select failed:", dbErr);
       return [];
     }
   }
@@ -941,63 +921,39 @@ class CraveBizApi {
     const createdAt = new Date().toISOString();
     const newProject: Project = { ...project, id, createdAt };
 
-    try {
-      const { error } = await supabase.from('projects').insert({
-        id,
-        company_id: cleanCompanyId(project.companyId),
-        client_id: project.clientId,
-        name: project.name,
-        description: project.description,
-        status: project.status,
-        value: project.value,
-        start_date: project.startDate,
-        end_date: project.endDate,
-        created_at: createdAt
-      });
-      if (error) throw error;
-    } catch (dbErr) {
-      console.warn("Supabase projects insert failed, trying local fallback:", dbErr);
-    }
-
-    const current = await this.fetchProjects(project.companyId);
-    const updated = [newProject, ...current.filter(p => p.id !== id)];
-    localStorage.setItem(`cravebiz_projects_${project.companyId}`, JSON.stringify(updated));
+    const { error } = await supabase.from('projects').insert({
+      id,
+      company_id: cleanCompanyId(project.companyId),
+      client_id: project.clientId,
+      name: project.name,
+      description: project.description,
+      status: project.status,
+      value: project.value,
+      start_date: project.startDate,
+      end_date: project.endDate,
+      created_at: createdAt
+    });
+    if (error) console.warn("Supabase projects insert error:", error);
 
     return newProject;
   }
 
   async updateProject(project: Project): Promise<void> {
-    try {
-      const { error } = await supabase.from('projects').update({
-        client_id: project.clientId,
-        name: project.name,
-        description: project.description,
-        status: project.status,
-        value: project.value,
-        start_date: project.startDate,
-        end_date: project.endDate
-      }).eq('id', project.id);
-      if (error) throw error;
-    } catch (dbErr) {
-      console.warn("Supabase projects update failed, trying local fallback:", dbErr);
-    }
-
-    const current = await this.fetchProjects(project.companyId);
-    const updated = current.map(p => p.id === project.id ? project : p);
-    localStorage.setItem(`cravebiz_projects_${project.companyId}`, JSON.stringify(updated));
+    const { error } = await supabase.from('projects').update({
+      client_id: project.clientId,
+      name: project.name,
+      description: project.description,
+      status: project.status,
+      value: project.value,
+      start_date: project.startDate,
+      end_date: project.endDate
+    }).eq('id', project.id);
+    if (error) console.warn("Supabase projects update error:", error);
   }
 
   async deleteProject(companyId: string, projectId: string): Promise<void> {
-    try {
-      const { error } = await supabase.from('projects').delete().eq('id', projectId);
-      if (error) throw error;
-    } catch (dbErr) {
-      console.warn("Supabase projects delete failed, trying local fallback:", dbErr);
-    }
-
-    const current = await this.fetchProjects(companyId);
-    const updated = current.filter(p => p.id !== projectId);
-    localStorage.setItem(`cravebiz_projects_${companyId}`, JSON.stringify(updated));
+    const { error } = await supabase.from('projects').delete().eq('id', projectId);
+    if (error) console.warn("Supabase projects delete error:", error);
   }
 
   async fetchServices(companyId: string): Promise<Service[]> {
@@ -1312,23 +1268,7 @@ class CraveBizApi {
     }
     
     // Merge with localStorage docs to guarantee persistence even under RLS/network constraints
-    const localKey = `cravebiz_docs_${companyId}`;
-    const savedListRaw = localStorage.getItem(localKey);
-    let localDocs: StoredGeneratedDoc[] = [];
-    if (savedListRaw) {
-      try {
-        localDocs = JSON.parse(savedListRaw);
-      } catch {
-        localDocs = [];
-      }
-    }
-    
     const combined = [...dbDocs];
-    for (const lDoc of localDocs) {
-      if (!combined.some(d => d.id === lDoc.id)) {
-        combined.push(lDoc);
-      }
-    }
 
     // Merge with server-side public documents
     try {
@@ -1401,7 +1341,7 @@ class CraveBizApi {
     // Perform robust background table sync
     await this.syncDocumentToTables(companyId, docId, doc, createdAt);
     
-    const savedDoc: StoredGeneratedDoc = {
+    return {
       id: docId,
       companyId: companyId,
       createdAt: createdAt,
@@ -1410,67 +1350,23 @@ class CraveBizApi {
       signatures: doc.signatures || [],
       ownerId: doc.ownerId
     };
-    
-    // Store in localStorage
-    const localKey = `cravebiz_docs_${companyId}`;
-    const savedListRaw = localStorage.getItem(localKey);
-    let list: StoredGeneratedDoc[] = [];
-    if (savedListRaw) {
-      try {
-        list = JSON.parse(savedListRaw);
-      } catch {
-        list = [];
-      }
-    }
-    
-    const existingIndex = list.findIndex(d => d.id === docId);
-    if (existingIndex > -1) {
-      list[existingIndex] = savedDoc;
-    } else {
-      list.unshift(savedDoc);
-    }
-    localStorage.setItem(localKey, JSON.stringify(list));
-    
-    return savedDoc;
   }
 
   async updateGeneratedDoc(companyId: string, id: string, doc: GeneratedDocument): Promise<StoredGeneratedDoc> {
-    const localKey = `cravebiz_docs_${companyId}`;
-    const savedListRaw = localStorage.getItem(localKey);
-    let list: StoredGeneratedDoc[] = [];
-    if (savedListRaw) {
-      try {
-        list = JSON.parse(savedListRaw);
-      } catch {
-        list = [];
-      }
-    }
-    
-    const foundIdx = list.findIndex(d => d.id === id);
-    const createdAt = foundIdx > -1 ? list[foundIdx].createdAt : new Date().toISOString();
-    const originalOwnerId = foundIdx > -1 ? list[foundIdx].ownerId : undefined;
+    const createdAt = new Date().toISOString();
     
     // Sync to all database tables & server file system copy
     await this.syncDocumentToTables(companyId, id, doc, createdAt);
     
-    const updatedDoc: StoredGeneratedDoc = {
+    return {
       id: id,
       companyId: companyId,
       createdAt: createdAt,
       documentType: doc.documentType,
       blocks: doc.blocks,
       signatures: doc.signatures || [],
-      ownerId: doc.ownerId || originalOwnerId
+      ownerId: doc.ownerId
     };
-    
-    if (foundIdx > -1) {
-      list[foundIdx] = updatedDoc;
-    } else {
-      list.unshift(updatedDoc);
-    }
-    localStorage.setItem(localKey, JSON.stringify(list));
-    
-    return updatedDoc;
   }
 
   async deleteGeneratedDoc(companyId: string, id: string): Promise<void> {
@@ -1478,20 +1374,7 @@ class CraveBizApi {
       const { error } = await supabase.from('generated_documents').delete().eq('id', id);
       if (error) throw error;
     } catch (e) {
-      console.warn("Supabase delete failed for generated_documents, deleting from local storage fallback:", e);
-    }
-    
-    // Always clean from localStorage
-    const localKey = `cravebiz_docs_${companyId}`;
-    const savedListRaw = localStorage.getItem(localKey);
-    if (savedListRaw) {
-      try {
-        let list: StoredGeneratedDoc[] = JSON.parse(savedListRaw);
-        list = list.filter(d => d.id !== id);
-        localStorage.setItem(localKey, JSON.stringify(list));
-      } catch {
-        // Ignored
-      }
+      console.warn("Supabase delete failed for generated_documents:", e);
     }
   }
 
@@ -2392,14 +2275,10 @@ class CraveBizApi {
         details: log.details,
         created_at: createdAt
       });
-      if (error) throw error;
+      if (error) console.warn("Supabase audit_logs insert warning:", error);
     } catch (dbErr) {
-      console.warn("Supabase audit_logs insert failed, using local fallback:", dbErr);
+      console.warn("Supabase audit_logs insert failed:", dbErr);
     }
-
-    const current = await this.fetchAuditLogs(log.companyId);
-    const updated = [newLog, ...current].slice(0, 500);
-    localStorage.setItem(`cravebiz_audit_logs_${log.companyId}`, JSON.stringify(updated));
 
     try {
       await fetch('/api/audit-logs', {
@@ -2433,13 +2312,9 @@ class CraveBizApi {
         }));
       }
     } catch (dbErr) {
-      console.warn("Supabase audit_logs fetch failed, using local fallback:", dbErr);
+      console.warn("Supabase audit_logs fetch failed:", dbErr);
     }
 
-    const localLogs = localStorage.getItem(`cravebiz_audit_logs_${companyId}`);
-    if (localLogs) {
-      return JSON.parse(localLogs);
-    }
     return [];
   }
 
