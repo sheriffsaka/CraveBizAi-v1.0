@@ -9,7 +9,7 @@ import {
   Users, Briefcase, Sparkles, Download, Calendar, ArrowUpRight,
   ArrowDownRight, AlertTriangle, CheckCircle2, Search, Filter,
   Clock, DollarSign, Layers, PieChart as PieIcon, Copy, Check, ShieldAlert,
-  Repeat, RefreshCw
+  Repeat, RefreshCw, ChevronLeft, ChevronRight, ArrowUpDown, ArrowUp, ArrowDown
 } from 'lucide-react';
 import { Invoice, Client, Service, InvoiceStatus } from '../types';
 import { generateTextResponse } from '../services/aiGenerationService';
@@ -126,6 +126,12 @@ const Reports: React.FC<ReportsProps> = ({
   const [profitabilityTableSearch, setProfitabilityTableSearch] = useState('');
   const [clientTableSearch, setClientTableSearch] = useState('');
   const [serviceTableSearch, setServiceTableSearch] = useState('');
+
+  // Sorting and Pagination states for Client Activity Ledger
+  const [clientTableSortField, setClientTableSortField] = useState<'companyName' | 'invoiceCount' | 'totalRevenue' | 'outstanding'>('totalRevenue');
+  const [clientTableSortOrder, setClientTableSortOrder] = useState<'asc' | 'desc'>('desc');
+  const [clientPageSize, setClientPageSize] = useState<number>(10);
+  const [clientCurrentPage, setClientCurrentPage] = useState<number>(1);
 
   const [internalFilter, setInternalFilter] = useState<GlobalFilterState>(() => loadGlobalFilterFromSession());
   const currentFilter = globalFilter || internalFilter;
@@ -592,6 +598,56 @@ const Reports: React.FC<ReportsProps> = ({
     return Array.from(clientLTVMap.values()).sort((a, b) => b.totalRevenue - a.totalRevenue);
   }, [filteredInvoices, clients]);
 
+  // Filtered and Sorted Client List for Client Activity Ledger
+  const filteredClientList = useMemo(() => {
+    const query = clientTableSearch.trim().toLowerCase();
+    let list = clientLifetimeValue;
+    if (query) {
+      list = list.filter(c => c.companyName.toLowerCase().includes(query));
+    }
+
+    return [...list].sort((a, b) => {
+      const aVal = a[clientTableSortField];
+      const bVal = b[clientTableSortField];
+
+      if (typeof aVal === 'string') {
+        const cmp = (aVal as string).localeCompare(bVal as string);
+        return clientTableSortOrder === 'asc' ? cmp : -cmp;
+      } else {
+        const numA = Number(aVal) || 0;
+        const numB = Number(bVal) || 0;
+        return clientTableSortOrder === 'asc' ? numA - numB : numB - numA;
+      }
+    });
+  }, [clientLifetimeValue, clientTableSearch, clientTableSortField, clientTableSortOrder]);
+
+  const totalClientPages = useMemo(() => {
+    return Math.max(1, Math.ceil(filteredClientList.length / clientPageSize));
+  }, [filteredClientList.length, clientPageSize]);
+
+  // Adjust page number if out of bounds when search or page size changes
+  useEffect(() => {
+    if (clientCurrentPage > totalClientPages) {
+      setClientCurrentPage(1);
+    }
+  }, [totalClientPages, clientCurrentPage]);
+
+  const paginatedClientList = useMemo(() => {
+    const page = Math.min(clientCurrentPage, totalClientPages);
+    const startIndex = (page - 1) * clientPageSize;
+    return filteredClientList.slice(startIndex, startIndex + clientPageSize);
+  }, [filteredClientList, clientCurrentPage, totalClientPages, clientPageSize]);
+
+  const handleClientSort = useCallback((field: 'companyName' | 'invoiceCount' | 'totalRevenue' | 'outstanding') => {
+    if (clientTableSortField === field) {
+      setClientTableSortOrder(prev => (prev === 'asc' ? 'desc' : 'asc'));
+    } else {
+      setClientTableSortField(field);
+      setClientTableSortOrder(field === 'companyName' ? 'asc' : 'desc');
+    }
+    setClientCurrentPage(1);
+  }, [clientTableSortField]);
+
   const activePayingClientsCount = useMemo(() => {
     return clientLifetimeValue.filter(c => c.totalRevenue > 0).length;
   }, [clientLifetimeValue]);
@@ -749,7 +805,7 @@ User Inquiry: "${queryToUse}"`;
       csvString = convertToCsv(data, headers);
     } else if (activeTab === 'clients') {
       const headers = ['Company Name', 'Total Invoices', 'Settled Revenue (NGN)', 'Outstanding Balance (NGN)'];
-      const data = clientLifetimeValue.map(c => ({
+      const data = filteredClientList.map(c => ({
         'Company Name': c.companyName,
         'Total Invoices': c.invoiceCount,
         'Settled Revenue (NGN)': c.totalRevenue,
@@ -1858,15 +1914,38 @@ User Inquiry: "${queryToUse}"`;
                 <p className="text-xs text-gray-500 font-medium">Lifetime revenue, total invoices, and outstanding dues</p>
               </div>
 
-              <div className="relative max-w-xs">
-                <Search className="w-3.5 h-3.5 text-gray-400 absolute left-3 top-1/2 -translate-y-1/2" />
-                <input
-                  type="text"
-                  value={clientTableSearch}
-                  onChange={(e) => setClientTableSearch(e.target.value)}
-                  placeholder="Filter clients..."
-                  className="pl-8 pr-3 py-1.5 text-xs border border-gray-200 rounded-lg outline-none focus:ring-1 focus:ring-primary-500 w-full"
-                />
+              <div className="flex flex-wrap items-center gap-3">
+                <div className="flex items-center gap-2">
+                  <label htmlFor="client-page-size" className="text-xs text-gray-500 font-bold whitespace-nowrap">Show:</label>
+                  <select
+                    id="client-page-size"
+                    value={clientPageSize}
+                    onChange={(e) => {
+                      setClientPageSize(Number(e.target.value));
+                      setClientCurrentPage(1);
+                    }}
+                    className="py-1.5 px-2.5 text-xs bg-white border border-gray-200 rounded-lg outline-none focus:ring-1 focus:ring-primary-500 font-bold text-gray-700 shadow-sm cursor-pointer"
+                  >
+                    <option value={10}>10 per page</option>
+                    <option value={25}>25 per page</option>
+                    <option value={50}>50 per page</option>
+                    <option value={100}>100 per page</option>
+                  </select>
+                </div>
+
+                <div className="relative max-w-xs w-full sm:w-auto">
+                  <Search className="w-3.5 h-3.5 text-gray-400 absolute left-3 top-1/2 -translate-y-1/2" />
+                  <input
+                    type="text"
+                    value={clientTableSearch}
+                    onChange={(e) => {
+                      setClientTableSearch(e.target.value);
+                      setClientCurrentPage(1);
+                    }}
+                    placeholder="Filter clients..."
+                    className="pl-8 pr-3 py-1.5 text-xs border border-gray-200 rounded-lg outline-none focus:ring-1 focus:ring-primary-500 w-full"
+                  />
+                </div>
               </div>
             </div>
 
@@ -1874,31 +1953,135 @@ User Inquiry: "${queryToUse}"`;
               <table className="w-full text-left border-collapse text-xs">
                 <thead>
                   <tr className="border-b border-gray-200 bg-gray-50/50 text-[10px] font-black uppercase text-gray-500 tracking-wider">
-                    <th className="py-3 px-4">Company Name</th>
-                    <th className="py-3 px-4 text-center">Invoices</th>
-                    <th className="py-3 px-4 text-right">Settled Revenue (₦)</th>
-                    <th className="py-3 px-4 text-right">Outstanding (₦)</th>
+                    <th
+                      onClick={() => handleClientSort('companyName')}
+                      className="py-3 px-4 text-left cursor-pointer hover:bg-gray-100/80 transition-colors select-none"
+                    >
+                      <div className="flex items-center gap-1.5">
+                        <span>Company Name</span>
+                        {clientTableSortField === 'companyName' ? (
+                          clientTableSortOrder === 'asc' ? <ArrowUp className="w-3.5 h-3.5 text-primary-600" /> : <ArrowDown className="w-3.5 h-3.5 text-primary-600" />
+                        ) : (
+                          <ArrowUpDown className="w-3 h-3 text-gray-400 opacity-50 hover:opacity-100" />
+                        )}
+                      </div>
+                    </th>
+                    <th
+                      onClick={() => handleClientSort('invoiceCount')}
+                      className="py-3 px-4 text-center cursor-pointer hover:bg-gray-100/80 transition-colors select-none"
+                    >
+                      <div className="flex items-center justify-center gap-1.5">
+                        <span>Invoices</span>
+                        {clientTableSortField === 'invoiceCount' ? (
+                          clientTableSortOrder === 'asc' ? <ArrowUp className="w-3.5 h-3.5 text-primary-600" /> : <ArrowDown className="w-3.5 h-3.5 text-primary-600" />
+                        ) : (
+                          <ArrowUpDown className="w-3 h-3 text-gray-400 opacity-50 hover:opacity-100" />
+                        )}
+                      </div>
+                    </th>
+                    <th
+                      onClick={() => handleClientSort('totalRevenue')}
+                      className="py-3 px-4 text-right cursor-pointer hover:bg-gray-100/80 transition-colors select-none"
+                    >
+                      <div className="flex items-center justify-end gap-1.5">
+                        <span>Settled Revenue (₦)</span>
+                        {clientTableSortField === 'totalRevenue' ? (
+                          clientTableSortOrder === 'asc' ? <ArrowUp className="w-3.5 h-3.5 text-primary-600" /> : <ArrowDown className="w-3.5 h-3.5 text-primary-600" />
+                        ) : (
+                          <ArrowUpDown className="w-3 h-3 text-gray-400 opacity-50 hover:opacity-100" />
+                        )}
+                      </div>
+                    </th>
+                    <th
+                      onClick={() => handleClientSort('outstanding')}
+                      className="py-3 px-4 text-right cursor-pointer hover:bg-gray-100/80 transition-colors select-none"
+                    >
+                      <div className="flex items-center justify-end gap-1.5">
+                        <span>Outstanding (₦)</span>
+                        {clientTableSortField === 'outstanding' ? (
+                          clientTableSortOrder === 'asc' ? <ArrowUp className="w-3.5 h-3.5 text-primary-600" /> : <ArrowDown className="w-3.5 h-3.5 text-primary-600" />
+                        ) : (
+                          <ArrowUpDown className="w-3 h-3 text-gray-400 opacity-50 hover:opacity-100" />
+                        )}
+                      </div>
+                    </th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-gray-100">
-                  {clientLifetimeValue
-                    .filter(c => c.companyName.toLowerCase().includes(clientTableSearch.toLowerCase()))
-                    .map((c) => (
-                      <tr key={c.companyName} className="hover:bg-gray-50/80 transition-colors">
-                        <td className="py-3 px-4 font-bold text-gray-800">{c.companyName}</td>
-                        <td className="py-3 px-4 text-center font-bold text-gray-600">{c.invoiceCount}</td>
-                        <td className="py-3 px-4 text-right font-bold text-emerald-700">₦{c.totalRevenue.toLocaleString()}</td>
-                        <td className="py-3 px-4 text-right font-bold text-rose-600">₦{c.outstanding.toLocaleString()}</td>
-                      </tr>
-                    ))}
-                  {clientLifetimeValue.length === 0 && (
+                  {paginatedClientList.map((c) => (
+                    <tr key={c.companyName} className="hover:bg-gray-50/80 transition-colors">
+                      <td className="py-3 px-4 font-bold text-gray-800">{c.companyName}</td>
+                      <td className="py-3 px-4 text-center font-bold text-gray-600">{c.invoiceCount}</td>
+                      <td className="py-3 px-4 text-right font-bold text-emerald-700">₦{c.totalRevenue.toLocaleString()}</td>
+                      <td className="py-3 px-4 text-right font-bold text-rose-600">₦{c.outstanding.toLocaleString()}</td>
+                    </tr>
+                  ))}
+                  {filteredClientList.length === 0 && (
                     <tr>
-                      <td colSpan={4} className="py-8 text-center text-gray-400 italic">No client accounts recorded.</td>
+                      <td colSpan={4} className="py-8 text-center text-gray-400 italic">No client accounts match your filter criteria.</td>
                     </tr>
                   )}
                 </tbody>
               </table>
             </div>
+
+            {/* Pagination Controls */}
+            {filteredClientList.length > 0 && (
+              <div className="flex flex-col sm:flex-row items-center justify-between gap-4 border-t border-gray-100 pt-4 text-xs font-medium text-gray-600">
+                <div>
+                  Showing <span className="font-black text-gray-900">{(clientCurrentPage - 1) * clientPageSize + 1}</span> to{' '}
+                  <span className="font-black text-gray-900">{Math.min(clientCurrentPage * clientPageSize, filteredClientList.length)}</span> of{' '}
+                  <span className="font-black text-gray-900">{filteredClientList.length}</span> clients
+                </div>
+
+                <div className="flex items-center gap-1.5">
+                  <button
+                    onClick={() => setClientCurrentPage(prev => Math.max(1, prev - 1))}
+                    disabled={clientCurrentPage <= 1}
+                    className="px-3 py-1.5 rounded-lg border border-gray-200 bg-white text-gray-700 hover:bg-gray-50 disabled:opacity-40 disabled:cursor-not-allowed transition-all font-bold flex items-center gap-1 cursor-pointer"
+                  >
+                    <ChevronLeft className="w-3.5 h-3.5" />
+                    Previous
+                  </button>
+
+                  <div className="flex items-center gap-1">
+                    {Array.from({ length: totalClientPages }, (_, i) => i + 1)
+                      .filter(p => {
+                        if (totalClientPages <= 7) return true;
+                        if (p === 1 || p === totalClientPages) return true;
+                        return Math.abs(p - clientCurrentPage) <= 1;
+                      })
+                      .map((p, idx, arr) => {
+                        const showEllipsisBefore = idx > 0 && p - arr[idx - 1] > 1;
+                        return (
+                          <React.Fragment key={p}>
+                            {showEllipsisBefore && <span className="px-1.5 text-xs text-gray-400 font-bold">...</span>}
+                            <button
+                              onClick={() => setClientCurrentPage(p)}
+                              className={`w-7 h-7 rounded-lg text-xs font-bold transition-all cursor-pointer ${
+                                clientCurrentPage === p
+                                  ? 'bg-primary-600 text-white shadow-sm'
+                                  : 'bg-white text-gray-700 hover:bg-gray-100 border border-gray-200'
+                              }`}
+                            >
+                              {p}
+                            </button>
+                          </React.Fragment>
+                        );
+                      })}
+                  </div>
+
+                  <button
+                    onClick={() => setClientCurrentPage(prev => Math.min(totalClientPages, prev + 1))}
+                    disabled={clientCurrentPage >= totalClientPages}
+                    className="px-3 py-1.5 rounded-lg border border-gray-200 bg-white text-gray-700 hover:bg-gray-50 disabled:opacity-40 disabled:cursor-not-allowed transition-all font-bold flex items-center gap-1 cursor-pointer"
+                  >
+                    Next
+                    <ChevronRight className="w-3.5 h-3.5" />
+                  </button>
+                </div>
+              </div>
+            )}
           </div>
         </div>
       )}
