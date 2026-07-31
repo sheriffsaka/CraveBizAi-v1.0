@@ -291,6 +291,14 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ allTenantData, companie
 
   // Load platform-wide projects and audit logs in parallel for security audits
   useEffect(() => {
+    const handleSubChange = () => {
+      reloadAiUsageData();
+    };
+    window.addEventListener('cravebiz_subscription_change', handleSubChange);
+    return () => window.removeEventListener('cravebiz_subscription_change', handleSubChange);
+  }, [companies]);
+
+  useEffect(() => {
     const loadPlatformDetails = async () => {
       setIsLoadingPlatformDetails(true);
       try {

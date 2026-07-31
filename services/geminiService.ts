@@ -1,10 +1,13 @@
 import { api } from "../lib/api.ts";
-import { syncSubscriptionInfoFromDb, ensureAiCreditsOrThrow } from "./subscriptionService.ts";
+import { syncSubscriptionInfoFromDb, updateMemoryAiCredits, ensureAiCreditsOrThrow } from "./subscriptionService.ts";
 
 function handleAiResponseUnits(companyId: string, data: any) {
-    if (companyId && data && typeof data.newAiUnits === "number") {
+    if (companyId && data) {
+        const units = typeof data.newAiUnits === "number" ? data.newAiUnits : typeof data.remainingCredits === "number" ? data.remainingCredits : null;
+        if (units !== null) {
+            updateMemoryAiCredits(companyId, units);
+        }
         syncSubscriptionInfoFromDb(companyId).catch(err => console.warn("AI response unit sync warning:", err));
-        window.dispatchEvent(new Event('cravebiz_subscription_change'));
     }
 }
 

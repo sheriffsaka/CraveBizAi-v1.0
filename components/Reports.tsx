@@ -1,4 +1,4 @@
-import React, { useState, useMemo, useCallback } from 'react';
+import React, { useState, useMemo, useCallback, useEffect } from 'react';
 import {
   BarChart, Bar, LineChart, Line, PieChart, Pie, Cell,
   XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer,
@@ -142,7 +142,15 @@ const Reports: React.FC<ReportsProps> = ({
     return filterInvoices(invoices, services, clients, currentFilter);
   }, [invoices, services, clients, currentFilter]);
 
-  const subInfo = useMemo(() => getSubscriptionInfo(activeTenantId || ''), [activeTenantId]);
+  const [subTrigger, setSubTrigger] = useState(0);
+
+  useEffect(() => {
+    const handleSubChange = () => setSubTrigger(prev => prev + 1);
+    window.addEventListener('cravebiz_subscription_change', handleSubChange);
+    return () => window.removeEventListener('cravebiz_subscription_change', handleSubChange);
+  }, []);
+
+  const subInfo = useMemo(() => getSubscriptionInfo(activeTenantId || ''), [activeTenantId, subTrigger]);
 
   const isPlanFree = subInfo.tier === 'Free' && subInfo.aiUnits <= 0;
   const isUnitsDepleted = subInfo.aiUnits <= 0;

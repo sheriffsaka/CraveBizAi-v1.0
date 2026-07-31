@@ -253,6 +253,15 @@ export function checkAndEnforceMonthlyCreditReset(companyId: string, currentCont
   }
 }
 
+export function updateMemoryAiCredits(companyId: string, units: number): void {
+  if (!companyId || typeof units !== 'number') return;
+  const state = getOrCreateMemoryState(companyId);
+  state.aiUnits = units < 0 ? 0 : units;
+  if (typeof window !== 'undefined') {
+    window.dispatchEvent(new Event('cravebiz_subscription_change'));
+  }
+}
+
 /**
  * Synchronizes subscription details from Supabase to in-memory state
  */
@@ -261,6 +270,7 @@ export async function syncSubscriptionInfoFromDb(companyId: string): Promise<voi
   const docId = getSettingsDocId(companyId);
   const state = getOrCreateMemoryState(companyId);
 
+  let creditFetchedFromDb = false;
   // 1. Fetch canonical AI Credits balance from Supabase database via backend API
   try {
     const headers = await api.getAuthHeaders(companyId);
@@ -269,6 +279,7 @@ export async function syncSubscriptionInfoFromDb(companyId: string): Promise<voi
       const creditsData = await creditsRes.json();
       if (typeof creditsData.remainingCredits === 'number') {
         state.aiUnits = creditsData.remainingCredits;
+        creditFetchedFromDb = true;
         if (creditsData.subscriptionPlan) {
           state.tier = creditsData.subscriptionPlan;
         }
@@ -314,7 +325,7 @@ export async function syncSubscriptionInfoFromDb(companyId: string): Promise<voi
 
       if (content) {
         if (content.tier) state.tier = content.tier;
-        if (content.aiUnits !== undefined) state.aiUnits = content.aiUnits;
+        if (!creditFetchedFromDb && content.aiUnits !== undefined) state.aiUnits = content.aiUnits;
         if (content.aiModeEnabled !== undefined) state.aiModeEnabled = content.aiModeEnabled;
         if (content.lastFreeUnitsReset) state.lastFreeUnitsReset = content.lastFreeUnitsReset;
         if (content.purchasedAiUnits !== undefined) state.purchasedAiUnits = content.purchasedAiUnits;
@@ -341,7 +352,7 @@ export async function syncSubscriptionInfoFromDb(companyId: string): Promise<voi
     if (!error && data && data.content) {
       const content = data.content as any;
       if (content.tier) state.tier = content.tier;
-      if (content.aiUnits !== undefined) state.aiUnits = content.aiUnits;
+      if (!creditFetchedFromDb && content.aiUnits !== undefined) state.aiUnits = content.aiUnits;
       if (content.aiModeEnabled !== undefined) state.aiModeEnabled = content.aiModeEnabled;
       if (content.lastFreeUnitsReset) state.lastFreeUnitsReset = content.lastFreeUnitsReset;
       if (content.purchasedAiUnits !== undefined) state.purchasedAiUnits = content.purchasedAiUnits;

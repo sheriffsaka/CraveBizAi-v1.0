@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import { ResponsiveContainer, BarChart, Bar, LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend } from 'recharts';
 import { Invoice, Client, Service, InvoiceStatus } from '../types';
 import { generateTextResponse } from '../services/aiGenerationService';
@@ -60,7 +60,15 @@ const RevenueVsDirectCostReport: React.FC<RevenueVsDirectCostReportProps> = ({
   const [aiAnalysis, setAiAnalysis] = useState<string | null>(null);
   const [isGeneratingAi, setIsGeneratingAi] = useState(false);
 
-  const subInfo = useMemo(() => getSubscriptionInfo(activeTenantId || ''), [activeTenantId]);
+  const [subTrigger, setSubTrigger] = useState(0);
+
+  useEffect(() => {
+    const handleSubChange = () => setSubTrigger(prev => prev + 1);
+    window.addEventListener('cravebiz_subscription_change', handleSubChange);
+    return () => window.removeEventListener('cravebiz_subscription_change', handleSubChange);
+  }, []);
+
+  const subInfo = useMemo(() => getSubscriptionInfo(activeTenantId || ''), [activeTenantId, subTrigger]);
 
   // Compute date boundary
   const { startDate, endDate } = useMemo(() => {

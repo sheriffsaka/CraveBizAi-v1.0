@@ -76,6 +76,16 @@ const UserProfileModal: React.FC<UserProfileModalProps> = ({ isOpen, onClose, us
     };
 
     fetchUserUsage();
+
+    const handleSubChange = () => {
+      const activeTenantId = localStorage.getItem('cravebiz_tenant') || '';
+      if (activeTenantId) {
+        const sub = getSubscriptionInfo(activeTenantId);
+        setRemainingAiCredits(sub.aiUnits);
+      }
+    };
+    window.addEventListener('cravebiz_subscription_change', handleSubChange);
+    return () => window.removeEventListener('cravebiz_subscription_change', handleSubChange);
   }, [user?.id, isOpen]);
 
   const handleSubmit = (e: React.FormEvent) => {
