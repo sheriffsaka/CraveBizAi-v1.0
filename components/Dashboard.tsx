@@ -144,9 +144,9 @@ const Dashboard: React.FC<DashboardProps> = ({
                     inv.items.forEach(item => {
                         const qty = Number(item.quantity) || 1;
                         const matchingSrv = services.find(s => s.id === item.serviceId || s.name.toLowerCase() === (item.description || '').toLowerCase());
-                        const itemDc = Number(item.directCost || 0);
+                        const itemDc = item.directCost !== undefined && item.directCost !== null ? Number(item.directCost) : -1;
                         const srvDc = Number(matchingSrv?.directCost || 0);
-                        const unitDc = itemDc > 0 ? itemDc : srvDc;
+                        const unitDc = itemDc >= 0 ? itemDc : srvDc;
                         cost += unitDc * qty;
                     });
                 }

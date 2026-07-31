@@ -357,7 +357,7 @@ const InvoiceForm: React.FC<InvoiceFormProps> = ({ initialInvoice, clients, serv
                         </div>
                         <textarea value={item.description} onChange={e => handleItemChange(index, 'description', e.target.value)} className="w-full p-4 border rounded-lg text-sm bg-gray-50 text-gray-900 outline-none focus:ring-2 focus:ring-primary-500 font-medium" rows={2}></textarea>
                     </div>
-                    <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
+                    <div className="grid grid-cols-1 md:grid-cols-5 gap-4">
                         <div>
                             <label className="block text-[10px] font-black text-gray-400 uppercase mb-1">Qty</label>
                             <input type="number" value={item.quantity} onChange={e => handleItemChange(index, 'quantity', Number(e.target.value))} className="w-full p-3.5 border rounded-lg bg-gray-50 text-gray-900 font-black" />
@@ -365,6 +365,10 @@ const InvoiceForm: React.FC<InvoiceFormProps> = ({ initialInvoice, clients, serv
                         <div>
                             <label className="block text-[10px] font-black text-gray-400 uppercase mb-1">Rate (₦)</label>
                             <input type="number" value={item.price} onChange={e => handleItemChange(index, 'price', Number(e.target.value))} className="w-full p-3.5 border rounded-lg bg-gray-50 text-gray-900 font-black" />
+                        </div>
+                        <div>
+                            <label className="block text-[10px] font-black text-gray-400 uppercase mb-1">Direct Cost (₦)</label>
+                            <input type="number" value={item.directCost === undefined || item.directCost === 0 ? '' : item.directCost} onChange={e => handleItemChange(index, 'directCost', Number(e.target.value))} placeholder="0" className="w-full p-3.5 border rounded-lg bg-gray-50 text-gray-900 font-black" />
                         </div>
                         <div>
                             <label className="block text-[10px] font-black text-gray-400 uppercase mb-1">Discount (₦)</label>

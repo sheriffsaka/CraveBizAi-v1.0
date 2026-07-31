@@ -162,9 +162,9 @@ const RevenueVsDirectCostReport: React.FC<RevenueVsDirectCostReportProps> = ({
         const matchingService = services.find(s => s.id === item.serviceId || s.name.toLowerCase() === item.description.toLowerCase());
         
         // Unit direct cost priority: item.directCost -> matchingService.directCost -> 0
-        const itemDc = Number(item.directCost || 0);
+        const itemDc = item.directCost !== undefined && item.directCost !== null ? Number(item.directCost) : -1;
         const serviceDc = Number(matchingService?.directCost || 0);
-        const unitDirectCost = itemDc > 0 ? itemDc : serviceDc;
+        const unitDirectCost = itemDc >= 0 ? itemDc : serviceDc;
         const itemDirectCost = unitDirectCost * qty;
 
         revSum += itemRevenue;

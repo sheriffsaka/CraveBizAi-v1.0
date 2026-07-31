@@ -246,9 +246,9 @@ const Reports: React.FC<ReportsProps> = ({
         const itemRevenue = Number(item.price) * qty;
 
         const matchingService = services.find(s => s.id === item.serviceId || s.name.toLowerCase() === item.description.toLowerCase());
-        const itemDc = Number(item.directCost || 0);
+        const itemDc = item.directCost !== undefined && item.directCost !== null ? Number(item.directCost) : -1;
         const serviceDc = Number(matchingService?.directCost || 0);
-        const unitDirectCost = itemDc > 0 ? itemDc : serviceDc;
+        const unitDirectCost = itemDc >= 0 ? itemDc : serviceDc;
         const itemDirectCost = unitDirectCost * qty;
 
         revSum += itemRevenue;
@@ -353,7 +353,10 @@ const Reports: React.FC<ReportsProps> = ({
           const qty = Number(item.quantity) || 1;
           const r = Number(item.price) * qty;
           const matchingService = services.find(s => s.id === item.serviceId || s.name.toLowerCase() === item.description.toLowerCase());
-          const c = (Number(item.directCost) || Number(matchingService?.directCost) || 0) * qty;
+          const itemDc = item.directCost !== undefined && item.directCost !== null ? Number(item.directCost) : -1;
+          const serviceDc = Number(matchingService?.directCost || 0);
+          const unitDc = itemDc >= 0 ? itemDc : serviceDc;
+          const c = unitDc * qty;
           invRev += r;
           invCost += c;
         });
