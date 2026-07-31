@@ -1,20 +1,23 @@
-
 import React, { useState, useMemo } from 'react';
-import { Invoice, Client, InvoiceFrequency } from '../types';
+import { Invoice, Client, Service } from '../types';
 import InvoiceStatusBadge from './InvoiceStatusBadge';
 import Icon from './common/Icon';
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, Cell } from 'recharts';
 
 interface RecurringInvoiceListProps {
-  invoices: Invoice[]; // These should already be filtered to be isRecurringTemplate: true
+  invoices: Invoice[];
   clients: Client[];
+  services?: Service[];
   onViewInvoice: (invoiceId: string) => void;
   onEditInvoice?: (invoiceId: string) => void;
   onDeleteInvoice?: (invoiceId: string) => void;
+  onRenewInvoice?: (template: Invoice) => Promise<void>;
+  onTogglePause?: (template: Invoice) => Promise<void>;
 }
 
-type SortKey = 'invoiceNumber' | 'clientName' | 'frequency' | 'nextRecurrenceDate' | 'total' | 'balance' | 'status';
-type SortDirection = 'asc' | 'desc';
+export type RenewalFilter = 'all' | 'due-soon' | 'overdue' | 'due-30-days' | 'paused';
+export type SortKey = 'nextDueDate' | 'clientName' | 'invoiceNumber' | 'service' | 'frequency' | 'total' | 'status';
+export type SortDirection = 'asc' | 'desc';
 
 export function formatFrequencyLabel(freq?: string): string {
   if (!freq) return 'One-Time';
@@ -33,157 +36,258 @@ export function formatFrequencyLabel(freq?: string): string {
   }
 }
 
-const RecurringInvoicesTable: React.FC<{
-  invoices: Invoice[];
-  clients: Client[];
-  onViewInvoice: (invoiceId: string) => void;
-  onEditInvoice?: (invoiceId: string) => void;
-  onDeleteInvoice?: (invoiceId: string) => void;
-  sortKey: SortKey;
-  sortDirection: SortDirection;
-  onSort: (key: SortKey) => void;
-}> = ({ invoices, clients, onViewInvoice, onEditInvoice, onDeleteInvoice, sortKey, sortDirection, onSort }) => {
-  const getClientName = (clientId: string) => {
-    return clients.find(c => c.id === clientId)?.companyName || 'Unknown Client';
-  };
-
-  const getSortIcon = (key: SortKey) => {
-    if (sortKey !== key) return null;
-    return sortDirection === 'asc' ? ' ▲' : ' ▼';
-  };
-
-  const handleDelete = (e: React.MouseEvent, id: string, number: string) => {
-    e.stopPropagation();
-    if (onDeleteInvoice && window.confirm(`Are you sure you want to delete template ${number}? This action cannot be undone.`)) {
-      onDeleteInvoice(id);
+export function getInvoiceServicesSummary(invoice: Invoice, services: Service[] = []): string {
+  if (!invoice.items || invoice.items.length === 0) return 'General Service';
+  const names = invoice.items.map(item => {
+    if (item.serviceId && item.serviceId !== 'custom') {
+      const found = services.find(s => s.id === item.serviceId);
+      if (found?.name) return found.name;
     }
-  };
+    return item.description || 'Service Item';
+  });
+  const uniqueNames = Array.from(new Set(names.filter(Boolean)));
+  if (uniqueNames.length === 0) return 'General Service';
+  if (uniqueNames.length === 1) return uniqueNames[0];
+  return `${uniqueNames[0]} (+${uniqueNames.length - 1} more)`;
+}
 
-  return (
-    <div className="overflow-x-auto">
-      <table className="w-full text-sm text-left text-gray-500">
-        <thead className="text-xs text-gray-700 uppercase bg-gray-50">
-          <tr>
-            <th scope="col" className="px-6 py-3 cursor-pointer" onClick={() => onSort('invoiceNumber')}>Template ID{getSortIcon('invoiceNumber')}</th>
-            <th scope="col" className="px-6 py-3 cursor-pointer" onClick={() => onSort('clientName')}>Client{getSortIcon('clientName')}</th>
-            <th scope="col" className="px-6 py-3 cursor-pointer" onClick={() => onSort('frequency')}>Frequency{getSortIcon('frequency')}</th>
-            <th scope="col" className="px-6 py-3 cursor-pointer" onClick={() => onSort('nextRecurrenceDate')}>Next Bill Date{getSortIcon('nextRecurrenceDate')}</th>
-            <th scope="col" className="px-6 py-3 font-semibold">Auto-Gen</th>
-            <th scope="col" className="px-6 py-3 cursor-pointer" onClick={() => onSort('total')}>Amount{getSortIcon('total')}</th>
-            <th scope="col" className="px-6 py-3 cursor-pointer" onClick={() => onSort('balance')}>Outstanding{getSortIcon('balance')}</th>
-            <th scope="col" className="px-6 py-3 cursor-pointer" onClick={() => onSort('status')}>Status{getSortIcon('status')}</th>
-            <th scope="col" className="px-6 py-3 text-right">Actions</th>
-          </tr>
-        </thead>
-        <tbody>
-          {invoices.map((invoice) => {
-            const balance = invoice.total - (invoice.amountPaid || 0);
-            return (
-              <tr key={invoice.id} className="bg-white border-b hover:bg-gray-50 group">
-                <th scope="row" className="px-6 py-4 font-medium text-gray-900 whitespace-nowrap">
-                  {invoice.invoiceNumber}
-                </th>
-                <td className="px-6 py-4">{getClientName(invoice.clientId)}</td>
-                <td className="px-6 py-4">
-                  <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-bold bg-primary-50 text-primary-700 border border-primary-100">
-                    {formatFrequencyLabel(invoice.frequency)}
-                  </span>
-                </td>
-                <td className="px-6 py-4 font-bold text-gray-800">{invoice.nextRecurrenceDate || invoice.nextDueDate || 'N/A'}</td>
-                <td className="px-6 py-4">
-                  <span className={`inline-flex items-center px-2 py-0.5 rounded text-[10px] font-black uppercase ${invoice.autoGenerate !== false ? 'bg-green-100 text-green-800' : 'bg-gray-100 text-gray-600'}`}>
-                    {invoice.autoGenerate !== false ? 'Auto' : 'Manual'}
-                  </span>
-                </td>
-                <td className="px-6 py-4 font-medium">₦{invoice.total.toLocaleString()}</td>
-                <td className={`px-6 py-4 font-bold ${balance > 0 ? 'text-red-600' : 'text-green-600'}`}>
-                  ₦{balance.toLocaleString()}
-                </td>
-                <td className="px-6 py-4">
-                  <div className="flex flex-col gap-1">
-                    <InvoiceStatusBadge status={invoice.status} />
-                    {invoice.recurringStatus && (
-                      <span className={`text-[9px] font-extrabold uppercase ${invoice.recurringStatus === 'active' ? 'text-green-600' : 'text-amber-600'}`}>
-                        Schedule: {invoice.recurringStatus}
-                      </span>
-                    )}
-                  </div>
-                </td>
-                <td className="px-6 py-4 text-right space-x-3">
-                  <button onClick={() => onViewInvoice(invoice.id)} className="font-bold text-primary-600 hover:text-primary-800 transition-colors uppercase text-[10px] tracking-widest">View</button>
-                  {onEditInvoice && (
-                      <button onClick={() => onEditInvoice(invoice.id)} className="font-bold text-amber-600 hover:text-amber-800 transition-colors uppercase text-[10px] tracking-widest">Edit</button>
-                  )}
-                  {onDeleteInvoice && (
-                      <button onClick={(e) => handleDelete(e, invoice.id, invoice.invoiceNumber)} className="font-bold text-red-600 hover:text-red-800 transition-colors uppercase text-[10px] tracking-widest">Delete</button>
-                  )}
-                </td>
-              </tr>
-            );
-          })}
-          {invoices.length === 0 && (
-              <tr>
-                  <td colSpan={8} className="text-center py-10 text-gray-500">No recurring invoice templates found.</td>
-              </tr>
-          )}
-        </tbody>
-      </table>
-    </div>
-  );
-};
+export function getRenewalUrgency(dueDateStr?: string) {
+  if (!dueDateStr) {
+    return {
+      label: 'No Due Date',
+      badgeClass: 'bg-gray-100 text-gray-600 border-gray-200',
+      daysDiff: 9999,
+      isOverdue: false,
+      isDueToday: false,
+      isDueSoon: false
+    };
+  }
 
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  const due = new Date(dueDateStr);
+  due.setHours(0, 0, 0, 0);
 
-const RecurringInvoiceList: React.FC<RecurringInvoiceListProps> = ({ invoices, clients, onViewInvoice, onEditInvoice, onDeleteInvoice }) => {
+  if (isNaN(due.getTime())) {
+    return {
+      label: dueDateStr,
+      badgeClass: 'bg-gray-100 text-gray-600 border-gray-200',
+      daysDiff: 9999,
+      isOverdue: false,
+      isDueToday: false,
+      isDueSoon: false
+    };
+  }
+
+  const diffTime = due.getTime() - today.getTime();
+  const daysDiff = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+
+  if (daysDiff < 0) {
+    const daysAgo = Math.abs(daysDiff);
+    return {
+      label: `Overdue (${daysAgo}d ago)`,
+      badgeClass: 'bg-red-100 text-red-800 border-red-300 font-bold',
+      daysDiff,
+      isOverdue: true,
+      isDueToday: false,
+      isDueSoon: true
+    };
+  } else if (daysDiff === 0) {
+    return {
+      label: 'Due Today',
+      badgeClass: 'bg-amber-100 text-amber-900 border-amber-300 font-black',
+      daysDiff: 0,
+      isOverdue: false,
+      isDueToday: true,
+      isDueSoon: true
+    };
+  } else if (daysDiff <= 7) {
+    return {
+      label: `Due in ${daysDiff} day${daysDiff > 1 ? 's' : ''}`,
+      badgeClass: 'bg-amber-50 text-amber-800 border-amber-200 font-bold',
+      daysDiff,
+      isOverdue: false,
+      isDueToday: false,
+      isDueSoon: true
+    };
+  } else if (daysDiff <= 30) {
+    return {
+      label: `Due in ${daysDiff} days`,
+      badgeClass: 'bg-blue-50 text-blue-800 border-blue-200 font-semibold',
+      daysDiff,
+      isOverdue: false,
+      isDueToday: false,
+      isDueSoon: false
+    };
+  } else {
+    return {
+      label: `Due ${dueDateStr}`,
+      badgeClass: 'bg-gray-100 text-gray-700 border-gray-200 font-medium',
+      daysDiff,
+      isOverdue: false,
+      isDueToday: false,
+      isDueSoon: false
+    };
+  }
+}
+
+const RecurringInvoiceList: React.FC<RecurringInvoiceListProps> = ({
+  invoices,
+  clients,
+  services = [],
+  onViewInvoice,
+  onEditInvoice,
+  onDeleteInvoice,
+  onRenewInvoice,
+  onTogglePause
+}) => {
+  const [activeTab, setActiveTab] = useState<'renewals' | 'templates'>('renewals');
   const [searchTerm, setSearchTerm] = useState('');
-  const [sortKey, setSortKey] = useState<SortKey>('invoiceNumber');
+  const [renewalFilter, setRenewalFilter] = useState<RenewalFilter>('all');
+  const [sortKey, setSortKey] = useState<SortKey>('nextDueDate');
   const [sortDirection, setSortDirection] = useState<SortDirection>('asc');
   const [currentPage, setCurrentPage] = useState(1);
-  const itemsPerPage = 10; 
+  const [renewingId, setRenewingId] = useState<string | null>(null);
+  const [pausingId, setPausingId] = useState<string | null>(null);
+  const itemsPerPage = 10;
 
   const getClientNameById = (clientId: string) => {
-    return clients.find(c => c.id === clientId)?.companyName || 'Unknown Client';
+    return clients.find(c => c.id === clientId)?.companyName || clients.find(c => c.id === clientId)?.name || 'Unknown Client';
   };
 
-  const filteredAndSortedInvoices = useMemo(() => {
-    let filtered = invoices.filter(invoice => 
-      invoice.invoiceNumber.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      getClientNameById(invoice.clientId).toLowerCase().includes(searchTerm.toLowerCase()) ||
-      invoice.frequency.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      invoice.status.toLowerCase().includes(searchTerm.toLowerCase())
-    );
+  const stats = useMemo(() => {
+    let totalContractValue = 0;
+    let overdueCount = 0;
+    let dueSoonCount = 0;
+    let due30Count = 0;
+    let pausedCount = 0;
+    let activeCount = 0;
 
-    filtered.sort((a, b) => {
+    invoices.forEach(inv => {
+      totalContractValue += inv.total;
+      if (inv.recurringStatus === 'paused') {
+        pausedCount++;
+      } else {
+        activeCount++;
+      }
+
+      const dueDateStr = inv.nextRecurrenceDate || inv.nextDueDate || inv.dueDate;
+      const urgency = getRenewalUrgency(dueDateStr);
+      if (urgency.isOverdue) overdueCount++;
+      if (urgency.isDueSoon) dueSoonCount++;
+      if (urgency.daysDiff <= 30) due30Count++;
+    });
+
+    const frequencyCounts: Record<string, { count: number; total: number }> = {};
+    invoices.forEach(inv => {
+      const freqKey = formatFrequencyLabel(inv.frequency);
+      if (!frequencyCounts[freqKey]) {
+        frequencyCounts[freqKey] = { count: 0, total: 0 };
+      }
+      frequencyCounts[freqKey].count++;
+      frequencyCounts[freqKey].total += inv.total;
+    });
+
+    const frequencyData = Object.entries(frequencyCounts).map(([name, data]) => ({
+      name,
+      count: data.count,
+      value: data.total
+    }));
+
+    return {
+      totalTemplates: invoices.length,
+      totalContractValue,
+      overdueCount,
+      dueSoonCount,
+      due30Count,
+      pausedCount,
+      activeCount,
+      frequencyData
+    };
+  }, [invoices]);
+
+  const filteredAndSortedInvoices = useMemo(() => {
+    let list = [...invoices];
+
+    // Filter by tab & renewal sub-filter
+    if (activeTab === 'renewals') {
+      if (renewalFilter === 'overdue') {
+        list = list.filter(inv => {
+          const date = inv.nextRecurrenceDate || inv.nextDueDate || inv.dueDate;
+          return getRenewalUrgency(date).isOverdue;
+        });
+      } else if (renewalFilter === 'due-soon') {
+        list = list.filter(inv => {
+          const date = inv.nextRecurrenceDate || inv.nextDueDate || inv.dueDate;
+          return getRenewalUrgency(date).isDueSoon;
+        });
+      } else if (renewalFilter === 'due-30-days') {
+        list = list.filter(inv => {
+          const date = inv.nextRecurrenceDate || inv.nextDueDate || inv.dueDate;
+          return getRenewalUrgency(date).daysDiff <= 30;
+        });
+      } else if (renewalFilter === 'paused') {
+        list = list.filter(inv => inv.recurringStatus === 'paused');
+      }
+    }
+
+    // Filter by search term
+    if (searchTerm.trim()) {
+      const query = searchTerm.toLowerCase();
+      list = list.filter(inv => {
+        const clientName = getClientNameById(inv.clientId).toLowerCase();
+        const invoiceNum = inv.invoiceNumber.toLowerCase();
+        const serviceName = getInvoiceServicesSummary(inv, services).toLowerCase();
+        const freqLabel = formatFrequencyLabel(inv.frequency).toLowerCase();
+        const statusLabel = (inv.recurringStatus || inv.status || '').toLowerCase();
+        return (
+          clientName.includes(query) ||
+          invoiceNum.includes(query) ||
+          serviceName.includes(query) ||
+          freqLabel.includes(query) ||
+          statusLabel.includes(query)
+        );
+      });
+    }
+
+    // Sort invoices (default nearest due date first!)
+    list.sort((a, b) => {
       let valA: any;
       let valB: any;
 
       switch (sortKey) {
-        case 'invoiceNumber':
-          valA = a.invoiceNumber;
-          valB = b.invoiceNumber;
+        case 'nextDueDate': {
+          const dateA = a.nextRecurrenceDate || a.nextDueDate || a.dueDate || '9999-12-31';
+          const dateB = b.nextRecurrenceDate || b.nextDueDate || b.dueDate || '9999-12-31';
+          valA = new Date(dateA).getTime();
+          valB = new Date(dateB).getTime();
+          if (isNaN(valA)) valA = 9999999999999;
+          if (isNaN(valB)) valB = 9999999999999;
           break;
+        }
         case 'clientName':
           valA = getClientNameById(a.clientId);
           valB = getClientNameById(b.clientId);
           break;
-        case 'frequency':
-          valA = a.frequency;
-          valB = b.frequency;
+        case 'invoiceNumber':
+          valA = a.invoiceNumber;
+          valB = b.invoiceNumber;
           break;
-        case 'nextRecurrenceDate':
-          valA = a.nextRecurrenceDate ? new Date(a.nextRecurrenceDate).getTime() : 0;
-          valB = b.nextRecurrenceDate ? new Date(b.nextRecurrenceDate).getTime() : 0;
+        case 'service':
+          valA = getInvoiceServicesSummary(a, services);
+          valB = getInvoiceServicesSummary(b, services);
+          break;
+        case 'frequency':
+          valA = formatFrequencyLabel(a.frequency);
+          valB = formatFrequencyLabel(b.frequency);
           break;
         case 'total':
           valA = a.total;
           valB = b.total;
           break;
-        case 'balance':
-          valA = a.total - (a.amountPaid || 0);
-          valB = b.total - (b.amountPaid || 0);
-          break;
         case 'status':
-          valA = a.status;
-          valB = b.status;
+          valA = a.recurringStatus || a.status;
+          valB = b.recurringStatus || b.status;
           break;
         default:
           valA = a.invoiceNumber;
@@ -197,22 +301,15 @@ const RecurringInvoiceList: React.FC<RecurringInvoiceListProps> = ({ invoices, c
       return sortDirection === 'asc' ? valA - valB : valB - valA;
     });
 
-    return filtered;
-  }, [invoices, clients, searchTerm, sortKey, sortDirection]);
+    return list;
+  }, [invoices, clients, services, activeTab, renewalFilter, searchTerm, sortKey, sortDirection]);
 
   const paginatedInvoices = useMemo(() => {
     const startIndex = (currentPage - 1) * itemsPerPage;
-    const endIndex = startIndex + itemsPerPage;
-    return filteredAndSortedInvoices.slice(startIndex, endIndex);
+    return filteredAndSortedInvoices.slice(startIndex, startIndex + itemsPerPage);
   }, [filteredAndSortedInvoices, currentPage, itemsPerPage]);
 
   const totalPages = Math.ceil(filteredAndSortedInvoices.length / itemsPerPage);
-
-  const handlePageChange = (page: number) => {
-    if (page > 0 && page <= totalPages) {
-      setCurrentPage(page);
-    }
-  };
 
   const handleSort = (key: SortKey) => {
     if (sortKey === key) {
@@ -223,186 +320,522 @@ const RecurringInvoiceList: React.FC<RecurringInvoiceListProps> = ({ invoices, c
     }
   };
 
-  const stats = useMemo(() => {
-    let totalValue = 0;
-    let activeCount = 0;
-    let draftCount = 0;
-    let overdueCount = 0;
-    const frequencies: Record<string, { count: number; total: number }> = {
-      daily: { count: 0, total: 0 },
-      weekly: { count: 0, total: 0 },
-      monthly: { count: 0, total: 0 },
-      quarterly: { count: 0, total: 0 },
-      biannually: { count: 0, total: 0 },
-      yearly: { count: 0, total: 0 }
-    };
+  const getSortIcon = (key: SortKey) => {
+    if (sortKey !== key) return <span className="text-gray-300 ml-1">↕</span>;
+    return sortDirection === 'asc' ? <span className="text-primary-600 ml-1 font-black">↑</span> : <span className="text-primary-600 ml-1 font-black">↓</span>;
+  };
 
-    invoices.forEach(inv => {
-      totalValue += inv.total;
-      if (inv.status === 'Paid' || inv.status === 'Sent') {
-        activeCount++;
-      } else if (inv.status === 'Draft') {
-        draftCount++;
-      } else {
-        overdueCount++;
-      }
+  const handleRenewClick = async (invoice: Invoice) => {
+    if (!onRenewInvoice) return;
+    setRenewingId(invoice.id);
+    try {
+      await onRenewInvoice(invoice);
+    } finally {
+      setRenewingId(null);
+    }
+  };
 
-      let rawFreq = inv.frequency?.toLowerCase() || 'monthly';
-      if (rawFreq === 'annually') rawFreq = 'yearly';
-      if (rawFreq === 'bi-annually') rawFreq = 'biannually';
+  const handleTogglePauseClick = async (invoice: Invoice) => {
+    if (!onTogglePause) return;
+    setPausingId(invoice.id);
+    try {
+      await onTogglePause(invoice);
+    } finally {
+      setPausingId(null);
+    }
+  };
 
-      if (frequencies[rawFreq]) {
-        frequencies[rawFreq].count++;
-        frequencies[rawFreq].total += inv.total;
-      } else {
-        frequencies[rawFreq] = { count: 1, total: inv.total };
-      }
-    });
-
-    const getFrequencyColor = (freqKey: string) => {
-      switch (freqKey) {
-        case 'daily': return '#14B8A6'; // Teal
-        case 'weekly': return '#10B981'; // Emerald
-        case 'monthly': return '#3B82F6'; // Blue
-        case 'quarterly': return '#F59E0B'; // Amber
-        case 'biannually': return '#EC4899'; // Pink
-        case 'yearly': return '#8B5CF6'; // Purple
-        default: return '#6B7280';
-      }
-    };
-
-    const frequencyData = Object.entries(frequencies).map(([key, data]) => ({
-      name: formatFrequencyLabel(key),
-      count: data.count,
-      value: data.total,
-      color: getFrequencyColor(key)
-    })).filter(d => d.count > 0);
-
-    return {
-      totalTemplates: invoices.length,
-      totalValue,
-      activeCount,
-      draftCount,
-      frequencyData
-    };
-  }, [invoices]);
+  const handleDelete = (e: React.MouseEvent, id: string, number: string) => {
+    e.stopPropagation();
+    if (onDeleteInvoice && window.confirm(`Are you sure you want to delete recurring template ${number}? This action cannot be undone.`)) {
+      onDeleteInvoice(id);
+    }
+  };
 
   return (
     <div className="space-y-6">
-      {/* Summary Cards */}
+      {/* Overview Cards */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-        <div className="bg-white p-5 rounded-2xl shadow-sm border border-gray-100">
-          <p className="text-3xs font-black text-gray-400 uppercase tracking-widest mb-1">Active Templates</p>
-          <h3 className="text-2xl font-black text-gray-800">{stats.totalTemplates}</h3>
-          <p className="text-4xs text-gray-400 mt-1">Total active subscriptions</p>
+        <div className="bg-white p-5 rounded-2xl shadow-sm border border-gray-100 flex flex-col justify-between">
+          <div className="flex items-center justify-between">
+            <p className="text-xs font-bold text-gray-500 uppercase tracking-wider">Due for Renewal</p>
+            <span className="p-2 rounded-xl bg-primary-50 text-primary-600">
+              <Icon name="repeat" className="w-5 h-5" />
+            </span>
+          </div>
+          <div className="mt-3">
+            <h3 className="text-2xl font-black text-gray-900">{stats.due30Count}</h3>
+            <p className="text-xs text-gray-500 mt-1">Invoices due within 30 days</p>
+          </div>
         </div>
-        <div className="bg-white p-5 rounded-2xl shadow-sm border border-gray-100">
-          <p className="text-3xs font-black text-primary-500 uppercase tracking-widest mb-1">Contract Value</p>
-          <h3 className="text-2xl font-black text-primary-600">₦{stats.totalValue.toLocaleString()}</h3>
-          <p className="text-4xs text-primary-400 mt-1">Total value per cycle</p>
+
+        <div className="bg-white p-5 rounded-2xl shadow-sm border border-gray-100 flex flex-col justify-between">
+          <div className="flex items-center justify-between">
+            <p className="text-xs font-bold text-red-600 uppercase tracking-wider">Overdue Renewals</p>
+            <span className="p-2 rounded-xl bg-red-50 text-red-600">
+              <Icon name="invoices" className="w-5 h-5" />
+            </span>
+          </div>
+          <div className="mt-3">
+            <h3 className="text-2xl font-black text-red-600">{stats.overdueCount}</h3>
+            <p className="text-xs text-red-500 mt-1">Require immediate renewal generation</p>
+          </div>
         </div>
-        <div className="bg-white p-5 rounded-2xl shadow-sm border border-gray-100">
-          <p className="text-3xs font-black text-green-600 uppercase tracking-widest mb-1">Sending Status</p>
-          <h3 className="text-2xl font-black text-green-700">{stats.activeCount}</h3>
-          <p className="text-4xs text-green-500 mt-1">Templates active / sending</p>
+
+        <div className="bg-white p-5 rounded-2xl shadow-sm border border-gray-100 flex flex-col justify-between">
+          <div className="flex items-center justify-between">
+            <p className="text-xs font-bold text-green-600 uppercase tracking-wider">Active Schedules</p>
+            <span className="p-2 rounded-xl bg-green-50 text-green-600">
+              <Icon name="services" className="w-5 h-5" />
+            </span>
+          </div>
+          <div className="mt-3">
+            <h3 className="text-2xl font-black text-green-700">{stats.activeCount}</h3>
+            <p className="text-xs text-green-600 mt-1">{stats.pausedCount} paused schedules</p>
+          </div>
         </div>
-        <div className="bg-white p-5 rounded-2xl shadow-sm border border-gray-100">
-          <p className="text-3xs font-black text-amber-500 uppercase tracking-widest mb-1">Draft Templates</p>
-          <h3 className="text-2xl font-black text-amber-600">{stats.draftCount}</h3>
-          <p className="text-4xs text-amber-400 mt-1">Awaiting setup</p>
+
+        <div className="bg-white p-5 rounded-2xl shadow-sm border border-gray-100 flex flex-col justify-between">
+          <div className="flex items-center justify-between">
+            <p className="text-xs font-bold text-blue-600 uppercase tracking-wider">Contract Value</p>
+            <span className="p-2 rounded-xl bg-blue-50 text-blue-600">
+              <Icon name="reports" className="w-5 h-5" />
+            </span>
+          </div>
+          <div className="mt-3">
+            <h3 className="text-2xl font-black text-blue-900">₦{stats.totalContractValue.toLocaleString()}</h3>
+            <p className="text-xs text-blue-600 mt-1">Total value per billing cycle</p>
+          </div>
         </div>
       </div>
 
-      {/* Frequency Distribution Chart */}
-      {invoices.length > 0 && stats.frequencyData.length > 0 && (
-        <div className="bg-white p-6 rounded-2xl border border-gray-100 shadow-sm grid grid-cols-1 md:grid-cols-12 gap-6 items-center">
-          <div className="md:col-span-4">
-            <h4 className="text-sm font-black text-gray-700 uppercase tracking-wider mb-2">Template Frequency Breakdown</h4>
-            <p className="text-xs text-gray-400 leading-relaxed mb-4">
-              Overview of contract value distributions per billing cadence. Helps project periodic revenue pipelines.
-            </p>
-            <div className="space-y-2">
-              {stats.frequencyData.map(freq => (
-                <div key={freq.name} className="flex justify-between items-center text-xs">
-                  <div className="flex items-center gap-2">
-                    <span className="w-2.5 h-2.5 rounded-full" style={{ backgroundColor: freq.color }}></span>
-                    <span className="font-bold text-gray-600">{freq.name} ({freq.count})</span>
-                  </div>
-                  <span className="font-black text-gray-800">₦{freq.value.toLocaleString()}</span>
-                </div>
-              ))}
+      {/* Main Module Card */}
+      <div className="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden">
+        {/* Module Navigation Header */}
+        <div className="p-6 border-b border-gray-100 bg-gray-50/50">
+          <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 mb-6">
+            <div>
+              <div className="flex items-center gap-2">
+                <span className="p-2 rounded-lg bg-primary-100 text-primary-700">
+                  <Icon name="repeat" className="w-6 h-6" />
+                </span>
+                <h2 className="text-xl font-bold text-gray-900">Recurring Invoices & Renewals</h2>
+              </div>
+              <p className="text-sm text-gray-500 mt-1">
+                Automated recurring invoice management. View upcoming renewal dates, sort by nearest due date, and trigger instant renewals.
+              </p>
             </div>
-          </div>
-          <div className="md:col-span-8 h-48">
-            <ResponsiveContainer width="100%" height="100%">
-              <BarChart data={stats.frequencyData} margin={{ top: 10, right: 10, left: -10, bottom: 0 }}>
-                <XAxis dataKey="name" stroke="#94A3B8" fontSize={10} tickLine={false} axisLine={false} />
-                <YAxis stroke="#94A3B8" fontSize={10} tickLine={false} axisLine={false} />
-                <Tooltip cursor={{ fill: 'rgba(241, 245, 249, 0.5)' }} formatter={(value: number) => [`₦${value.toLocaleString()}`, 'Total Value']} contentStyle={{ borderRadius: '8px', fontSize: '11px', fontWeight: 'bold' }} />
-                <Bar dataKey="value" name="Projected Cycle Income" radius={[8, 8, 0, 0]} maxBarSize={45}>
-                  {stats.frequencyData.map((entry, index) => (
-                    <Cell key={`cell-${index}`} fill={entry.color} />
-                  ))}
-                </Bar>
-              </BarChart>
-            </ResponsiveContainer>
-          </div>
-        </div>
-      )}
 
-      <div className="bg-white rounded-xl shadow-md overflow-hidden">
-        <div className="p-4 border-b flex flex-col md:flex-row justify-between items-center space-y-3 md:space-y-0 md:space-x-4">
-            <h2 className="text-xl font-semibold">Recurring Invoices</h2>
-            <div className="flex flex-col md:flex-row items-center space-y-3 md:space-y-0 md:space-x-4 w-full md:w-auto">
-                <div className="relative w-full md:w-64">
-                    <div className="absolute inset-y-0 left-0 flex items-center pl-3 pointer-events-none">
-                        <Icon name="search" className="w-5 h-5 text-gray-400" />
-                    </div>
-                    <input
-                        type="text"
-                        placeholder="Search templates..."
-                        value={searchTerm}
-                        onChange={(e) => { setSearchTerm(e.target.value); setCurrentPage(1); }}
-                        className="block w-full pl-10 pr-3 py-2 border border-gray-300 rounded-md leading-5 bg-white placeholder-gray-500 focus:outline-none focus:ring-primary-500 focus:border-primary-500 sm:text-sm"
-                    />
-                </div>
-            </div>
-        </div>
-        <RecurringInvoicesTable 
-          invoices={paginatedInvoices}
-          clients={clients}
-          onViewInvoice={onViewInvoice}
-          onEditInvoice={onEditInvoice}
-          onDeleteInvoice={onDeleteInvoice}
-          sortKey={sortKey}
-          sortDirection={sortDirection}
-          onSort={handleSort}
-        />
-        {totalPages > 1 && (
-          <div className="p-4 border-t flex justify-center items-center space-x-2">
+            {/* Dedicated Section Tabs */}
+            <div className="flex items-center bg-gray-200/60 p-1 rounded-xl self-start md:self-auto">
               <button
-                  onClick={() => handlePageChange(currentPage - 1)}
-                  disabled={currentPage === 1}
-                  className="px-3 py-1 bg-gray-200 text-gray-700 rounded-md hover:bg-gray-300 disabled:opacity-50 disabled:cursor-not-allowed"
+                onClick={() => { setActiveTab('renewals'); setCurrentPage(1); }}
+                className={`px-4 py-2 rounded-lg text-xs font-bold transition-all flex items-center gap-2 ${
+                  activeTab === 'renewals'
+                    ? 'bg-white text-primary-700 shadow-sm'
+                    : 'text-gray-600 hover:text-gray-900'
+                }`}
               >
-                  Previous
+                <span>Invoices Due for Renewal</span>
+                {stats.dueSoonCount > 0 && (
+                  <span className="px-1.5 py-0.5 text-[10px] font-black rounded-full bg-amber-500 text-white">
+                    {stats.dueSoonCount}
+                  </span>
+                )}
+              </button>
+
+              <button
+                onClick={() => { setActiveTab('templates'); setCurrentPage(1); }}
+                className={`px-4 py-2 rounded-lg text-xs font-bold transition-all flex items-center gap-2 ${
+                  activeTab === 'templates'
+                    ? 'bg-white text-primary-700 shadow-sm'
+                    : 'text-gray-600 hover:text-gray-900'
+                }`}
+              >
+                <span>All Recurring Templates</span>
+                <span className="px-1.5 py-0.5 text-[10px] font-black rounded-full bg-gray-300 text-gray-700">
+                  {stats.totalTemplates}
+                </span>
+              </button>
+            </div>
+          </div>
+
+          {/* Search Bar & Sub-Filters */}
+          <div className="flex flex-col md:flex-row justify-between items-stretch md:items-center gap-4">
+            {/* Search Input */}
+            <div className="relative flex-1 max-w-md">
+              <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+                <Icon name="search" className="w-4 h-4 text-gray-400" />
+              </div>
+              <input
+                type="text"
+                value={searchTerm}
+                onChange={(e) => { setSearchTerm(e.target.value); setCurrentPage(1); }}
+                placeholder="Search by client, invoice #, service name, frequency..."
+                className="block w-full pl-9 pr-3 py-2 border border-gray-200 rounded-xl text-xs bg-white focus:ring-2 focus:ring-primary-500 focus:border-primary-500 transition-all"
+              />
+              {searchTerm && (
+                <button
+                  onClick={() => setSearchTerm('')}
+                  className="absolute inset-y-0 right-0 pr-3 flex items-center text-xs text-gray-400 hover:text-gray-600"
+                >
+                  ✕
+                </button>
+              )}
+            </div>
+
+            {/* Filter Chips for Renewals */}
+            {activeTab === 'renewals' && (
+              <div className="flex items-center gap-1.5 overflow-x-auto pb-1 md:pb-0">
+                <button
+                  onClick={() => { setRenewalFilter('all'); setCurrentPage(1); }}
+                  className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-all whitespace-nowrap ${
+                    renewalFilter === 'all'
+                      ? 'bg-gray-900 text-white font-bold'
+                      : 'bg-white text-gray-600 hover:bg-gray-100 border border-gray-200'
+                  }`}
+                >
+                  All Schedules
+                </button>
+                <button
+                  onClick={() => { setRenewalFilter('due-soon'); setCurrentPage(1); }}
+                  className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-all whitespace-nowrap flex items-center gap-1 ${
+                    renewalFilter === 'due-soon'
+                      ? 'bg-amber-600 text-white font-bold'
+                      : 'bg-white text-amber-700 hover:bg-amber-50 border border-amber-200'
+                  }`}
+                >
+                  <span>Due Soon / Overdue</span>
+                  {stats.dueSoonCount > 0 && (
+                    <span className="px-1.5 py-0.2 rounded-full text-[10px] bg-amber-100 text-amber-900 font-bold">
+                      {stats.dueSoonCount}
+                    </span>
+                  )}
+                </button>
+                <button
+                  onClick={() => { setRenewalFilter('overdue'); setCurrentPage(1); }}
+                  className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-all whitespace-nowrap flex items-center gap-1 ${
+                    renewalFilter === 'overdue'
+                      ? 'bg-red-600 text-white font-bold'
+                      : 'bg-white text-red-700 hover:bg-red-50 border border-red-200'
+                  }`}
+                >
+                  <span>Overdue</span>
+                  {stats.overdueCount > 0 && (
+                    <span className="px-1.5 py-0.2 rounded-full text-[10px] bg-red-100 text-red-900 font-bold">
+                      {stats.overdueCount}
+                    </span>
+                  )}
+                </button>
+                <button
+                  onClick={() => { setRenewalFilter('due-30-days'); setCurrentPage(1); }}
+                  className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-all whitespace-nowrap ${
+                    renewalFilter === 'due-30-days'
+                      ? 'bg-blue-600 text-white font-bold'
+                      : 'bg-white text-blue-700 hover:bg-blue-50 border border-blue-200'
+                  }`}
+                >
+                  Next 30 Days
+                </button>
+                <button
+                  onClick={() => { setRenewalFilter('paused'); setCurrentPage(1); }}
+                  className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-all whitespace-nowrap ${
+                    renewalFilter === 'paused'
+                      ? 'bg-gray-700 text-white font-bold'
+                      : 'bg-white text-gray-600 hover:bg-gray-100 border border-gray-200'
+                  }`}
+                >
+                  Paused ({stats.pausedCount})
+                </button>
+              </div>
+            )}
+          </div>
+        </div>
+
+        {/* Section Banner */}
+        <div className="bg-primary-50/40 px-6 py-2.5 border-b border-primary-100/50 flex items-center justify-between text-xs">
+          <div className="flex items-center gap-2 text-primary-900 font-semibold">
+            <span className="w-2 h-2 rounded-full bg-primary-600 animate-pulse"></span>
+            <span>
+              {activeTab === 'renewals'
+                ? `Showing ${filteredAndSortedInvoices.length} recurring invoices due for renewal (sorted by nearest due date first)`
+                : `Showing ${filteredAndSortedInvoices.length} active recurring template contracts`}
+            </span>
+          </div>
+          <span className="text-gray-400 text-[11px]">
+            Sorted by: <strong className="text-gray-700">{sortKey === 'nextDueDate' ? 'Nearest Next Due Date' : sortKey}</strong>
+          </span>
+        </div>
+
+        {/* Table View */}
+        <div className="overflow-x-auto">
+          <table className="w-full text-xs text-left text-gray-600">
+            <thead className="text-[11px] font-bold text-gray-600 uppercase bg-gray-50 border-b border-gray-200">
+              <tr>
+                <th
+                  scope="col"
+                  className="px-6 py-3.5 cursor-pointer hover:bg-gray-100 transition-colors"
+                  onClick={() => handleSort('clientName')}
+                >
+                  Client Name {getSortIcon('clientName')}
+                </th>
+                <th
+                  scope="col"
+                  className="px-6 py-3.5 cursor-pointer hover:bg-gray-100 transition-colors"
+                  onClick={() => handleSort('invoiceNumber')}
+                >
+                  Invoice Number {getSortIcon('invoiceNumber')}
+                </th>
+                <th
+                  scope="col"
+                  className="px-6 py-3.5 cursor-pointer hover:bg-gray-100 transition-colors"
+                  onClick={() => handleSort('service')}
+                >
+                  Service {getSortIcon('service')}
+                </th>
+                <th
+                  scope="col"
+                  className="px-6 py-3.5 cursor-pointer hover:bg-gray-100 transition-colors"
+                  onClick={() => handleSort('nextDueDate')}
+                >
+                  Next Due Date {getSortIcon('nextDueDate')}
+                </th>
+                <th
+                  scope="col"
+                  className="px-6 py-3.5 cursor-pointer hover:bg-gray-100 transition-colors"
+                  onClick={() => handleSort('frequency')}
+                >
+                  Frequency {getSortIcon('frequency')}
+                </th>
+                <th
+                  scope="col"
+                  className="px-6 py-3.5 cursor-pointer hover:bg-gray-100 transition-colors"
+                  onClick={() => handleSort('total')}
+                >
+                  Amount {getSortIcon('total')}
+                </th>
+                <th
+                  scope="col"
+                  className="px-6 py-3.5 cursor-pointer hover:bg-gray-100 transition-colors"
+                  onClick={() => handleSort('status')}
+                >
+                  Status {getSortIcon('status')}
+                </th>
+                <th scope="col" className="px-6 py-3.5 text-right font-bold">
+                  Actions
+                </th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-gray-100 bg-white">
+              {paginatedInvoices.map((invoice) => {
+                const clientName = getClientNameById(invoice.clientId);
+                const serviceSummary = getInvoiceServicesSummary(invoice, services);
+                const dueDateStr = invoice.nextRecurrenceDate || invoice.nextDueDate || invoice.dueDate;
+                const urgency = getRenewalUrgency(dueDateStr);
+                const isPaused = invoice.recurringStatus === 'paused';
+
+                return (
+                  <tr
+                    key={invoice.id}
+                    className="hover:bg-gray-50/80 transition-colors group border-b border-gray-100"
+                  >
+                    {/* Client Name */}
+                    <td className="px-6 py-4 font-semibold text-gray-900 whitespace-nowrap">
+                      <div className="flex items-center gap-2.5">
+                        <div className="w-7 h-7 rounded-full bg-primary-100 text-primary-700 flex items-center justify-center font-bold text-xs uppercase flex-shrink-0">
+                          {clientName.slice(0, 2)}
+                        </div>
+                        <div>
+                          <div className="font-bold text-gray-900">{clientName}</div>
+                          {invoice.lastGeneratedDate && (
+                            <div className="text-[10px] text-gray-400 font-normal">
+                              Last renewed: {invoice.lastGeneratedDate}
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                    </td>
+
+                    {/* Invoice Number */}
+                    <td className="px-6 py-4 font-mono font-bold text-primary-700 whitespace-nowrap">
+                      <button
+                        onClick={() => onViewInvoice(invoice.id)}
+                        className="hover:underline hover:text-primary-900 text-left"
+                      >
+                        {invoice.invoiceNumber}
+                      </button>
+                    </td>
+
+                    {/* Service */}
+                    <td className="px-6 py-4 font-medium text-gray-700 max-w-xs truncate">
+                      <span className="inline-block truncate max-w-[200px]" title={serviceSummary}>
+                        {serviceSummary}
+                      </span>
+                    </td>
+
+                    {/* Next Due Date (Urgency Badge) */}
+                    <td className="px-6 py-4 whitespace-nowrap">
+                      <div className="flex flex-col gap-1">
+                        <span className="font-bold text-gray-900">{dueDateStr || 'N/A'}</span>
+                        <span
+                          className={`inline-flex items-center px-2 py-0.5 rounded-full text-[10px] border w-fit ${urgency.badgeClass}`}
+                        >
+                          {urgency.label}
+                        </span>
+                      </div>
+                    </td>
+
+                    {/* Frequency */}
+                    <td className="px-6 py-4 whitespace-nowrap">
+                      <span className="inline-flex items-center px-2.5 py-1 rounded-full text-xs font-bold bg-primary-50 text-primary-700 border border-primary-100">
+                        {formatFrequencyLabel(invoice.frequency)}
+                      </span>
+                    </td>
+
+                    {/* Total Amount */}
+                    <td className="px-6 py-4 font-bold text-gray-900 whitespace-nowrap">
+                      ₦{invoice.total.toLocaleString()}
+                    </td>
+
+                    {/* Status */}
+                    <td className="px-6 py-4 whitespace-nowrap">
+                      <div className="flex flex-col gap-1">
+                        <InvoiceStatusBadge status={invoice.status} />
+                        <span
+                          className={`text-[9px] font-black uppercase tracking-wider ${
+                            isPaused ? 'text-amber-600' : 'text-green-600'
+                          }`}
+                        >
+                          {isPaused ? '⏸️ Paused' : '⚡ Schedule Active'}
+                        </span>
+                      </div>
+                    </td>
+
+                    {/* Actions */}
+                    <td className="px-6 py-4 text-right whitespace-nowrap space-x-2">
+                      {/* Renew Now Action Button */}
+                      {onRenewInvoice && (
+                        <button
+                          onClick={() => handleRenewClick(invoice)}
+                          disabled={renewingId === invoice.id || isPaused}
+                          className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold transition-all shadow-sm ${
+                            isPaused
+                              ? 'bg-gray-100 text-gray-400 cursor-not-allowed border border-gray-200'
+                              : 'bg-primary-600 hover:bg-primary-700 text-white active:scale-95'
+                          }`}
+                          title={isPaused ? 'Resume schedule to generate renewal' : 'Generate current cycle renewal invoice'}
+                        >
+                          {renewingId === invoice.id ? (
+                            <span className="inline-block w-3 h-3 border-2 border-white border-t-transparent rounded-full animate-spin"></span>
+                          ) : (
+                            <span>⚡ Renew Now</span>
+                          )}
+                        </button>
+                      )}
+
+                      {/* Pause / Resume Button */}
+                      {onTogglePause && (
+                        <button
+                          onClick={() => handleTogglePauseClick(invoice)}
+                          disabled={pausingId === invoice.id}
+                          className="px-2.5 py-1.5 rounded-lg text-xs font-semibold border border-gray-200 bg-white text-gray-700 hover:bg-gray-50 transition-colors"
+                          title={isPaused ? 'Resume renewal schedule' : 'Pause automatic renewal schedule'}
+                        >
+                          {pausingId === invoice.id ? '...' : isPaused ? '▶️ Resume' : '⏸️ Pause'}
+                        </button>
+                      )}
+
+                      {/* View Action */}
+                      <button
+                        onClick={() => onViewInvoice(invoice.id)}
+                        className="p-1.5 text-gray-500 hover:text-primary-600 hover:bg-primary-50 rounded-lg transition-colors"
+                        title="View details"
+                      >
+                        👁️
+                      </button>
+
+                      {/* Edit Action */}
+                      {onEditInvoice && (
+                        <button
+                          onClick={() => onEditInvoice(invoice.id)}
+                          className="p-1.5 text-gray-500 hover:text-amber-600 hover:bg-amber-50 rounded-lg transition-colors"
+                          title="Edit template"
+                        >
+                          ✏️
+                        </button>
+                      )}
+
+                      {/* Delete Action */}
+                      {onDeleteInvoice && (
+                        <button
+                          onClick={(e) => handleDelete(e, invoice.id, invoice.invoiceNumber)}
+                          className="p-1.5 text-gray-500 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors"
+                          title="Delete template"
+                        >
+                          🗑️
+                        </button>
+                      )}
+                    </td>
+                  </tr>
+                );
+              })}
+
+              {paginatedInvoices.length === 0 && (
+                <tr>
+                  <td colSpan={8} className="text-center py-16 text-gray-500">
+                    <div className="flex flex-col items-center justify-center space-y-2">
+                      <span className="p-3 bg-gray-100 rounded-full text-gray-400">
+                        <Icon name="repeat" className="w-8 h-8" />
+                      </span>
+                      <p className="font-bold text-gray-700 text-sm">No recurring invoices found</p>
+                      <p className="text-xs text-gray-400 max-w-sm">
+                        {searchTerm || renewalFilter !== 'all'
+                          ? 'Try clearing your search query or changing filter settings.'
+                          : 'Create a recurring invoice template from the "Invoices" or "Create Invoice" tab to enable automated renewal tracking.'}
+                      </p>
+                    </div>
+                  </td>
+                </tr>
+              )}
+            </tbody>
+          </table>
+        </div>
+
+        {/* Pagination */}
+        {totalPages > 1 && (
+          <div className="p-4 border-t border-gray-100 flex justify-between items-center text-xs">
+            <span className="text-gray-500">
+              Showing page <strong>{currentPage}</strong> of <strong>{totalPages}</strong> ({filteredAndSortedInvoices.length} total)
+            </span>
+            <div className="flex items-center space-x-1">
+              <button
+                onClick={() => setCurrentPage(p => Math.max(1, p - 1))}
+                disabled={currentPage === 1}
+                className="px-3 py-1.5 bg-white border border-gray-200 text-gray-700 rounded-lg hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed font-medium"
+              >
+                Previous
               </button>
               {[...Array(totalPages)].map((_, index) => (
-                  <button
-                      key={index}
-                      onClick={() => handlePageChange(index + 1)}
-                      className={`px-3 py-1 rounded-md ${currentPage === index + 1 ? 'bg-primary-600 text-white' : 'bg-gray-200 text-gray-700 hover:bg-gray-300'}`}
-                  >
-                      {index + 1}
-                  </button>
+                <button
+                  key={index}
+                  onClick={() => setCurrentPage(index + 1)}
+                  className={`px-3 py-1.5 rounded-lg text-xs font-bold ${
+                    currentPage === index + 1
+                      ? 'bg-primary-600 text-white'
+                      : 'bg-white border border-gray-200 text-gray-700 hover:bg-gray-50'
+                  }`}
+                >
+                  {index + 1}
+                </button>
               ))}
               <button
-                  onClick={() => handlePageChange(currentPage + 1)}
-                  disabled={currentPage === totalPages}
-                  className="px-3 py-1 bg-gray-200 text-gray-700 rounded-md hover:bg-gray-300 disabled:opacity-50 disabled:cursor-not-allowed"
+                onClick={() => setCurrentPage(p => Math.min(totalPages, p + 1))}
+                disabled={currentPage === totalPages}
+                className="px-3 py-1.5 bg-white border border-gray-200 text-gray-700 rounded-lg hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed font-medium"
               >
-                  Next
+                Next
               </button>
+            </div>
           </div>
         )}
       </div>

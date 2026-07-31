@@ -586,6 +586,78 @@ export default function App() {
     finally { if (isMounted.current) setIsDataSyncing(false); }
   };
 
+  const handleRenewInvoiceAction = async (template: Invoice) => {
+    if (!activeTenantId) return;
+    setIsDataSyncing(true);
+    try {
+      const todayStr = new Date().toISOString().split('T')[0];
+      const currentDueDateStr = template.nextRecurrenceDate || template.nextDueDate || template.dueDate || todayStr;
+      const newNextRecurrenceDate = calculateNextRecurrenceDate(currentDueDateStr, template.frequency || 'monthly');
+
+      const newInvoiceData: Omit<Invoice, 'id' | 'invoiceNumber'> = {
+        companyId: activeTenantId,
+        clientId: template.clientId,
+        projectId: template.projectId,
+        issueDate: todayStr,
+        dueDate: currentDueDateStr,
+        total: template.total,
+        status: InvoiceStatus.Sent,
+        discount: template.discount,
+        amountPaid: 0,
+        paymentTerms: template.paymentTerms,
+        selectedBankAccountId: template.selectedBankAccountId,
+        manualBankName: template.manualBankName,
+        manualAccountName: template.manualAccountName,
+        manualAccountNumber: template.manualAccountNumber,
+        frequency: 'one-time',
+        isRecurringTemplate: false,
+        parentInvoiceId: template.id,
+        items: (template.items || []).map(it => ({
+          serviceId: it.serviceId || 'custom',
+          description: it.description || '',
+          quantity: it.quantity || 1,
+          price: it.price || 0,
+          discount: it.discount || 0,
+          directCost: it.directCost || 0
+        }))
+      };
+
+      const createdChild = await api.createInvoice(activeTenantId, newInvoiceData);
+      await api.updateInvoice({
+        ...template,
+        lastGeneratedDate: todayStr,
+        nextRecurrenceDate: newNextRecurrenceDate,
+        nextDueDate: newNextRecurrenceDate,
+        recurringStatus: 'active'
+      });
+      await triggerAuditLog('GENERATE_RENEWAL_INVOICE', createdChild.id, `Manually renewed recurring invoice ${createdChild.invoiceNumber} from template ${template.invoiceNumber}. Next due date set to ${newNextRecurrenceDate}`);
+      await forceSyncData(activeTenantId);
+      alert(`Renewal invoice ${createdChild.invoiceNumber} generated successfully! Next due date updated to ${newNextRecurrenceDate}.`);
+    } catch (e) {
+      alert(`Renewal Error: ${stringifyError(e)}`);
+    } finally {
+      if (isMounted.current) setIsDataSyncing(false);
+    }
+  };
+
+  const handleTogglePauseAction = async (template: Invoice) => {
+    if (!activeTenantId) return;
+    setIsDataSyncing(true);
+    try {
+      const newStatus = template.recurringStatus === 'paused' ? 'active' : 'paused';
+      await api.updateInvoice({
+        ...template,
+        recurringStatus: newStatus
+      });
+      await triggerAuditLog('TOGGLE_RECURRING_STATUS', template.id, `Set recurring schedule for ${template.invoiceNumber} to ${newStatus}`);
+      await forceSyncData(activeTenantId);
+    } catch (e) {
+      alert(`Update Error: ${stringifyError(e)}`);
+    } finally {
+      if (isMounted.current) setIsDataSyncing(false);
+    }
+  };
+
   const handleGenerateRenewal = async (clientId: string, item: any) => {
     try {
         const suggestion = await generateRenewalInvoiceSuggestion(clientId, [item]);
@@ -1092,7 +1164,18 @@ export default function App() {
           }
       }} />;
       case 'invoices': return <InvoiceList invoices={invoices} clients={clients} services={services} onViewInvoice={(id) => { setSelectedInvoiceId(id); navigateTo('invoice-detail'); }} onEditInvoice={handleEditInvoiceAction} onDeleteInvoice={handleDeleteInvoice} globalFilter={globalFilter} onFilterChange={handleGlobalFilterChange} />;
-      case 'recurring-invoices': return <RecurringInvoiceList invoices={invoices.filter(i => i.isRecurringTemplate)} clients={clients} onViewInvoice={(id) => { setSelectedInvoiceId(id); navigateTo('invoice-detail'); }} onEditInvoice={handleEditInvoiceAction} onDeleteInvoice={handleDeleteInvoice} />;
+      case 'recurring-invoices': return (
+        <RecurringInvoiceList 
+          invoices={invoices.filter(i => i.isRecurringTemplate || (i.frequency && i.frequency !== 'one-time' && !i.parentInvoiceId))} 
+          clients={clients} 
+          services={services}
+          onViewInvoice={(id) => { setSelectedInvoiceId(id); navigateTo('invoice-detail'); }} 
+          onEditInvoice={handleEditInvoiceAction} 
+          onDeleteInvoice={handleDeleteInvoice}
+          onRenewInvoice={handleRenewInvoiceAction}
+          onTogglePause={handleTogglePauseAction}
+        />
+      );
       case 'sent-receipts': return <SentReceiptsList invoices={invoices.filter(i => i.isReceiptSent)} clients={clients} userRole={userRole} onViewInvoice={(id) => { setSelectedInvoiceId(id); navigateTo('receipt-detail'); }} onEditInvoice={handleEditInvoiceAction} onDeleteReceipt={handleDeleteReceipt} />;
       case 'receipt-detail': {
         const inv = invoices.find(i => i.id === selectedInvoiceId);
