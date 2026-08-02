@@ -94,12 +94,11 @@ function getOrCreateMemoryState(companyId: string): WorkspaceState {
   const isCravebizInc = companyId === 'cravebiz-inc';
   const isActiveSuperAdminTenant = isSuperAdmin && (companyId === activeTenantId || !companyId);
   const defaultTier: SubscriptionTier = (isCravebizInc || isActiveSuperAdminTenant) ? 'Enterprise' : 'Free';
-  const limits = TIER_LIMITS[defaultTier] || TIER_LIMITS.Free;
 
   if (!subMemoryCache[companyId]) {
     subMemoryCache[companyId] = {
       tier: defaultTier,
-      aiUnits: limits.maxAiUnits,
+      aiUnits: 0, // Canonical value must be loaded from Supabase DB; never default to max plan units
       aiModeEnabled: true,
       invoiceCount: 0,
       receiptCount: 0,
@@ -108,6 +107,8 @@ function getOrCreateMemoryState(companyId: string): WorkspaceState {
       memberPermissions: {},
       invitedMembers: {}
     };
+    // Immediately trigger background sync from Supabase
+    syncSubscriptionInfoFromDb(companyId).catch(err => console.warn("Background sync error on state init:", err));
   }
   return subMemoryCache[companyId];
 }
@@ -271,7 +272,8 @@ export async function syncSubscriptionInfoFromDb(companyId: string): Promise<voi
   const state = getOrCreateMemoryState(companyId);
 
   let creditFetchedFromDb = false;
-  // 1. Fetch canonical AI Credits balance from Supabase database via backend API
+
+  // 1A. Fetch canonical AI Credits balance from Supabase database via backend API
   try {
     const headers = await api.getAuthHeaders(companyId);
     const creditsRes = await fetch('/api/ai/credits', { headers });
@@ -286,7 +288,27 @@ export async function syncSubscriptionInfoFromDb(companyId: string): Promise<voi
       }
     }
   } catch (creditErr) {
-    console.warn("Could not sync canonical AI credits from Supabase DB:", creditErr);
+    console.warn("Could not sync canonical AI credits from backend proxy:", creditErr);
+  }
+
+  // 1B. Fallback: Query Supabase user_ai_credits table directly if API call failed
+  if (!creditFetchedFromDb) {
+    try {
+      const cleanKey = companyId.replace(/^ws-(personal|legal|sales)-/, '').toLowerCase();
+      const { data: dbAiCredit } = await supabase
+        .from('user_ai_credits')
+        .select('remaining_credits, subscription_plan, total_credits')
+        .or(`user_id.eq.${cleanKey},tenant_id.eq.${companyId},tenant_id.eq.${cleanKey}`)
+        .maybeSingle();
+
+      if (dbAiCredit && typeof dbAiCredit.remaining_credits === 'number') {
+        state.aiUnits = dbAiCredit.remaining_credits;
+        if (dbAiCredit.subscription_plan) state.tier = dbAiCredit.subscription_plan;
+        creditFetchedFromDb = true;
+      }
+    } catch (err) {
+      console.warn("Could not query user_ai_credits directly from Supabase:", err);
+    }
   }
 
   // 2. Retrieve the latest invoice and receipt counts directly from Supabase
@@ -325,7 +347,7 @@ export async function syncSubscriptionInfoFromDb(companyId: string): Promise<voi
 
       if (content) {
         if (content.tier) state.tier = content.tier;
-        if (!creditFetchedFromDb && content.aiUnits !== undefined) state.aiUnits = content.aiUnits;
+        if (!creditFetchedFromDb && typeof content.aiUnits === 'number') state.aiUnits = content.aiUnits;
         if (content.aiModeEnabled !== undefined) state.aiModeEnabled = content.aiModeEnabled;
         if (content.lastFreeUnitsReset) state.lastFreeUnitsReset = content.lastFreeUnitsReset;
         if (content.purchasedAiUnits !== undefined) state.purchasedAiUnits = content.purchasedAiUnits;
@@ -341,7 +363,7 @@ export async function syncSubscriptionInfoFromDb(companyId: string): Promise<voi
     console.warn("Could not sync subscription from backend proxy, trying direct Supabase fallback:", err);
   }
 
-  // Direct Supabase query as fallback
+  // Direct Supabase query as fallback for settings
   try {
     const { data, error } = await supabase
       .from('generated_documents')
@@ -352,7 +374,7 @@ export async function syncSubscriptionInfoFromDb(companyId: string): Promise<voi
     if (!error && data && data.content) {
       const content = data.content as any;
       if (content.tier) state.tier = content.tier;
-      if (!creditFetchedFromDb && content.aiUnits !== undefined) state.aiUnits = content.aiUnits;
+      if (!creditFetchedFromDb && typeof content.aiUnits === 'number') state.aiUnits = content.aiUnits;
       if (content.aiModeEnabled !== undefined) state.aiModeEnabled = content.aiModeEnabled;
       if (content.lastFreeUnitsReset) state.lastFreeUnitsReset = content.lastFreeUnitsReset;
       if (content.purchasedAiUnits !== undefined) state.purchasedAiUnits = content.purchasedAiUnits;
@@ -599,9 +621,8 @@ export function setSubscriptionInfo(
 
   if (aiUnits !== undefined) {
     state.aiUnits = aiUnits;
-  } else {
-    state.aiUnits = limits.maxAiUnits;
   }
+  // If aiUnits is undefined, retain existing state.aiUnits (never auto-reset to limits.maxAiUnits)
 
   if (aiModeEnabled !== undefined) {
     state.aiModeEnabled = ((limits.aiAvailable || state.aiUnits > 0) && aiModeEnabled);

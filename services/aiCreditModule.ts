@@ -111,10 +111,13 @@ export async function getUserAiCredits(
 
   // 1. Try fetching from Supabase 'user_ai_credits' table
   try {
+    const cleanUser = (userId || "").toLowerCase().trim();
+    const cleanTenant = (tenantId || "").toLowerCase().trim();
     const { data, error } = await client
       .from("user_ai_credits")
       .select("*")
-      .eq("user_id", key)
+      .or(`user_id.eq.${key},tenant_id.eq.${tenantId},tenant_id.eq.${key}`)
+      .limit(1)
       .maybeSingle();
 
     if (data && !error) {
@@ -122,7 +125,7 @@ export async function getUserAiCredits(
         userId: data.user_id || key,
         tenantId: data.tenant_id || tenantId,
         totalCredits: parseInt(String(data.total_credits ?? 5), 10),
-        remainingCredits: parseInt(String(data.remaining_credits ?? 5), 10),
+        remainingCredits: parseInt(String(data.remaining_credits ?? 0), 10),
         creditsUsed: parseInt(String(data.credits_used ?? 0), 10),
         lastResetDate: data.last_reset_date || new Date().toISOString(),
         subscriptionPlan: data.subscription_plan || "Free",

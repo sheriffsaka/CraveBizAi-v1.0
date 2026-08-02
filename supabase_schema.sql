@@ -314,3 +314,41 @@ BEGIN
 END;
 $$;
 
+-- ==============================================================================
+-- 8. Create ai_usage & ai_usage_logs tables for AI feature audit tracking
+-- ==============================================================================
+CREATE TABLE IF NOT EXISTS public.ai_usage (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    user_id TEXT NOT NULL,
+    company_id TEXT NOT NULL,
+    feature_used TEXT NOT NULL,
+    credits_used INTEGER NOT NULL DEFAULT 1,
+    tokens_used INTEGER DEFAULT 0,
+    status TEXT NOT NULL DEFAULT 'Success',
+    created_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS idx_ai_usage_company_user ON public.ai_usage(company_id, user_id);
+
+ALTER TABLE public.ai_usage ENABLE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS "Allow anon all operations on ai_usage" ON public.ai_usage;
+CREATE POLICY "Allow anon all operations on ai_usage" ON public.ai_usage FOR ALL USING (true) WITH CHECK (true);
+GRANT ALL ON public.ai_usage TO anon, authenticated, service_role;
+
+CREATE TABLE IF NOT EXISTS public.ai_usage_logs (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    user_id TEXT NOT NULL,
+    company_id TEXT NOT NULL,
+    task_performed TEXT NOT NULL,
+    credits_used INTEGER NOT NULL DEFAULT 1,
+    tokens_used INTEGER DEFAULT 0,
+    timestamp TIMESTAMPTZ DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS idx_ai_usage_logs_company_user ON public.ai_usage_logs(company_id, user_id);
+
+ALTER TABLE public.ai_usage_logs ENABLE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS "Allow anon all operations on ai_usage_logs" ON public.ai_usage_logs;
+CREATE POLICY "Allow anon all operations on ai_usage_logs" ON public.ai_usage_logs FOR ALL USING (true) WITH CHECK (true);
+GRANT ALL ON public.ai_usage_logs TO anon, authenticated, service_role;
+

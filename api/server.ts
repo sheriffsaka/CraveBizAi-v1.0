@@ -1523,14 +1523,26 @@ app.post("/api/signify/signatories/:id/status", async (req, res) => {
 // ============================================================================
 
 // 7. Get Document AI Insights
-app.post("/api/signify/document-insights", verifyTenant, async (req, res) => {
+app.post("/api/signify/document-insights", verifyTenant, async (req: any, res) => {
     try {
         const { documentId, textContent } = req.body;
         if (!textContent) {
             return res.status(400).json({ error: "textContent is required to run AI Document Insights" });
         }
         
-        const prompt = `Analyze the following agreement text and return a high-fidelity JSON object containing:
+        const userId = req.user?.email || req.user?.id || req.tenantId;
+        const tenantId = req.tenantId;
+
+        const { result: insights, remainingCredits, totalCredits } = await executeAiRequestWithCredits({
+            userId,
+            tenantId,
+            featureUsed: "DocSignify AI Insights",
+            creditsRequired: 1,
+            userEmail: req.user?.email,
+            userName: req.user?.name,
+            token: req.token,
+            action: async () => {
+                const prompt = `Analyze the following agreement text and return a high-fidelity JSON object containing:
 1. "summary": A highly concise, 3-sentence executive legal summary.
 2. "keywords": 5 important legal keywords/terms found in the document.
 3. "classification": The classification of the agreement (e.g. Mutual NDA, Software License, Retainer, SLA).
@@ -1541,29 +1553,16 @@ Respond ONLY with a valid JSON string containing the fields. Do not include mark
 Document Content:
 ${textContent.substring(0, 8000)}`;
 
-        const responseText = await generateTextResponse(prompt, "gemini-3.6-flash", "You are an expert AI Legal Document Counsel. Return ONLY valid JSON.");
-        
-        // Strip markdown backticks if returned by the model
-        const cleanJson = responseText.replace(/```json/gi, "").replace(/```/g, "").trim();
-        const insights = JSON.parse(cleanJson);
-        
-        res.json({ success: true, insights });
-    } catch (err: any) {
-        console.error("DocSignify Document AI Insights error:", err);
-        // Fallback insights if API is offline or key missing
-        res.json({
-            success: true,
-            insights: {
-                summary: "This is an official commercial agreement outlining service boundaries, payment deliverables, and mutual non-disclosure obligations.",
-                keywords: ["Agreement", "Deliverables", "Signatures", "Obligations", "Liability"],
-                classification: "Service Level Agreement",
-                suggestedPositions: [
-                    { pageNum: 1, xPercent: 25, yPercent: 85, label: "Signatory 1 Signature", role: "main_signatory" },
-                    { pageNum: 1, xPercent: 65, yPercent: 85, label: "Signatory 2 Signature", role: "witness" }
-                ],
-                language: "English"
+                const responseText = await generateTextResponse(prompt, "gemini-3.6-flash", "You are an expert AI Legal Document Counsel. Return ONLY valid JSON.");
+                const cleanJson = responseText.replace(/```json/gi, "").replace(/```/g, "").trim();
+                return JSON.parse(cleanJson);
             }
         });
+        
+        res.json({ success: true, insights, newAiUnits: remainingCredits, remainingCredits, totalCredits });
+    } catch (err: any) {
+        console.error("DocSignify Document AI Insights error:", err);
+        res.status(400).json({ error: err.message || "Failed to generate AI document insights" });
     }
 });
 
