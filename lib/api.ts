@@ -1,6 +1,7 @@
 
 import { createClient } from '@supabase/supabase-js';
 import { Invoice, Client, Service, Company, User, InvoiceStatus, BankAccount, InvoiceItem, InvoiceFrequency, GeneratedDocument, StoredGeneratedDoc, DocumentBlock, SignatureInfo, DbDocument, DbDocumentSignatory, DbDocumentSignature, WorkspaceRole, AuditLog, Project } from '../types';
+import { TIER_LIMITS, SubscriptionTier } from '../services/subscriptionService';
 
 const SUPABASE_URL = 'https://dfqvgezjhudmnlyeycju.supabase.co';
 const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImRmcXZnZXpqaHVkbW5seWV5Y2p1Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjYyNDAyOTMsImV4cCI6MjA4MTgxNjI5M30.8VsHsDpychdSMJmrfnmkxi5ed8CygwErX3-RkVPXkUI';
@@ -2405,14 +2406,34 @@ class CraveBizApi {
         return await res.json();
       }
     } catch (e) {
-      console.warn("getInvoiceUsage API call failed, using local fallback:", e);
+      console.warn("getInvoiceUsage API call failed, querying Supabase directly:", e);
     }
-    return {
-      totalQuota: 10,
-      remainingCount: 10,
-      createdCount: 0,
-      resetDate: new Date(Date.now() + 30 * 86400000).toISOString()
-    };
+
+    const targetCompId = companyId || (typeof window !== 'undefined' ? localStorage.getItem('cravebiz_tenant') : '') || '';
+    const maxQuota = TIER_LIMITS[tier as SubscriptionTier]?.maxInvoices ?? 10;
+
+    try {
+      const { count, error } = await supabase
+        .from('invoices')
+        .select('*', { count: 'exact', head: true })
+        .eq('company_id', targetCompId);
+
+      const createdCount = (!error && typeof count === 'number') ? count : 0;
+      return {
+        totalQuota: maxQuota,
+        remainingCount: maxQuota === 999999 ? 999999 : Math.max(0, maxQuota - createdCount),
+        createdCount,
+        resetDate: new Date(Date.now() + 30 * 86400000).toISOString()
+      };
+    } catch (dbErr) {
+      console.warn("Direct Supabase query failed in getInvoiceUsage:", dbErr);
+      return {
+        totalQuota: maxQuota,
+        remainingCount: maxQuota === 999999 ? 999999 : maxQuota,
+        createdCount: 0,
+        resetDate: new Date(Date.now() + 30 * 86400000).toISOString()
+      };
+    }
   }
 
   async deductInvoiceQuota(companyId?: string, tier: string = 'Free') {
@@ -2437,14 +2458,35 @@ class CraveBizApi {
         return await res.json();
       }
     } catch (e) {
-      console.warn("getReceiptUsage API call failed, using local fallback:", e);
+      console.warn("getReceiptUsage API call failed, querying Supabase directly:", e);
     }
-    return {
-      totalQuota: 10,
-      remainingCount: 10,
-      createdCount: 0,
-      resetDate: new Date(Date.now() + 30 * 86400000).toISOString()
-    };
+
+    const targetCompId = companyId || (typeof window !== 'undefined' ? localStorage.getItem('cravebiz_tenant') : '') || '';
+    const maxQuota = TIER_LIMITS[tier as SubscriptionTier]?.maxReceipts ?? 10;
+
+    try {
+      const { count, error } = await supabase
+        .from('invoices')
+        .select('*', { count: 'exact', head: true })
+        .eq('company_id', targetCompId)
+        .eq('is_receipt_sent', true);
+
+      const createdCount = (!error && typeof count === 'number') ? count : 0;
+      return {
+        totalQuota: maxQuota,
+        remainingCount: maxQuota === 999999 ? 999999 : Math.max(0, maxQuota - createdCount),
+        createdCount,
+        resetDate: new Date(Date.now() + 30 * 86400000).toISOString()
+      };
+    } catch (dbErr) {
+      console.warn("Direct Supabase query failed in getReceiptUsage:", dbErr);
+      return {
+        totalQuota: maxQuota,
+        remainingCount: maxQuota === 999999 ? 999999 : maxQuota,
+        createdCount: 0,
+        resetDate: new Date(Date.now() + 30 * 86400000).toISOString()
+      };
+    }
   }
 
   async deductReceiptQuota(companyId?: string, tier: string = 'Free') {

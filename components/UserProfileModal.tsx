@@ -51,20 +51,16 @@ const UserProfileModal: React.FC<UserProfileModalProps> = ({ isOpen, onClose, us
           console.warn("Could not fetch AI credits in UserProfileModal:", cErr);
         }
 
-        // Fetch invoices and receipts count directly from Supabase
-        const { data, error } = await supabase
-          .from('generated_documents')
-          .select('content')
-          .eq('id', user.id)
-          .eq('document_type', 'cravebiz_user_usage')
-          .maybeSingle();
-
-        if (data && data.content) {
-          const content = data.content as any;
-          setInvoicesCreated(content.invoicesCreated ?? 0);
-          setReceiptsCreated(content.receiptsCreated ?? 0);
-        } else if (activeTenantId) {
-          const sub = getSubscriptionInfo(activeTenantId);
+        // Fetch invoices and receipts count directly from Supabase invoices table as canonical truth
+        if (activeTenantId) {
+          const [{ count: invCount }, { count: recCount }] = await Promise.all([
+            supabase.from('invoices').select('*', { count: 'exact', head: true }).eq('company_id', activeTenantId),
+            supabase.from('invoices').select('*', { count: 'exact', head: true }).eq('company_id', activeTenantId).eq('is_receipt_sent', true)
+          ]);
+          setInvoicesCreated(invCount ?? 0);
+          setReceiptsCreated(recCount ?? 0);
+        } else {
+          const sub = getSubscriptionInfo('');
           setInvoicesCreated(sub.invoiceCount || 0);
           setReceiptsCreated(sub.receiptCount || 0);
         }
@@ -82,6 +78,8 @@ const UserProfileModal: React.FC<UserProfileModalProps> = ({ isOpen, onClose, us
       if (activeTenantId) {
         const sub = getSubscriptionInfo(activeTenantId);
         setRemainingAiCredits(sub.aiUnits);
+        setInvoicesCreated(sub.invoiceCount || 0);
+        setReceiptsCreated(sub.receiptCount || 0);
       }
     };
     window.addEventListener('cravebiz_subscription_change', handleSubChange);

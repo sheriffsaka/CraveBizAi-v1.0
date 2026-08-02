@@ -142,7 +142,23 @@ export async function getUserInvoiceUsage(
     await saveUserInvoiceUsage(record, token).catch(e => console.warn("[getUserInvoiceUsage] Auto-reset save warning:", e));
   }
 
-  // Cache locally
+  // Always query live invoice count directly from Supabase invoices table as canonical truth
+  try {
+    const targetCompId = companyId || userId;
+    const { count: liveInvoiceCount, error: countErr } = await client
+      .from("invoices")
+      .select("*", { count: "exact", head: true })
+      .eq("company_id", targetCompId);
+
+    if (!countErr && typeof liveInvoiceCount === "number") {
+      record.createdCount = liveInvoiceCount;
+      record.remainingCount = Math.max(0, record.totalQuota - liveInvoiceCount);
+    }
+  } catch (liveErr) {
+    console.warn("[getUserInvoiceUsage] Live invoices query error:", liveErr);
+  }
+
+  // Cache locally for fallback reference
   const cache = readUsageCache(INVOICE_CACHE_FILE);
   cache[key] = record;
   writeUsageCache(INVOICE_CACHE_FILE, cache);
@@ -272,6 +288,23 @@ export async function getUserReceiptUsage(
     record.resetDate = getNextResetDate();
     record.updatedAt = new Date().toISOString();
     await saveUserReceiptUsage(record, token).catch(e => console.warn("[getUserReceiptUsage] Auto-reset save warning:", e));
+  }
+
+  // Always query live receipt count directly from Supabase invoices table as canonical truth
+  try {
+    const targetCompId = companyId || userId;
+    const { count: liveReceiptCount, error: countErr } = await client
+      .from("invoices")
+      .select("*", { count: "exact", head: true })
+      .eq("company_id", targetCompId)
+      .eq("is_receipt_sent", true);
+
+    if (!countErr && typeof liveReceiptCount === "number") {
+      record.createdCount = liveReceiptCount;
+      record.remainingCount = Math.max(0, record.totalQuota - liveReceiptCount);
+    }
+  } catch (liveErr) {
+    console.warn("[getUserReceiptUsage] Live receipts query error:", liveErr);
   }
 
   const cache = readUsageCache(RECEIPT_CACHE_FILE);

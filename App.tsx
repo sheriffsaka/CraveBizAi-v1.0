@@ -110,6 +110,45 @@ export default function App() {
   }, []);
 
   useEffect(() => {
+    if (!activeTenantId) return;
+
+    // Immediately sync latest subscription and usage state from Supabase
+    syncSubscriptionInfoFromDb(activeTenantId);
+
+    // Setup Supabase Realtime channel for live usage synchronization
+    const channel = supabase
+      .channel(`tenant-usage-${activeTenantId}`)
+      .on(
+        'postgres_changes',
+        {
+          event: '*',
+          schema: 'public',
+          table: 'invoices',
+          filter: `company_id=eq.${activeTenantId}`
+        },
+        () => {
+          syncSubscriptionInfoFromDb(activeTenantId);
+        }
+      )
+      .on(
+        'postgres_changes',
+        {
+          event: '*',
+          schema: 'public',
+          table: 'user_ai_credits'
+        },
+        () => {
+          syncSubscriptionInfoFromDb(activeTenantId);
+        }
+      )
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  }, [activeTenantId]);
+
+  useEffect(() => {
     const handleSubError = (e: Event) => {
       const customEvent = e as CustomEvent;
       if (customEvent.detail && customEvent.detail.message) {
