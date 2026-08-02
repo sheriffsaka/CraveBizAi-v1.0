@@ -971,3 +971,85 @@ export async function sendTeamInvitationEmailDirect(data: TeamInvitationEmailDat
         text: `You have been invited by ${data.inviterName} to join ${data.companyName} on CraveBiZ.\nAccept link: ${data.inviteUrl}`
     });
 }
+
+// ==========================================
+// 8. USER REGISTRATION WELCOME EMAILS
+// ==========================================
+
+export interface UserRegistrationEmailData {
+    recipientEmail: string;
+    recipientName?: string;
+    companyName?: string;
+    loginUrl?: string;
+}
+
+export async function sendUserRegistrationEmailDirect(data: UserRegistrationEmailData): Promise<{ success: boolean; message: string; messageId?: string }> {
+    const name = data.recipientName || 'Valued Partner';
+    const company = data.companyName ? `'${data.companyName}'` : 'your';
+    const subject = `Welcome to CraveBiZ AI - Account Registration Confirmed`;
+
+    const html = `
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>${subject}</title>
+</head>
+<body style="margin: 0; padding: 0; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; background-color: #f8fafc; color: #1e293b;">
+    <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="background-color: #f8fafc; padding: 40px 16px;">
+        <tr>
+            <td align="center">
+                <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="max-width: 600px; background-color: #ffffff; border-radius: 16px; border: 1px solid #e2e8f0; overflow: hidden; box-shadow: 0 4px 12px rgba(0, 0, 0, 0.05);">
+                    <tr>
+                        <td style="background-color: #1e1b4b; padding: 36px 32px; text-align: center; color: #ffffff;">
+                            <h1 style="margin: 0; font-size: 26px; font-weight: 800;">Welcome to CraveBiZ AI</h1>
+                            <p style="margin: 6px 0 0 0; font-size: 14px; color: #c7d2fe;">Your Intelligent Invoicing &amp; Business Workspace Platform</p>
+                        </td>
+                    </tr>
+                    <tr>
+                        <td style="padding: 36px 32px;">
+                            <p style="margin: 0 0 16px 0; font-size: 16px; font-weight: 700; color: #0f172a;">Hello ${name},</p>
+                            <p style="margin: 0 0 20px 0; font-size: 14px; color: #475569; line-height: 1.6;">
+                                We are thrilled to welcome you to CraveBiZ AI! Your account and ${company} workspace have been successfully created and configured.
+                            </p>
+                            <p style="margin: 0 0 24px 0; font-size: 14px; color: #475569; line-height: 1.6;">
+                                With CraveBiZ AI, you can generate smart invoices, process receipts, sign electronic documents via DocSignify, track direct &amp; indirect costs, and collaborate seamlessly with team members.
+                            </p>
+
+                            ${data.loginUrl ? `
+                            <div style="text-align: center; margin: 32px 0;">
+                                <a href="${data.loginUrl}" target="_blank" style="display: inline-block; background-color: #4f46e5; color: #ffffff; font-size: 15px; font-weight: 700; text-decoration: none; padding: 14px 32px; border-radius: 10px; box-shadow: 0 4px 12px rgba(79, 70, 229, 0.3);">
+                                    Access Your Workspace Now &rarr;
+                                </a>
+                            </div>
+                            ` : ''}
+
+                            <div style="background-color: #f1f5f9; border-left: 4px solid #4f46e5; padding: 16px; border-radius: 0 8px 8px 0; margin-top: 24px;">
+                                <div style="font-size: 12px; font-weight: 800; color: #1e1b4b; text-transform: uppercase; margin-bottom: 4px;">Account Overview:</div>
+                                <div style="font-size: 13px; color: #334155;">Registered Email: <strong>${data.recipientEmail}</strong></div>
+                                ${data.companyName ? `<div style="font-size: 13px; color: #334155;">Workspace Name: <strong>${data.companyName}</strong></div>` : ''}
+                            </div>
+                        </td>
+                    </tr>
+                    <tr>
+                        <td style="background-color: #f8fafc; padding: 20px; border-top: 1px solid #e2e8f0; text-align: center; font-size: 12px; color: #64748b;">
+                            Powered by CraveBiZ AWS SES Infrastructure &amp; Security
+                        </td>
+                    </tr>
+                </table>
+            </td>
+        </tr>
+    </table>
+</body>
+</html>
+    `;
+
+    return await sendEmailViaSES({
+        to: data.recipientEmail,
+        subject,
+        html,
+        text: `Welcome to CraveBiZ AI, ${name}!\nYour account (${data.recipientEmail}) and workspace have been registered successfully.`
+    });
+}
+

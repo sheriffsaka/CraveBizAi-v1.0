@@ -2405,6 +2405,29 @@ class CraveBizApi {
     }
   }
 
+  async sendUserRegistrationEmail(payload: {
+    recipientEmail: string;
+    recipientName?: string;
+    companyName?: string;
+    loginUrl?: string;
+  }): Promise<{ success: boolean; message: string }> {
+    try {
+      const response = await fetch('/api/auth/send-registration-welcome', {
+        method: 'POST',
+        headers: await this.getAuthHeaders(),
+        body: JSON.stringify(payload)
+      });
+      if (!response.ok) {
+        const errData = await response.json().catch(() => ({}));
+        throw new Error(errData.error || 'Failed to send user registration welcome email via AWS SES.');
+      }
+      return await response.json();
+    } catch (err: any) {
+      console.error("sendUserRegistrationEmail error:", err);
+      throw err;
+    }
+  }
+
   async sendAccountVerificationEmail(payload: {
     recipientEmail: string;
     recipientName?: string;

@@ -894,6 +894,16 @@ export default function App() {
                   } catch (pErr) {
                       console.error("Error creating profile record during registration:", pErr);
                   }
+
+                  // Dispatch registration welcome email via AWS SES
+                  api.sendUserRegistrationEmail({
+                      recipientEmail: email,
+                      recipientName: name,
+                      companyName: companyName,
+                      loginUrl: window.location.origin
+                  }).catch(emailErr => {
+                      console.warn("AWS SES welcome email dispatch notice:", emailErr);
+                  });
               }
               return true;
           }}

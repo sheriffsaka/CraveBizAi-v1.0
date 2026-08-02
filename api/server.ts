@@ -37,7 +37,8 @@ import {
     sendAccountVerificationEmailDirect,
     sendPasswordResetEmailDirect,
     sendDocumentNotificationEmailDirect,
-    sendTeamInvitationEmailDirect
+    sendTeamInvitationEmailDirect,
+    sendUserRegistrationEmailDirect
 } from "../services/emailService.js";
 
 const SUPABASE_URL = "https://dfqvgezjhudmnlyeycju.supabase.co";
@@ -1353,6 +1354,30 @@ app.post("/api/send-invoice-email", async (req, res) => {
     } catch (err: any) {
         console.error("Error in /api/send-invoice-email:", err);
         res.status(500).json({ error: err.message || "Failed to dispatch invoice email" });
+    }
+});
+
+// Dispatch User Registration Welcome Email via AWS SES
+app.post("/api/auth/send-registration-welcome", async (req, res) => {
+    try {
+        const { recipientEmail, recipientName, companyName, loginUrl } = req.body;
+        if (!recipientEmail) {
+            return res.status(400).json({ error: "recipientEmail is required" });
+        }
+        const result = await sendUserRegistrationEmailDirect({
+            recipientEmail,
+            recipientName,
+            companyName,
+            loginUrl: loginUrl || `${req.protocol}://${req.get('host')}`
+        });
+        if (result.success) {
+            res.json(result);
+        } else {
+            res.status(500).json({ error: result.message || "Failed to send registration welcome email" });
+        }
+    } catch (err: any) {
+        console.error("Error in /api/auth/send-registration-welcome:", err);
+        res.status(500).json({ error: err.message || "Internal server error sending registration welcome email" });
     }
 });
 
