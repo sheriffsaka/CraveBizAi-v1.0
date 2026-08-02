@@ -2398,6 +2398,76 @@ class CraveBizApi {
     }
   }
 
+  async sendAccountVerificationEmail(payload: {
+    recipientEmail: string;
+    recipientName?: string;
+    verificationCode: string;
+    verificationUrl?: string;
+  }): Promise<{ success: boolean; message: string }> {
+    try {
+      const response = await fetch('/api/auth/send-verification', {
+        method: 'POST',
+        headers: await this.getAuthHeaders(),
+        body: JSON.stringify(payload)
+      });
+      if (!response.ok) {
+        const errData = await response.json().catch(() => ({}));
+        throw new Error(errData.error || 'Failed to send account verification email via AWS SES.');
+      }
+      return await response.json();
+    } catch (err: any) {
+      console.error("sendAccountVerificationEmail error:", err);
+      throw err;
+    }
+  }
+
+  async sendPasswordResetEmail(payload: {
+    recipientEmail: string;
+    resetToken?: string;
+    resetUrl: string;
+  }): Promise<{ success: boolean; message: string }> {
+    try {
+      const response = await fetch('/api/auth/send-password-reset', {
+        method: 'POST',
+        headers: await this.getAuthHeaders(),
+        body: JSON.stringify(payload)
+      });
+      if (!response.ok) {
+        const errData = await response.json().catch(() => ({}));
+        throw new Error(errData.error || 'Failed to send password reset email via AWS SES.');
+      }
+      return await response.json();
+    } catch (err: any) {
+      console.error("sendPasswordResetEmail error:", err);
+      throw err;
+    }
+  }
+
+  async sendDocumentNotificationEmail(payload: {
+    recipientEmail: string;
+    recipientName?: string;
+    documentTitle: string;
+    notificationMessage: string;
+    actionUrl?: string;
+    senderName?: string;
+  }): Promise<{ success: boolean; message: string }> {
+    try {
+      const response = await fetch('/api/notifications/send-document-notification', {
+        method: 'POST',
+        headers: await this.getAuthHeaders(),
+        body: JSON.stringify(payload)
+      });
+      if (!response.ok) {
+        const errData = await response.json().catch(() => ({}));
+        throw new Error(errData.error || 'Failed to send document notification email via AWS SES.');
+      }
+      return await response.json();
+    } catch (err: any) {
+      console.error("sendDocumentNotificationEmail error:", err);
+      throw err;
+    }
+  }
+
   async getInvoiceUsage(companyId?: string, tier: string = 'Free') {
     try {
       const headers = await this.getAuthHeaders(companyId);
@@ -2504,4 +2574,5 @@ class CraveBizApi {
   }
 }
 export const api = CraveBizApi.getInstance();
+export const apiService = api;
 

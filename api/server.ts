@@ -30,7 +30,15 @@ import {
     deductReceiptQuota
 } from "../services/documentUsageModule.js";
 import { SignifyService } from "../services/signifyService.js";
-import { sendReceiptEmailDirect, sendInvoiceEmailDirect, sendSignifyEmailDirect } from "../services/emailService.js";
+import { 
+    sendReceiptEmailDirect, 
+    sendInvoiceEmailDirect, 
+    sendSignifyEmailDirect,
+    sendAccountVerificationEmailDirect,
+    sendPasswordResetEmailDirect,
+    sendDocumentNotificationEmailDirect,
+    sendTeamInvitationEmailDirect
+} from "../services/emailService.js";
 
 const SUPABASE_URL = "https://dfqvgezjhudmnlyeycju.supabase.co";
 const SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImRmcXZnZXpqaHVkbW5seWV5Y2p1Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjYyNDAyOTMsImV4cCI6MjA4MTgxNjI5M30.8VsHsDpychdSMJmrfnmkxi5ed8CygwErX3-RkVPXkUI";
@@ -1345,6 +1353,79 @@ app.post("/api/send-invoice-email", async (req, res) => {
     } catch (err: any) {
         console.error("Error in /api/send-invoice-email:", err);
         res.status(500).json({ error: err.message || "Failed to dispatch invoice email" });
+    }
+});
+
+// Dispatch Account Verification Email via AWS SES
+app.post("/api/auth/send-verification", async (req, res) => {
+    try {
+        const { recipientEmail, recipientName, verificationCode, verificationUrl } = req.body;
+        if (!recipientEmail || !verificationCode) {
+            return res.status(400).json({ error: "recipientEmail and verificationCode are required" });
+        }
+        const result = await sendAccountVerificationEmailDirect({
+            recipientEmail,
+            recipientName,
+            verificationCode,
+            verificationUrl
+        });
+        if (result.success) {
+            res.json(result);
+        } else {
+            res.status(500).json({ error: result.message || "Failed to send verification email" });
+        }
+    } catch (err: any) {
+        console.error("Error in /api/auth/send-verification:", err);
+        res.status(500).json({ error: err.message || "Internal server error sending verification email" });
+    }
+});
+
+// Dispatch Password Reset Email via AWS SES
+app.post("/api/auth/send-password-reset", async (req, res) => {
+    try {
+        const { recipientEmail, resetToken, resetUrl } = req.body;
+        if (!recipientEmail || !resetUrl) {
+            return res.status(400).json({ error: "recipientEmail and resetUrl are required" });
+        }
+        const result = await sendPasswordResetEmailDirect({
+            recipientEmail,
+            resetToken: resetToken || "token",
+            resetUrl
+        });
+        if (result.success) {
+            res.json(result);
+        } else {
+            res.status(500).json({ error: result.message || "Failed to send password reset email" });
+        }
+    } catch (err: any) {
+        console.error("Error in /api/auth/send-password-reset:", err);
+        res.status(500).json({ error: err.message || "Internal server error sending password reset email" });
+    }
+});
+
+// Dispatch Document Notification Email via AWS SES
+app.post("/api/notifications/send-document-notification", verifyTenant, async (req: any, res) => {
+    try {
+        const { recipientEmail, recipientName, documentTitle, notificationMessage, actionUrl, senderName } = req.body;
+        if (!recipientEmail || !documentTitle || !notificationMessage) {
+            return res.status(400).json({ error: "recipientEmail, documentTitle, and notificationMessage are required" });
+        }
+        const result = await sendDocumentNotificationEmailDirect({
+            recipientEmail,
+            recipientName: recipientName || "Valued User",
+            documentTitle,
+            notificationMessage,
+            actionUrl,
+            senderName
+        });
+        if (result.success) {
+            res.json(result);
+        } else {
+            res.status(500).json({ error: result.message || "Failed to send document notification email" });
+        }
+    } catch (err: any) {
+        console.error("Error in /api/notifications/send-document-notification:", err);
+        res.status(500).json({ error: err.message || "Internal server error sending document notification email" });
     }
 });
 
@@ -3166,7 +3247,7 @@ app.post("/api/subscription/settings", verifyTenant, async (req: any, res) => {
     }
 });
 
-// POST subscription team invitation (sends simulated email from inviter)
+// POST subscription team invitation (sends email via AWS SES)
 app.post("/api/subscription/invite", verifyTenant, async (req: any, res) => {
     try {
         const tenantId = req.tenantId;
@@ -3191,34 +3272,23 @@ app.post("/api/subscription/invite", verifyTenant, async (req: any, res) => {
 
         const secureLink = `${req.protocol}://${req.get('host')}?tenant=${tenantId}&invitedEmail=${encodeURIComponent(inviteEmail)}`;
 
-        const emailBody = `
-================================================================================
-📧 OUTGOING TEAM INVITATION EMAIL DISPATCHED via CRAVEBIZ SSL
-================================================================================
-Timestamp: ${new Date().toISOString()}
-Tenant/Workspace ID: ${tenantId}
-From: ${inviterName} <${inviterEmail}>
-To: ${inviteName || "Workspace Member"} <${inviteEmail}>
-Subject: Invitation to join the '${baseCompanyId.toUpperCase()}' Workspace on CraveBiZ
+        const result = await sendTeamInvitationEmailDirect({
+            inviteName: inviteName || "Workspace Member",
+            inviteEmail,
+            inviteRole: inviteRole || "Member",
+            inviterName,
+            inviterEmail,
+            companyName: baseCompanyId.toUpperCase(),
+            inviteUrl: secureLink
+        });
 
-Dear ${inviteName || "Workspace Member"},
+        console.log(`[Team Invite Email Dispatched] to ${inviteEmail} | Result:`, result);
 
-You have been invited by ${inviterName} (${inviterEmail}) to join the '${baseCompanyId.toUpperCase()}' Workspace as a ${inviteRole || "Member"}.
-
-With this access, you can collaborate on invoice generation, dynamic documents, signature workflows, and leverage workspace AI features.
-
-To accept this invitation and securely access the workspace, please click the link below:
-${secureLink}
-
-This invitation link is unique to your email address and secured via SSL.
-
-Best regards,
-The CraveBiZ Team
-================================================================================
-`;
-        console.log(emailBody);
-
-        res.json({ success: true, message: "Invitation email dispatched successfully." });
+        res.json({ 
+            success: true, 
+            message: "Invitation email dispatched successfully via AWS SES.",
+            messageId: result.messageId
+        });
     } catch (err: any) {
         console.error("Express POST /api/subscription/invite error:", err);
         res.status(500).json({ error: err.message || "Internal server error dispatching invitation email" });

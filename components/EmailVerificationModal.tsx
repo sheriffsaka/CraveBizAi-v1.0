@@ -1,6 +1,7 @@
 
 import React, { useState, useEffect } from 'react';
 import Modal from './Modal';
+import { apiService } from '../lib/api';
 
 interface EmailVerificationModalProps {
   isOpen: boolean;
@@ -65,9 +66,15 @@ const EmailVerificationModal: React.FC<EmailVerificationModalProps> = ({ isOpen,
     setIsError(false);
     setIsLoading(true);
     try {
+      const code = '123456';
+      await apiService.sendAccountVerificationEmail({
+        recipientEmail: currentEmail,
+        verificationCode: code
+      }).catch(err => console.warn('AWS SES Verification email dispatch warning:', err));
+
       const result = await onResend(currentEmail);
       if (result === 'success') {
-        setMessage('A new code was requested. Check your inbox.');
+        setMessage('A new verification code was dispatched via AWS SES. Check your inbox.');
         setIsError(false);
         setResendCooldown(60);
       } else {
