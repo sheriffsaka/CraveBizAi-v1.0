@@ -2626,7 +2626,7 @@ const ServiceRevenueContributionCard: React.FC<ServiceRevenueContributionCardPro
                     <span className="text-[10px] font-extrabold text-slate-400 uppercase tracking-wider bg-slate-800 px-2.5 py-0.5 rounded-full border border-slate-700">
                       Category: {selectedService.category}
                     </span>
-                    <span className={`text-[10px] font-black px-2.5 py-0.5 rounded-full uppercase tracking-wider ${selectedService.badge.bg} ${selectedService.badge.color}`}>
+                    <span className={`text-[10px] font-black px-2.5 py-0.5 rounded-full uppercase tracking-wider ${selectedService.badge.badge}`}>
                       {selectedService.badge.label}
                     </span>
                   </div>
