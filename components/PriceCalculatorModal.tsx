@@ -11,7 +11,7 @@ interface CostItem {
 interface PriceCalculatorModalProps {
   isOpen: boolean;
   onClose: () => void;
-  onApplyPrice: (price: number, directCost?: number) => void;
+  onApplyPrice: (price: number, directCost?: number, indirectCost?: number) => void;
   initialPrice?: number;
 }
 
@@ -94,7 +94,7 @@ const PriceCalculatorModal: React.FC<PriceCalculatorModalProps> = ({
   const calculatedSellingPrice = Math.round(totalCost + profitAmount);
 
   const handleApply = () => {
-    onApplyPrice(calculatedSellingPrice, totalDirectCosts);
+    onApplyPrice(calculatedSellingPrice, totalDirectCosts, totalIndirectCosts);
     onClose();
   };
 

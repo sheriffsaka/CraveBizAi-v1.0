@@ -158,6 +158,7 @@ const mapDbInvoiceToInvoice = (inv: any): Invoice => {
       price: Number(item.price),
       discount: Number(item.discount || 0),
       directCost: item.direct_cost !== undefined && item.direct_cost !== null ? Number(item.direct_cost) : Number(item.directCost || 0),
+      indirectCost: item.indirect_cost !== undefined && item.indirect_cost !== null ? Number(item.indirect_cost) : Number(item.indirectCost || 0),
       billingCycle: item.billing_cycle,
       periodStartDate: item.period_start_date,
       periodEndDate: item.period_end_date,
@@ -691,6 +692,7 @@ class CraveBizApi {
             price: item.price || 0,
             discount: item.discount || 0,
             direct_cost: Number(item.directCost || 0),
+            indirect_cost: Number(item.indirectCost || 0),
             billing_cycle: item.billingCycle,
             period_start_date: item.periodStartDate,
             period_end_date: item.periodEndDate,
@@ -809,6 +811,7 @@ class CraveBizApi {
             price: item.price || 0,
             discount: item.discount || 0,
             direct_cost: Number(item.directCost || 0),
+            indirect_cost: Number(item.indirectCost || 0),
             billing_cycle: item.billingCycle,
             period_start_date: item.periodStartDate,
             period_end_date: item.periodEndDate,
@@ -968,7 +971,8 @@ class CraveBizApi {
       category: s.category,
       description: s.description,
       price: Number(s.price),
-      directCost: s.direct_cost !== undefined && s.direct_cost !== null ? Number(s.direct_cost) : (s.directCost !== undefined && s.directCost !== null ? Number(s.directCost) : 0)
+      directCost: s.direct_cost !== undefined && s.direct_cost !== null ? Number(s.direct_cost) : (s.directCost !== undefined && s.directCost !== null ? Number(s.directCost) : 0),
+      indirectCost: s.indirect_cost !== undefined && s.indirect_cost !== null ? Number(s.indirect_cost) : (s.indirectCost !== undefined && s.indirectCost !== null ? Number(s.indirectCost) : 0)
     }));
   }
 
@@ -982,7 +986,8 @@ class CraveBizApi {
       category: service.category,
       description: service.description,
       price: service.price,
-      direct_cost: service.directCost ?? 0
+      direct_cost: service.directCost ?? 0,
+      indirect_cost: service.indirectCost ?? 0
     };
 
     const performInsert = async (currentPayload: any): Promise<any> => {
@@ -1009,7 +1014,8 @@ class CraveBizApi {
         category: service.category,
         description: service.description,
         price: service.price,
-        directCost: data?.direct_cost !== undefined && data?.direct_cost !== null ? Number(data.direct_cost) : Number(service.directCost || 0)
+        directCost: data?.direct_cost !== undefined && data?.direct_cost !== null ? Number(data.direct_cost) : Number(service.directCost || 0),
+        indirectCost: data?.indirect_cost !== undefined && data?.indirect_cost !== null ? Number(data.indirect_cost) : Number(service.indirectCost || 0)
       };
     } catch (dbErr) {
       console.warn("createService failed, saving fallback:", dbErr);
@@ -1024,7 +1030,8 @@ class CraveBizApi {
       category: service.category,
       description: service.description,
       price: service.price,
-      direct_cost: service.directCost ?? 0
+      direct_cost: service.directCost ?? 0,
+      indirect_cost: service.indirectCost ?? 0
     };
 
     const performUpdate = async (currentPayload: any): Promise<void> => {

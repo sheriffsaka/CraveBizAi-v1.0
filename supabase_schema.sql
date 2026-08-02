@@ -352,3 +352,9 @@ DROP POLICY IF EXISTS "Allow anon all operations on ai_usage_logs" ON public.ai_
 CREATE POLICY "Allow anon all operations on ai_usage_logs" ON public.ai_usage_logs FOR ALL USING (true) WITH CHECK (true);
 GRANT ALL ON public.ai_usage_logs TO anon, authenticated, service_role;
 
+-- Ensure direct_cost and indirect_cost columns exist in services and invoice_items tables
+ALTER TABLE IF EXISTS public.services ADD COLUMN IF NOT EXISTS direct_cost NUMERIC DEFAULT 0;
+ALTER TABLE IF EXISTS public.services ADD COLUMN IF NOT EXISTS indirect_cost NUMERIC DEFAULT 0;
+ALTER TABLE IF EXISTS public.invoice_items ADD COLUMN IF NOT EXISTS direct_cost NUMERIC DEFAULT 0;
+ALTER TABLE IF EXISTS public.invoice_items ADD COLUMN IF NOT EXISTS indirect_cost NUMERIC DEFAULT 0;
+

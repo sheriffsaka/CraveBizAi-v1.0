@@ -64,6 +64,7 @@ export interface Service {
   description: string;
   price: number;
   directCost?: number;
+  indirectCost?: number;
 }
 
 export interface InvoiceItem {
@@ -74,6 +75,7 @@ export interface InvoiceItem {
   quantity: number;
   price: number;
   directCost?: number;
+  indirectCost?: number;
   discount?: number;
   billingCycle?: BillingCycle;
   periodStartDate?: string;

@@ -43,7 +43,7 @@ const ServicesTable: React.FC<{
             <th scope="col" className="px-6 py-3 cursor-pointer" onClick={() => onSort('name')}>Service / Product Name{getSortIcon('name')}</th>
             <th scope="col" className="px-6 py-3 cursor-pointer" onClick={() => onSort('category')}>Category{getSortIcon('category')}</th>
             <th scope="col" className="px-6 py-3 cursor-pointer" onClick={() => onSort('price')}>Standard Price{getSortIcon('price')}</th>
-            <th scope="col" className="px-6 py-3">Direct Cost</th>
+            <th scope="col" className="px-6 py-3">Direct / Indirect Cost</th>
             <th scope="col" className="px-6 py-3 cursor-pointer" onClick={() => onSort('popularity')}>Sales Vol{getSortIcon('popularity')}</th>
             <th scope="col" className="px-6 py-3 text-right"><span className="sr-only">Actions</span></th>
           </tr>
@@ -51,7 +51,9 @@ const ServicesTable: React.FC<{
         <tbody>
           {services.map((service) => {
             const dc = service.directCost || 0;
-            const marginPct = service.price > 0 ? Math.round(((service.price - dc) / service.price) * 100) : 0;
+            const ic = service.indirectCost || 0;
+            const totalCost = dc + ic;
+            const marginPct = service.price > 0 ? Math.round(((service.price - totalCost) / service.price) * 100) : 0;
             let badgeClass = "bg-rose-50 text-rose-700 border-rose-200";
             if (marginPct >= 40) badgeClass = "bg-emerald-50 text-emerald-700 border-emerald-200";
             else if (marginPct >= 20) badgeClass = "bg-amber-50 text-amber-700 border-amber-200";
@@ -73,8 +75,9 @@ const ServicesTable: React.FC<{
                   </span>
                 </td>
                 <td className="px-6 py-4 font-bold text-gray-900">₦{service.price.toLocaleString()}</td>
-                <td className="px-6 py-4 font-medium text-gray-600">
-                  <div>₦{dc.toLocaleString()}</div>
+                <td className="px-6 py-4 font-medium text-gray-600 text-xs">
+                  <div><span className="text-gray-400">Direct:</span> ₦{dc.toLocaleString()}</div>
+                  {ic > 0 && <div className="text-gray-500 text-[11px]"><span className="text-gray-400">Indirect:</span> ₦{ic.toLocaleString()}</div>}
                   {service.price > 0 && (
                     <span className={`inline-block text-[9px] font-extrabold px-1.5 py-0.5 rounded border mt-0.5 ${badgeClass}`}>
                       {marginPct}% margin

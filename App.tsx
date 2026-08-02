@@ -298,7 +298,8 @@ export default function App() {
                   quantity: it.quantity || 1,
                   price: it.price || 0,
                   discount: it.discount || 0,
-                  directCost: it.directCost || 0
+                  directCost: it.directCost || 0,
+                  indirectCost: it.indirectCost || 0
                 }))
               };
 
@@ -657,7 +658,8 @@ export default function App() {
           quantity: it.quantity || 1,
           price: it.price || 0,
           discount: it.discount || 0,
-          directCost: it.directCost || 0
+          directCost: it.directCost || 0,
+          indirectCost: it.indirectCost || 0
         }))
       };
 

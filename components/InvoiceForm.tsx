@@ -139,6 +139,7 @@ const InvoiceForm: React.FC<InvoiceFormProps> = ({ initialInvoice, clients, serv
             newItems[index].price = s.price;
             newItems[index].description = s.description || s.name;
             newItems[index].directCost = s.directCost || 0;
+            newItems[index].indirectCost = s.indirectCost || 0;
         }
     }
     setItems(newItems);
@@ -151,6 +152,7 @@ const InvoiceForm: React.FC<InvoiceFormProps> = ({ initialInvoice, clients, serv
       newItems[index].price = selectedService.price;
       newItems[index].description = selectedService.description || selectedService.name;
       newItems[index].directCost = selectedService.directCost || 0;
+      newItems[index].indirectCost = selectedService.indirectCost || 0;
       if (!newItems[index].quantity || newItems[index].quantity <= 0) {
         newItems[index].quantity = 1;
       }
@@ -175,6 +177,7 @@ const InvoiceForm: React.FC<InvoiceFormProps> = ({ initialInvoice, clients, serv
         price: 0,
         discount: 0,
         directCost: 0,
+        indirectCost: 0,
         billingCycle: undefined,
         autoRenew: false,
         renewalReminderDaysBefore: 7
@@ -424,26 +427,30 @@ const InvoiceForm: React.FC<InvoiceFormProps> = ({ initialInvoice, clients, serv
                         </div>
                         <textarea value={item.description} onChange={e => handleItemChange(index, 'description', e.target.value)} className="w-full p-4 border rounded-lg text-sm bg-gray-50 text-gray-900 outline-none focus:ring-2 focus:ring-primary-500 font-medium" rows={2}></textarea>
                     </div>
-                    <div className="grid grid-cols-1 md:grid-cols-5 gap-4">
+                    <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-6 gap-3">
                         <div>
                             <label className="block text-[10px] font-black text-gray-400 uppercase mb-1">Qty</label>
-                            <input type="number" value={item.quantity} onChange={e => handleItemChange(index, 'quantity', Number(e.target.value))} className="w-full p-3.5 border rounded-lg bg-gray-50 text-gray-900 font-black" />
+                            <input type="number" value={item.quantity} onChange={e => handleItemChange(index, 'quantity', Number(e.target.value))} className="w-full p-3 border rounded-lg bg-gray-50 text-gray-900 font-black text-sm" />
                         </div>
                         <div>
                             <label className="block text-[10px] font-black text-gray-400 uppercase mb-1">Rate (₦)</label>
-                            <input type="number" value={item.price} onChange={e => handleItemChange(index, 'price', Number(e.target.value))} className="w-full p-3.5 border rounded-lg bg-gray-50 text-gray-900 font-black" />
+                            <input type="number" value={item.price} onChange={e => handleItemChange(index, 'price', Number(e.target.value))} className="w-full p-3 border rounded-lg bg-gray-50 text-gray-900 font-black text-sm" />
                         </div>
                         <div>
                             <label className="block text-[10px] font-black text-gray-400 uppercase mb-1">Direct Cost (₦)</label>
-                            <input type="number" value={item.directCost === undefined || item.directCost === 0 ? '' : item.directCost} onChange={e => handleItemChange(index, 'directCost', Number(e.target.value))} placeholder="0" className="w-full p-3.5 border rounded-lg bg-gray-50 text-gray-900 font-black" />
+                            <input type="number" value={item.directCost === undefined || item.directCost === 0 ? '' : item.directCost} onChange={e => handleItemChange(index, 'directCost', Number(e.target.value))} placeholder="0" className="w-full p-3 border rounded-lg bg-gray-50 text-gray-900 font-black text-sm" />
+                        </div>
+                        <div>
+                            <label className="block text-[10px] font-black text-gray-400 uppercase mb-1">Indirect Cost (₦)</label>
+                            <input type="number" value={item.indirectCost === undefined || item.indirectCost === 0 ? '' : item.indirectCost} onChange={e => handleItemChange(index, 'indirectCost', Number(e.target.value))} placeholder="0" className="w-full p-3 border rounded-lg bg-gray-50 text-gray-900 font-black text-sm" />
                         </div>
                         <div>
                             <label className="block text-[10px] font-black text-gray-400 uppercase mb-1">Discount (₦)</label>
-                            <input type="number" value={item.discount || 0} onChange={e => handleItemChange(index, 'discount', Number(e.target.value))} className="w-full p-3.5 border rounded-lg bg-gray-50 text-gray-900 font-black" />
+                            <input type="number" value={item.discount || 0} onChange={e => handleItemChange(index, 'discount', Number(e.target.value))} className="w-full p-3 border rounded-lg bg-gray-50 text-gray-900 font-black text-sm" />
                         </div>
                         <div>
                             <label className="block text-[10px] font-black text-gray-400 uppercase mb-1">Amount</label>
-                            <div className="w-full p-3.5 bg-gray-100 rounded-lg font-black text-gray-800">₦{((item.price * item.quantity) - (item.discount || 0)).toLocaleString()}</div>
+                            <div className="w-full p-3 bg-gray-100 rounded-lg font-black text-gray-800 text-sm">₦{((item.price * item.quantity) - (item.discount || 0)).toLocaleString()}</div>
                         </div>
                     </div>
 
