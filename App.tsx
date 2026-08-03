@@ -51,13 +51,37 @@ const stringifyError = (err: any): string => {
 
 export default function App() {
   const [publicDocId, setPublicDocId] = useState<string | null>(() => {
-    return new URLSearchParams(window.location.search).get('docId');
+    const searchParams = new URLSearchParams(window.location.search);
+    let id = searchParams.get('docId');
+    if (!id && window.location.hash) {
+      const hashQuery = window.location.hash.includes('?') 
+        ? window.location.hash.split('?')[1] 
+        : window.location.hash.replace(/^#\/?/, '');
+      id = new URLSearchParams(hashQuery).get('docId');
+    }
+    return id;
   });
   const [publicRecipient, setPublicRecipient] = useState<string | null>(() => {
-    return new URLSearchParams(window.location.search).get('recipient');
+    const searchParams = new URLSearchParams(window.location.search);
+    let r = searchParams.get('recipient');
+    if (!r && window.location.hash) {
+      const hashQuery = window.location.hash.includes('?') 
+        ? window.location.hash.split('?')[1] 
+        : window.location.hash.replace(/^#\/?/, '');
+      r = new URLSearchParams(hashQuery).get('recipient');
+    }
+    return r;
   });
   const [publicToken, setPublicToken] = useState<string | null>(() => {
-    return new URLSearchParams(window.location.search).get('token');
+    const searchParams = new URLSearchParams(window.location.search);
+    let tok = searchParams.get('token');
+    if (!tok && window.location.hash) {
+      const hashQuery = window.location.hash.includes('?') 
+        ? window.location.hash.split('?')[1] 
+        : window.location.hash.replace(/^#\/?/, '');
+      tok = new URLSearchParams(hashQuery).get('token');
+    }
+    return tok;
   });
 
   const [activePage, setActivePage] = useState<Page>('dashboard');

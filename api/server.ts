@@ -1526,6 +1526,20 @@ app.post("/api/signify/signatories/:id/status", async (req, res) => {
                         type: 'owner_sign_request'
                     }).catch(e => console.warn('Owner sign request email failed:', e));
                 }
+            } else if (result.document.status === 'awaiting_signer' || result.document.status === 'partially_signed') {
+                // Send invitation emails to pending counterparties
+                const pendingSigs = (details.signatories || []).filter(s => s.status === 'pending');
+                for (const sig of pendingSigs) {
+                    if (sig.email) {
+                        sendSignifyEmailDirect({
+                            recipientEmail: sig.email,
+                            recipientName: sig.name,
+                            documentTitle: result.document.title,
+                            secureLink: `${baseUrl}/?token=${sig.token}`,
+                            type: 'invitation'
+                        }).catch(e => console.warn('Signer invitation email dispatch failed:', e));
+                    }
+                }
             }
         } catch (notifErr) {
             console.warn('Status change notification error:', notifErr);

@@ -336,14 +336,14 @@ export default function DocSignify({ company, user, prefillProject, prefillClien
       };
 
       const mappedSigs = signers.map(s => {
-        const isMyself = s.id === 'myself';
+        const isMyself = s.id === 'myself' || (user?.email && s.email?.toLowerCase() === user.email.toLowerCase());
         const dbId = isMyself ? (user?.id || 'owner_id') : ('signer_' + Math.floor(Math.random() * 899999 + 100000));
         idMapping[s.id] = dbId;
         return {
           id: dbId,
           name: s.name,
           email: s.email || `${s.name.toLowerCase().replace(/\s/g, '')}@cravebiz.com`,
-          role: (s.signatoryType === 'Main' ? 'main_signatory' : 'witness') as DbDocumentSignatory['role']
+          role: (isMyself ? 'owner' : (s.signatoryType === 'Main' ? 'main_signatory' : 'witness')) as DbDocumentSignatory['role']
         };
       });
 

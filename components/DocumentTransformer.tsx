@@ -1210,13 +1210,14 @@ const DocumentTransformer: React.FC<DocumentTransformerProps> = ({
             };
 
             const mappedSigs = signatories.map(s => {
-                const dbId = generateUUID();
+                const isOwner = s.id === 'creator' || s.id === 'owner' || s.id === 'myself' || (s as any).role === 'owner' || (user?.email && s.email?.toLowerCase() === user.email.toLowerCase());
+                const dbId = isOwner ? (user?.id || generateUUID()) : generateUUID();
                 idMapping[s.id] = dbId;
                 return {
                     id: dbId,
                     name: s.name,
                     email: s.email || `${s.name.toLowerCase().replace(/\s/g, '')}@cravebiz-secure.com`,
-                    role: (s.signatoryType === 'Main' ? 'main_signatory' : 'witness') as DbDocumentSignatory['role']
+                    role: (isOwner ? 'owner' : (s.signatoryType === 'Main' ? 'main_signatory' : 'witness')) as DbDocumentSignatory['role']
                 };
             });
 

@@ -86,6 +86,25 @@ export default function PublicSigningPortal({ docId, token, prefilledRecipient, 
                 if (token) {
                     const data = await api.getDocSignifyDocumentByToken(token);
                     if (data) {
+                        // Check if document is revoked or cancelled
+                        if (data.document?.status === 'revoked' as any || data.document?.status === 'cancelled' as any) {
+                            setError("This document invitation link has been revoked or cancelled by the sender.");
+                            setLoading(false);
+                            return;
+                        }
+
+                        // Check expiration if expiryDays is configured in content_json
+                        const expiryDays = data.document?.content_json?.security?.expiryDays || data.document?.content_json?.expiryDays;
+                        if (expiryDays && typeof expiryDays === 'number' && expiryDays > 0 && data.document?.created_at) {
+                            const createdAtMs = new Date(data.document.created_at).getTime();
+                            const expiryMs = createdAtMs + (expiryDays * 24 * 60 * 60 * 1000);
+                            if (Date.now() > expiryMs) {
+                                setError("This secure signing link has expired in accordance with document security policy.");
+                                setLoading(false);
+                                return;
+                            }
+                        }
+
                         setDbDoc(data.document);
                         setDbSignatory(data.signatory);
                         setDbSignatories(data.signatories);
@@ -687,7 +706,7 @@ export default function PublicSigningPortal({ docId, token, prefilledRecipient, 
         );
     }
 
-    if (error || !document) {
+    if (error || (!dbDoc && !document)) {
         return (
             <div className="min-h-screen flex flex-col items-center justify-center bg-gray-50 p-4">
                 <div className="bg-white p-10 rounded-xl shadow-xl border border-gray-100 max-w-md w-full text-center space-y-6">
