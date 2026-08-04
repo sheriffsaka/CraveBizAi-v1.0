@@ -31,45 +31,15 @@ const ServiceFormModal: React.FC<ServiceFormModalProps> = ({
   const [isCalculatorOpen, setIsCalculatorOpen] = useState(false);
   const [isGeneratingDescription, setIsGeneratingDescription] = useState(false);
 
-  // Persistence logic for drafts
-  useEffect(() => {
-    if (!service && isOpen) {
-      const savedDraft = localStorage.getItem('cravebiz_service_draft');
-      if (savedDraft) {
-        try {
-          const draft = JSON.parse(savedDraft);
-          if (draft.name) setName(draft.name);
-          if (draft.packageName) setPackageName(draft.packageName);
-          if (draft.category) setCategory(draft.category);
-          if (draft.price) setPrice(draft.price);
-          if (draft.directCost) setDirectCost(draft.directCost);
-          if (draft.indirectCost) setIndirectCost(draft.indirectCost);
-          if (draft.description) setDescription(draft.description);
-        } catch (e) {
-          console.error("Service draft recovery failed", e);
-        }
-      }
-    }
-  }, [service, isOpen]);
-
-  useEffect(() => {
-    if (!service && isOpen) {
-      const draft = { name, packageName, category, price, directCost, indirectCost, description };
-      localStorage.setItem('cravebiz_service_draft', JSON.stringify(draft));
-    }
-  }, [name, packageName, category, price, directCost, indirectCost, description, service, isOpen]);
-
-  const clearDraft = () => localStorage.removeItem('cravebiz_service_draft');
-
   // Populate form fields if a service is being edited
   useEffect(() => {
     if (service) {
       setName(service.name || '');
       setPackageName(service.packageName || '');
       setCategory(service.category || '');
-      setPrice(service.price || 0);
-      setDirectCost(service.directCost || 0);
-      setIndirectCost(service.indirectCost || 0);
+      setPrice(service.price !== undefined && service.price !== null ? service.price : 0);
+      setDirectCost(service.directCost !== undefined && service.directCost !== null ? service.directCost : 0);
+      setIndirectCost(service.indirectCost !== undefined && service.indirectCost !== null ? service.indirectCost : 0);
       setDescription(service.description || '');
     } else {
       // Clear form if adding a new service
@@ -142,7 +112,6 @@ Ensure the description clearly outlines the core deliverables, client benefits, 
         description
       });
     }
-    clearDraft();
     onClose(); // Close modal after saving
   };
 
