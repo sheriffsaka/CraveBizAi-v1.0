@@ -129,7 +129,7 @@ export const NotificationBell: React.FC<NotificationBellProps> = ({ userEmail, t
             </button>
 
             {isOpen && (
-                <div className="absolute right-0 mt-2 w-80 sm:w-96 bg-white rounded-2xl shadow-2xl border border-gray-100 z-50 overflow-hidden animate-in fade-in slide-in-from-top-2">
+                <div className="fixed inset-x-3 top-16 sm:absolute sm:inset-auto sm:right-0 sm:mt-2 w-auto sm:w-96 max-w-md bg-white rounded-2xl shadow-2xl border border-gray-100 z-50 overflow-hidden animate-in fade-in slide-in-from-top-2">
                     {/* Header */}
                     <div className="p-4 border-b border-gray-100 bg-gray-50/80 flex items-center justify-between">
                         <div className="flex items-center space-x-2">
