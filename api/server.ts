@@ -42,10 +42,16 @@ import {
 } from "../services/emailService.js";
 import {
     getInAppNotificationsStore,
+    getInAppNotificationsStoreAsync,
     createInAppNotificationRecord,
+    createInAppNotificationRecordAsync,
     markInAppNotificationReadStore,
+    markInAppNotificationReadStoreAsync,
     clearInAppNotificationsStore,
-    broadcastSystemAnnouncementStore
+    clearInAppNotificationsStoreAsync,
+    deleteInAppNotificationStoreAsync,
+    broadcastSystemAnnouncementStore,
+    broadcastSystemAnnouncementStoreAsync
 } from "../services/inAppNotificationModule.js";
 
 const SUPABASE_URL = "https://dfqvgezjhudmnlyeycju.supabase.co";
@@ -1466,13 +1472,14 @@ app.post("/api/notifications/send-document-notification", verifyTenant, async (r
 // ==========================================
 
 // Fetch notifications
-app.get("/api/notifications", (req: any, res) => {
+app.get("/api/notifications", async (req: any, res) => {
     try {
         const tenantId = req.query.tenantId as string;
         const recipientEmail = req.query.recipientEmail as string;
+        const userId = req.query.userId as string;
         const unreadOnly = req.query.unreadOnly === 'true';
 
-        const notifs = getInAppNotificationsStore({ tenantId, recipientEmail, unreadOnly });
+        const notifs = await getInAppNotificationsStoreAsync({ tenantId, recipientEmail, userId, unreadOnly });
         res.json(notifs);
     } catch (err: any) {
         console.error("Error fetching in-app notifications:", err);
@@ -1481,21 +1488,24 @@ app.get("/api/notifications", (req: any, res) => {
 });
 
 // Create notification
-app.post("/api/notifications/create", (req: any, res) => {
+app.post("/api/notifications/create", async (req: any, res) => {
     try {
-        const { tenantId, recipientEmail, recipientUserId, title, message, category, type, actionUrl, metadata } = req.body;
+        const { tenantId, recipientEmail, recipientUserId, userId, title, message, category, type, relatedEntityId, actionUrl, expiresAt, metadata } = req.body;
         if (!title || !message) {
             return res.status(400).json({ error: "title and message are required" });
         }
-        const record = createInAppNotificationRecord({
+        const record = await createInAppNotificationRecordAsync({
             tenantId,
             recipientEmail,
             recipientUserId,
+            userId,
             title,
             message,
             category: category || 'system',
             type,
+            relatedEntityId,
             actionUrl,
+            expiresAt,
             metadata
         });
         res.json(record);
@@ -1506,10 +1516,10 @@ app.post("/api/notifications/create", (req: any, res) => {
 });
 
 // Mark notifications read
-app.post("/api/notifications/mark-read", (req: any, res) => {
+app.post("/api/notifications/mark-read", async (req: any, res) => {
     try {
         const { id, markAll, recipientEmail, tenantId } = req.body;
-        const updated = markInAppNotificationReadStore(id, markAll, recipientEmail, tenantId);
+        const updated = await markInAppNotificationReadStoreAsync(id, markAll, recipientEmail, tenantId);
         res.json({ success: true, count: updated.length });
     } catch (err: any) {
         console.error("Error marking notification read:", err);
@@ -1518,10 +1528,10 @@ app.post("/api/notifications/mark-read", (req: any, res) => {
 });
 
 // Clear read notifications
-app.post("/api/notifications/clear", (req: any, res) => {
+app.post("/api/notifications/clear", async (req: any, res) => {
     try {
         const { recipientEmail, tenantId } = req.body;
-        const updated = clearInAppNotificationsStore(recipientEmail, tenantId);
+        const updated = await clearInAppNotificationsStoreAsync(recipientEmail, tenantId);
         res.json({ success: true, count: updated.length });
     } catch (err: any) {
         console.error("Error clearing notifications:", err);
@@ -1529,14 +1539,29 @@ app.post("/api/notifications/clear", (req: any, res) => {
     }
 });
 
+// Delete single notification
+app.post("/api/notifications/delete", async (req: any, res) => {
+    try {
+        const { id } = req.body;
+        if (!id) {
+            return res.status(400).json({ error: "Notification id is required" });
+        }
+        const updated = await deleteInAppNotificationStoreAsync(id);
+        res.json({ success: true, count: updated.length });
+    } catch (err: any) {
+        console.error("Error deleting notification:", err);
+        res.status(500).json({ error: "Failed to delete notification" });
+    }
+});
+
 // Broadcast admin system announcement
-app.post("/api/notifications/announcement", (req: any, res) => {
+app.post("/api/notifications/announcement", async (req: any, res) => {
     try {
         const { title, message, category } = req.body;
         if (!title || !message) {
             return res.status(400).json({ error: "title and message are required" });
         }
-        const result = broadcastSystemAnnouncementStore(title, message, category || 'announcement');
+        const result = await broadcastSystemAnnouncementStoreAsync(title, message, category || 'announcement');
         res.json({ success: true, count: result.count });
     } catch (err: any) {
         console.error("Error broadcasting system announcement:", err);

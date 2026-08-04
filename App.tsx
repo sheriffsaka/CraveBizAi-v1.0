@@ -25,6 +25,7 @@ import DocumentTransformer from './components/DocumentTransformer';
 import DocSignify from './components/DocSignify';
 import PublicSigningPortal from './components/PublicSigningPortal';
 import ProjectManagement from './components/ProjectManagement';
+import NotificationsPage from './components/NotificationsPage';
 import { api, supabase } from './lib/api';
 import { generateRenewalInvoiceSuggestion } from './services/aiGenerationService';
 import { getSubscriptionInfo, setSubscriptionInfo, SubscriptionTier, TIER_LIMITS, syncGlobalPlanSettings, syncSubscriptionInfoFromDb, secureRefillCreditsOnDb, safeFlutterwaveCheckout, getFlutterwavePublicKey, saveSubscriptionInfoToDb, fetchAndCacheFlutterwavePublicKey, incrementInvoiceCount, incrementReceiptCount, syncGlobalRefillPacks, REFILL_PACKS } from './services/subscriptionService';
@@ -36,7 +37,7 @@ import {
   saveGlobalFilterToSession
 } from './lib/globalFilter';
 
-export type Page = 'dashboard' | 'invoices' | 'clients' | 'services' | 'reports' | 'settings' | 'create-invoice' | 'edit-invoice' | 'invoice-detail' | 'receipt-detail' | 'plain-invoice-detail' | 'recurring-invoices' | 'email-verification' | 'sent-receipts' | 'admin-dashboard' | 'document-transformer' | 'projects' | 'doc-signify';
+export type Page = 'dashboard' | 'invoices' | 'clients' | 'services' | 'reports' | 'settings' | 'create-invoice' | 'edit-invoice' | 'invoice-detail' | 'receipt-detail' | 'plain-invoice-detail' | 'recurring-invoices' | 'email-verification' | 'sent-receipts' | 'admin-dashboard' | 'document-transformer' | 'projects' | 'doc-signify' | 'notifications';
 
 const stringifyError = (err: any): string => {
   if (!err) return "An unknown error occurred.";
@@ -214,6 +215,7 @@ export default function App() {
     'admin-dashboard': 'System Console', 'document-transformer': 'SmartDocs',
     projects: 'Project Hub',
     'doc-signify': 'DocSignify',
+    notifications: 'Notification Center',
   };
 
   const loadAuditLogs = async (tenantId: string) => {
@@ -1470,6 +1472,7 @@ export default function App() {
         }
         navigateTo(page as Page);
       }} />;
+      case 'notifications': return <NotificationsPage userEmail={currentUser?.email} tenantId={activeTenantId || undefined} onNavigate={(page) => navigateTo(page as Page)} />;
       default: return <Dashboard invoices={invoices} clients={clients} services={services} activeTenantId={activeTenantId} setActivePage={navigateTo} onViewInvoice={(id) => { setSelectedInvoiceId(id); navigateTo('invoice-detail'); }} onEditInvoice={handleEditInvoiceAction} onGenerateRenewal={handleGenerateRenewal} globalFilter={globalFilter} onFilterChange={handleGlobalFilterChange} />;
     }
   };

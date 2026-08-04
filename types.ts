@@ -20,16 +20,32 @@ export type NotificationCategory =
 export interface InAppNotification {
   id: string;
   tenantId?: string;
+  tenant_id?: string;
+  userId?: string;
+  user_id?: string;
   recipientEmail?: string;
+  recipient_email?: string;
   recipientUserId?: string;
+  recipient_user_id?: string;
   title: string;
   message: string;
   category: NotificationCategory;
   type?: 'info' | 'success' | 'warning' | 'error';
+  notificationType?: string;
+  notification_type?: string;
+  relatedEntityId?: string;
+  related_entity_id?: string;
+  actionUrl?: string;
+  action_url?: string;
   read: boolean;
   isRead?: boolean;
+  is_read?: boolean;
   createdAt: string;
-  actionUrl?: string;
+  created_at?: string;
+  updatedAt?: string;
+  updated_at?: string;
+  expiresAt?: string;
+  expires_at?: string;
   metadata?: Record<string, any>;
 }
 

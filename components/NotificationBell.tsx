@@ -227,13 +227,19 @@ export const NotificationBell: React.FC<NotificationBellProps> = ({ userEmail, t
                     </div>
 
                     {/* Footer */}
-                    <div className="p-2 border-t border-gray-100 bg-gray-50 text-center flex items-center justify-between px-4">
-                        <span className="text-[10px] text-gray-400 font-medium">
-                            Synced with Email Notifications
-                        </span>
+                    <div className="p-2.5 border-t border-gray-100 bg-gray-50 flex items-center justify-between px-4">
+                        <button
+                            onClick={() => {
+                                setIsOpen(false);
+                                if (onNavigate) onNavigate('notifications');
+                            }}
+                            className="text-[11px] text-primary-700 hover:text-primary-800 font-bold hover:underline flex items-center space-x-1"
+                        >
+                            <span>View All Notifications &rarr;</span>
+                        </button>
                         <button
                             onClick={handleClearAll}
-                            className="text-[10px] text-gray-500 hover:text-red-600 font-semibold transition-colors"
+                            className="text-[10px] text-gray-500 hover:text-rose-600 font-semibold transition-colors"
                         >
                             Clear read
                         </button>

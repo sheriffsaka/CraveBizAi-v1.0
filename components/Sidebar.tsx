@@ -52,6 +52,7 @@ const Sidebar: React.FC<SidebarProps> = ({ activePage, setActivePage, companyNam
     { id: 'sent-receipts', label: 'Sent Receipts', icon: 'mail' },
     { id: 'clients', label: 'Clients', icon: 'clients' },
     { id: 'services', label: 'Services', icon: 'services' },
+    { id: 'notifications', label: 'Notifications', icon: 'bell' },
     { id: 'reports', label: 'Reports', icon: 'reports' },
     { id: 'settings', label: 'Settings', icon: 'settings' },
   ];

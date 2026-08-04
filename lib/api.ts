@@ -2,7 +2,7 @@
 import { createClient } from '@supabase/supabase-js';
 import { Invoice, Client, Service, Company, User, InvoiceStatus, BankAccount, InvoiceItem, InvoiceFrequency, GeneratedDocument, StoredGeneratedDoc, DocumentBlock, SignatureInfo, DbDocument, DbDocumentSignatory, DbDocumentSignature, WorkspaceRole, AuditLog, Project, InAppNotification, NotificationCategory } from '../types';
 import { TIER_LIMITS, SubscriptionTier } from '../services/subscriptionService';
-import { getLocalNotifications, createInAppNotificationClient, markNotificationReadClient, clearLocalNotificationsClient } from '../services/notificationService';
+import { getLocalNotifications, createInAppNotificationClient, markNotificationReadClient, clearLocalNotificationsClient, removeNotificationByIdClient } from '../services/notificationService';
 
 const SUPABASE_URL = 'https://dfqvgezjhudmnlyeycju.supabase.co';
 const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImRmcXZnZXpqaHVkbW5seWV5Y2p1Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjYyNDAyOTMsImV4cCI6MjA4MTgxNjI5M30.8VsHsDpychdSMJmrfnmkxi5ed8CygwErX3-RkVPXkUI';
@@ -2659,6 +2659,21 @@ class CraveBizApi {
       }).catch(e => console.warn("Failed to clear notifications on server:", e));
     } catch (e) {
       console.warn("clearInAppNotifications error:", e);
+    }
+    return updated;
+  }
+
+  async deleteInAppNotification(id: string): Promise<InAppNotification[]> {
+    const updated = removeNotificationByIdClient(id);
+    try {
+      const headers = await this.getAuthHeaders();
+      fetch('/api/notifications/delete', {
+        method: 'POST',
+        headers,
+        body: JSON.stringify({ id })
+      }).catch(e => console.warn("Failed to delete notification on server:", e));
+    } catch (e) {
+      console.warn("deleteInAppNotification error:", e);
     }
     return updated;
   }
