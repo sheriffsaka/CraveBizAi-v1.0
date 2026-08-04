@@ -1,4 +1,38 @@
 
+export type NotificationCategory = 
+  | 'user_registration' 
+  | 'email_verification' 
+  | 'password_reset' 
+  | 'invitation' 
+  | 'document' 
+  | 'invoice' 
+  | 'receipt' 
+  | 'ai' 
+  | 'subscription' 
+  | 'payment' 
+  | 'project' 
+  | 'team' 
+  | 'approval' 
+  | 'announcement' 
+  | 'admin' 
+  | 'system';
+
+export interface InAppNotification {
+  id: string;
+  tenantId?: string;
+  recipientEmail?: string;
+  recipientUserId?: string;
+  title: string;
+  message: string;
+  category: NotificationCategory;
+  type?: 'info' | 'success' | 'warning' | 'error';
+  read: boolean;
+  isRead?: boolean;
+  createdAt: string;
+  actionUrl?: string;
+  metadata?: Record<string, any>;
+}
+
 export enum InvoiceStatus {
   Paid = 'Paid',
   PartiallyPaid = 'Partially Paid',

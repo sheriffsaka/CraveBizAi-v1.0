@@ -1,7 +1,8 @@
 
 import { createClient } from '@supabase/supabase-js';
-import { Invoice, Client, Service, Company, User, InvoiceStatus, BankAccount, InvoiceItem, InvoiceFrequency, GeneratedDocument, StoredGeneratedDoc, DocumentBlock, SignatureInfo, DbDocument, DbDocumentSignatory, DbDocumentSignature, WorkspaceRole, AuditLog, Project } from '../types';
+import { Invoice, Client, Service, Company, User, InvoiceStatus, BankAccount, InvoiceItem, InvoiceFrequency, GeneratedDocument, StoredGeneratedDoc, DocumentBlock, SignatureInfo, DbDocument, DbDocumentSignatory, DbDocumentSignature, WorkspaceRole, AuditLog, Project, InAppNotification, NotificationCategory } from '../types';
 import { TIER_LIMITS, SubscriptionTier } from '../services/subscriptionService';
+import { getLocalNotifications, createInAppNotificationClient, markNotificationReadClient, clearLocalNotificationsClient } from '../services/notificationService';
 
 const SUPABASE_URL = 'https://dfqvgezjhudmnlyeycju.supabase.co';
 const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImRmcXZnZXpqaHVkbW5seWV5Y2p1Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjYyNDAyOTMsImV4cCI6MjA4MTgxNjI5M30.8VsHsDpychdSMJmrfnmkxi5ed8CygwErX3-RkVPXkUI';
@@ -2587,6 +2588,103 @@ class CraveBizApi {
         resetDate: new Date(Date.now() + 30 * 86400000).toISOString()
       };
     }
+  }
+
+  async fetchInAppNotifications(params?: { tenantId?: string; recipientEmail?: string; unreadOnly?: boolean }): Promise<InAppNotification[]> {
+    try {
+      const headers = await this.getAuthHeaders(params?.tenantId);
+      const query = new URLSearchParams();
+      if (params?.tenantId) query.append('tenantId', params.tenantId);
+      if (params?.recipientEmail) query.append('recipientEmail', params.recipientEmail);
+      if (params?.unreadOnly) query.append('unreadOnly', 'true');
+
+      const res = await fetch(`/api/notifications?${query.toString()}`, { headers });
+      if (res.ok) {
+        return await res.json();
+      }
+    } catch (e) {
+      console.warn("fetchInAppNotifications backend fetch failed:", e);
+    }
+    return getLocalNotifications();
+  }
+
+  async createInAppNotification(payload: {
+    tenantId?: string;
+    recipientEmail?: string;
+    recipientUserId?: string;
+    title: string;
+    message: string;
+    category: NotificationCategory;
+    type?: 'info' | 'success' | 'warning' | 'error';
+    actionUrl?: string;
+    metadata?: Record<string, any>;
+  }): Promise<InAppNotification> {
+    // Create locally first for immediate responsiveness
+    const localNotif = createInAppNotificationClient(payload);
+    try {
+      const headers = await this.getAuthHeaders(payload.tenantId);
+      fetch('/api/notifications/create', {
+        method: 'POST',
+        headers,
+        body: JSON.stringify(payload)
+      }).catch(e => console.warn("Failed to persist notification to server:", e));
+    } catch (e) {
+      console.warn("createInAppNotification network error:", e);
+    }
+    return localNotif;
+  }
+
+  async markInAppNotificationRead(id?: string, markAll: boolean = false): Promise<InAppNotification[]> {
+    const updated = markNotificationReadClient(id, markAll);
+    try {
+      const headers = await this.getAuthHeaders();
+      fetch('/api/notifications/mark-read', {
+        method: 'POST',
+        headers,
+        body: JSON.stringify({ id, markAll })
+      }).catch(e => console.warn("Failed to update notification status on server:", e));
+    } catch (e) {
+      console.warn("markInAppNotificationRead error:", e);
+    }
+    return updated;
+  }
+
+  async clearInAppNotifications(): Promise<InAppNotification[]> {
+    const updated = clearLocalNotificationsClient();
+    try {
+      const headers = await this.getAuthHeaders();
+      fetch('/api/notifications/clear', {
+        method: 'POST',
+        headers
+      }).catch(e => console.warn("Failed to clear notifications on server:", e));
+    } catch (e) {
+      console.warn("clearInAppNotifications error:", e);
+    }
+    return updated;
+  }
+
+  async sendSystemAnnouncement(title: string, message: string, category: NotificationCategory = 'announcement'): Promise<{ success: boolean; count?: number }> {
+    try {
+      const headers = await this.getAuthHeaders();
+      const res = await fetch('/api/notifications/announcement', {
+        method: 'POST',
+        headers,
+        body: JSON.stringify({ title, message, category })
+      });
+      if (res.ok) {
+        return await res.json();
+      }
+    } catch (e) {
+      console.warn("sendSystemAnnouncement error:", e);
+    }
+    // Fallback local broadcast
+    createInAppNotificationClient({
+      title,
+      message,
+      category,
+      type: 'info'
+    });
+    return { success: true, count: 1 };
   }
 
   async deductReceiptQuota(companyId?: string, tier: string = 'Free') {

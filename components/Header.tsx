@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import Icon from './common/Icon';
 import { Company, User } from '../types';
 import { getSubscriptionInfo, toggleAiMode, TIER_LIMITS } from '../services/subscriptionService';
+import NotificationBell from './NotificationBell';
 
 interface HeaderProps {
     pageTitle: string;
@@ -204,6 +205,7 @@ const Header: React.FC<HeaderProps> = ({
                     <span className="mr-1 text-sm sm:text-base leading-none font-bold">+</span>
                     <span>New Invoice</span>
                 </button>
+                <NotificationBell userEmail={user?.email} tenantId={activeTenantId} onNavigate={onNavigate} />
                 {user && <div className="shrink-0"><UserAvatar user={user} onOpenUserProfile={onOpenUserProfile} onLogout={onLogout} /></div>}
             </div>
         </header>

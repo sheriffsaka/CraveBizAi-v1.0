@@ -40,6 +40,13 @@ import {
     sendTeamInvitationEmailDirect,
     sendUserRegistrationEmailDirect
 } from "../services/emailService.js";
+import {
+    getInAppNotificationsStore,
+    createInAppNotificationRecord,
+    markInAppNotificationReadStore,
+    clearInAppNotificationsStore,
+    broadcastSystemAnnouncementStore
+} from "../services/inAppNotificationModule.js";
 
 const SUPABASE_URL = "https://dfqvgezjhudmnlyeycju.supabase.co";
 const SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImRmcXZnZXpqaHVkbW5seWV5Y2p1Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjYyNDAyOTMsImV4cCI6MjA4MTgxNjI5M30.8VsHsDpychdSMJmrfnmkxi5ed8CygwErX3-RkVPXkUI";
@@ -1451,6 +1458,89 @@ app.post("/api/notifications/send-document-notification", verifyTenant, async (r
     } catch (err: any) {
         console.error("Error in /api/notifications/send-document-notification:", err);
         res.status(500).json({ error: err.message || "Internal server error sending document notification email" });
+    }
+});
+
+// ==========================================
+// IN-APP NOTIFICATION ENDPOINTS
+// ==========================================
+
+// Fetch notifications
+app.get("/api/notifications", (req: any, res) => {
+    try {
+        const tenantId = req.query.tenantId as string;
+        const recipientEmail = req.query.recipientEmail as string;
+        const unreadOnly = req.query.unreadOnly === 'true';
+
+        const notifs = getInAppNotificationsStore({ tenantId, recipientEmail, unreadOnly });
+        res.json(notifs);
+    } catch (err: any) {
+        console.error("Error fetching in-app notifications:", err);
+        res.status(500).json({ error: "Failed to fetch in-app notifications" });
+    }
+});
+
+// Create notification
+app.post("/api/notifications/create", (req: any, res) => {
+    try {
+        const { tenantId, recipientEmail, recipientUserId, title, message, category, type, actionUrl, metadata } = req.body;
+        if (!title || !message) {
+            return res.status(400).json({ error: "title and message are required" });
+        }
+        const record = createInAppNotificationRecord({
+            tenantId,
+            recipientEmail,
+            recipientUserId,
+            title,
+            message,
+            category: category || 'system',
+            type,
+            actionUrl,
+            metadata
+        });
+        res.json(record);
+    } catch (err: any) {
+        console.error("Error creating in-app notification:", err);
+        res.status(500).json({ error: "Failed to create in-app notification" });
+    }
+});
+
+// Mark notifications read
+app.post("/api/notifications/mark-read", (req: any, res) => {
+    try {
+        const { id, markAll, recipientEmail, tenantId } = req.body;
+        const updated = markInAppNotificationReadStore(id, markAll, recipientEmail, tenantId);
+        res.json({ success: true, count: updated.length });
+    } catch (err: any) {
+        console.error("Error marking notification read:", err);
+        res.status(500).json({ error: "Failed to mark notification read" });
+    }
+});
+
+// Clear read notifications
+app.post("/api/notifications/clear", (req: any, res) => {
+    try {
+        const { recipientEmail, tenantId } = req.body;
+        const updated = clearInAppNotificationsStore(recipientEmail, tenantId);
+        res.json({ success: true, count: updated.length });
+    } catch (err: any) {
+        console.error("Error clearing notifications:", err);
+        res.status(500).json({ error: "Failed to clear notifications" });
+    }
+});
+
+// Broadcast admin system announcement
+app.post("/api/notifications/announcement", (req: any, res) => {
+    try {
+        const { title, message, category } = req.body;
+        if (!title || !message) {
+            return res.status(400).json({ error: "title and message are required" });
+        }
+        const result = broadcastSystemAnnouncementStore(title, message, category || 'announcement');
+        res.json({ success: true, count: result.count });
+    } catch (err: any) {
+        console.error("Error broadcasting system announcement:", err);
+        res.status(500).json({ error: "Failed to broadcast system announcement" });
     }
 });
 

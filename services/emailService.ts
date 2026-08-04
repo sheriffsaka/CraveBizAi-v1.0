@@ -1,5 +1,6 @@
 import { SESClient, SendEmailCommand } from "@aws-sdk/client-ses";
 import nodemailer from "nodemailer";
+import { createInAppNotificationRecord } from "./inAppNotificationModule.js";
 
 // AWS SES Client Instance Singleton
 let sesClientInstance: SESClient | null = null;
@@ -366,6 +367,14 @@ export async function sendReceiptEmailDirect(data: ReceiptEmailData): Promise<{ 
     const fromAddress = `${data.company.name || 'CraveBiZ'} <${process.env.AWS_SES_FROM || process.env.SMTP_FROM || 'no-reply@cravebiz.ai'}>`;
     const textContent = `Payment Receipt #${data.invoiceNumber}\nTotal Amount Paid: ${data.currencySymbol || '₦'}${data.amountPaid || data.totalAmount}\n\nDear ${data.recipientName},\nThank you for your payment. Details available in HTML version.`;
 
+    createInAppNotificationRecord({
+        recipientEmail: data.recipientEmail,
+        title: `Payment Receipt #${data.invoiceNumber}`,
+        message: `Payment of ${data.currencySymbol || '₦'}${data.amountPaid || data.totalAmount} for Invoice #${data.invoiceNumber} has been received and confirmed.`,
+        category: 'receipt',
+        type: 'success'
+    });
+
     return await sendEmailViaSES({
         from: fromAddress,
         to: data.recipientEmail,
@@ -535,6 +544,14 @@ export async function sendInvoiceEmailDirect(data: InvoiceEmailData): Promise<{ 
     const fromAddress = `${data.company.name || 'CraveBiZ'} <${process.env.AWS_SES_FROM || process.env.SMTP_FROM || 'no-reply@cravebiz.ai'}>`;
     const textContent = `Invoice #${data.invoiceNumber}\nTotal Amount Due: ${data.currencySymbol || '₦'}${data.totalAmount}\nDue Date: ${data.dueDate}\n\nDear ${data.recipientName},\nPlease view full invoice details in your HTML email view.`;
 
+    createInAppNotificationRecord({
+        recipientEmail: data.recipientEmail,
+        title: `Invoice #${data.invoiceNumber} Issued`,
+        message: `New invoice #${data.invoiceNumber} for ${data.currencySymbol || '₦'}${data.totalAmount} from ${data.company.name || 'CraveBiZ'} is ready for review.`,
+        category: 'invoice',
+        type: 'info'
+    });
+
     return await sendEmailViaSES({
         from: fromAddress,
         to: data.recipientEmail,
@@ -661,6 +678,15 @@ export async function sendSignifyEmailDirect(data: SignifyEmailData): Promise<{ 
     const textContent = `${subject}\n\nDear ${data.recipientName},\n\nYou have been invited by ${senderName} to review/sign '${docTitle}'.\n\nPlease click the secure link below:\n${data.secureLink}\n\nBest regards,\nCraveBiZ Team`;
     const fromAddress = `CraveBiZ DocSignify <${process.env.AWS_SES_FROM || process.env.SMTP_FROM || 'no-reply@cravebiz.ai'}>`;
 
+    createInAppNotificationRecord({
+        recipientEmail: data.recipientEmail,
+        title: `Document Request: ${docTitle}`,
+        message: `You have been requested by ${senderName} to sign/review '${docTitle}'.`,
+        category: 'document',
+        type: 'info',
+        actionUrl: data.secureLink
+    });
+
     return await sendEmailViaSES({
         from: fromAddress,
         to: data.recipientEmail,
@@ -733,6 +759,15 @@ export async function sendDocumentNotificationEmailDirect(data: DocumentNotifica
 </html>
     `;
 
+    createInAppNotificationRecord({
+        recipientEmail: data.recipientEmail,
+        title: `Document Notice: ${data.documentTitle}`,
+        message: data.notificationMessage,
+        category: 'document',
+        type: 'info',
+        actionUrl: data.actionUrl
+    });
+
     return await sendEmailViaSES({
         to: data.recipientEmail,
         subject,
@@ -754,6 +789,14 @@ export interface AccountVerificationEmailData {
 
 export async function sendAccountVerificationEmailDirect(data: AccountVerificationEmailData): Promise<{ success: boolean; message: string; messageId?: string }> {
     const subject = `Verify Your CraveBiZ Account - Code: ${data.verificationCode}`;
+
+    createInAppNotificationRecord({
+        recipientEmail: data.recipientEmail,
+        title: `Account Verification Code`,
+        message: `Your account verification code is ${data.verificationCode}.`,
+        category: 'email_verification',
+        type: 'warning'
+    });
 
     const html = `
 <!DOCTYPE html>
@@ -832,6 +875,15 @@ export interface PasswordResetEmailData {
 
 export async function sendPasswordResetEmailDirect(data: PasswordResetEmailData): Promise<{ success: boolean; message: string; messageId?: string }> {
     const subject = `Reset Your CraveBiZ Password`;
+
+    createInAppNotificationRecord({
+        recipientEmail: data.recipientEmail,
+        title: `Password Reset Request`,
+        message: `A password reset token was requested for your account. Use the reset link to choose a new password.`,
+        category: 'password_reset',
+        type: 'warning',
+        actionUrl: data.resetUrl
+    });
 
     const html = `
 <!DOCTYPE html>
@@ -914,6 +966,15 @@ export interface TeamInvitationEmailData {
 export async function sendTeamInvitationEmailDirect(data: TeamInvitationEmailData): Promise<{ success: boolean; message: string; messageId?: string }> {
     const subject = `Invitation to join ${data.companyName.toUpperCase()} Workspace on CraveBiZ`;
 
+    createInAppNotificationRecord({
+        recipientEmail: data.inviteEmail,
+        title: `Team Invitation: ${data.companyName}`,
+        message: `You have been invited by ${data.inviterName} to join workspace '${data.companyName}' as ${data.inviteRole || 'Member'}.`,
+        category: 'invitation',
+        type: 'info',
+        actionUrl: data.inviteUrl
+    });
+
     const html = `
 <!DOCTYPE html>
 <html lang="en">
@@ -987,6 +1048,15 @@ export async function sendUserRegistrationEmailDirect(data: UserRegistrationEmai
     const name = data.recipientName || 'Valued Partner';
     const company = data.companyName ? `'${data.companyName}'` : 'your';
     const subject = `Welcome to CraveBiZ AI - Account Registration Confirmed`;
+
+    createInAppNotificationRecord({
+        recipientEmail: data.recipientEmail,
+        title: `Welcome to CraveBiZ AI!`,
+        message: `Welcome, ${name}! Your CraveBiZ account has been successfully set up and configured.`,
+        category: 'user_registration',
+        type: 'success',
+        actionUrl: data.loginUrl
+    });
 
     const html = `
 <!DOCTYPE html>
