@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useMemo, useRef } from 'react';
 import Icon from './common/Icon';
 import { InAppNotification, NotificationCategory } from '../types';
-import { api } from '../lib/api';
+import { api, supabase } from '../lib/api';
 import { playNotificationChime } from '../services/notificationService';
 
 interface NotificationsPageProps {
@@ -49,9 +49,57 @@ export const NotificationsPage: React.FC<NotificationsPageProps> = ({ userEmail,
 
     useEffect(() => {
         fetchNotifications();
-        // Polling every 10 seconds for real-time notification updates
+
+        // 1. Fallback interval polling every 10 seconds
         const interval = setInterval(() => fetchNotifications(false), 10000);
-        return () => clearInterval(interval);
+
+        // 2. Cross-tab storage event synchronization
+        const handleStorageChange = (e: StorageEvent) => {
+            if (e.key === 'cravebiz_inapp_notifications_v1') {
+                fetchNotifications(false);
+            }
+        };
+        window.addEventListener('storage', handleStorageChange);
+
+        // 3. Custom local notification updated event
+        const handleCustomUpdate = () => {
+            fetchNotifications(false);
+        };
+        window.addEventListener('cravebiz_notification_updated', handleCustomUpdate);
+
+        // 4. Supabase Realtime channel subscription
+        let channel: any = null;
+        try {
+            channel = supabase
+                .channel('realtime_in_app_notifications_page')
+                .on(
+                    'postgres_changes',
+                    { event: '*', schema: 'public', table: 'in_app_notifications' },
+                    () => {
+                        fetchNotifications(false);
+                    }
+                )
+                .subscribe((status) => {
+                    if (status === 'SUBSCRIBED') {
+                        console.log('[NotificationsPage] Supabase Realtime connected');
+                    }
+                });
+        } catch (realtimeErr) {
+            console.warn('[NotificationsPage] Supabase Realtime setup error:', realtimeErr);
+        }
+
+        return () => {
+            clearInterval(interval);
+            window.removeEventListener('storage', handleStorageChange);
+            window.removeEventListener('cravebiz_notification_updated', handleCustomUpdate);
+            if (channel) {
+                try {
+                    supabase.removeChannel(channel);
+                } catch (e) {
+                    // Ignore cleanup error
+                }
+            }
+        };
     }, [userEmail, tenantId]);
 
     // Filtering logic

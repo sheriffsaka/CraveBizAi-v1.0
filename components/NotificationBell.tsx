@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import Icon from './common/Icon';
 import { InAppNotification } from '../types';
-import { api } from '../lib/api';
+import { api, supabase } from '../lib/api';
 import { playNotificationChime } from '../services/notificationService';
 
 interface NotificationBellProps {
@@ -39,9 +39,57 @@ export const NotificationBell: React.FC<NotificationBellProps> = ({ userEmail, t
 
     useEffect(() => {
         loadNotifications();
-        // Poll every 10 seconds for new in-app notifications
+
+        // 1. Polling fallback every 10 seconds
         const interval = setInterval(loadNotifications, 10000);
-        return () => clearInterval(interval);
+
+        // 2. Cross-tab synchronization via storage event
+        const handleStorageChange = (e: StorageEvent) => {
+            if (e.key === 'cravebiz_inapp_notifications_v1') {
+                loadNotifications();
+            }
+        };
+        window.addEventListener('storage', handleStorageChange);
+
+        // 3. Custom local notification updated event
+        const handleCustomUpdate = () => {
+            loadNotifications();
+        };
+        window.addEventListener('cravebiz_notification_updated', handleCustomUpdate);
+
+        // 4. Supabase Realtime table subscription
+        let channel: any = null;
+        try {
+            channel = supabase
+                .channel('realtime_in_app_notifications_bell')
+                .on(
+                    'postgres_changes',
+                    { event: '*', schema: 'public', table: 'in_app_notifications' },
+                    () => {
+                        loadNotifications();
+                    }
+                )
+                .subscribe((status) => {
+                    if (status === 'SUBSCRIBED') {
+                        console.log('[NotificationBell] Supabase Realtime connected');
+                    }
+                });
+        } catch (realtimeErr) {
+            console.warn('[NotificationBell] Supabase Realtime setup error:', realtimeErr);
+        }
+
+        return () => {
+            clearInterval(interval);
+            window.removeEventListener('storage', handleStorageChange);
+            window.removeEventListener('cravebiz_notification_updated', handleCustomUpdate);
+            if (channel) {
+                try {
+                    supabase.removeChannel(channel);
+                } catch (e) {
+                    // Ignore cleanup error
+                }
+            }
+        };
     }, [userEmail, tenantId]);
 
     // Handle outside click to close dropdown
