@@ -107,39 +107,46 @@ export async function createInAppNotificationRecordAsync(data: {
     };
 
     // Deduplicate in memory
+    const nowMs = Date.now();
     const isDup = inMemoryNotifications.some(n => 
-        n.title === record.title && 
-        n.message === record.message && 
-        (Date.now() - new Date(n.createdAt || n.created_at || Date.now()).getTime() < 3000)
+        (n.title === record.title && n.message === record.message) &&
+        (n.user_id === record.user_id || n.recipientEmail === record.recipientEmail) &&
+        (Math.abs(nowMs - new Date(n.createdAt || n.created_at || nowMs).getTime()) < 10000)
     );
 
-    if (!isDup) {
-        inMemoryNotifications.unshift(record);
-        if (inMemoryNotifications.length > 500) {
-            inMemoryNotifications = inMemoryNotifications.slice(0, 500);
-        }
-        persistNotifications();
+    if (isDup) {
+        console.log("[InAppNotificationModule] Duplicate notification suppressed:", record.title);
+        return record;
     }
 
-    // Persist to Supabase table
+    inMemoryNotifications.unshift(record);
+    if (inMemoryNotifications.length > 500) {
+        inMemoryNotifications = inMemoryNotifications.slice(0, 500);
+    }
+    persistNotifications();
+
+    // Persist to Supabase table (trying both in_app_notifications and notifications)
     try {
         const supabasePayload = {
             id: record.id,
             user_id: record.user_id,
             recipient_email: record.recipient_email,
             tenant_id: record.tenant_id,
-            category: record.category,
-            notification_type: record.notification_type,
+            type: record.type || 'info',
+            notification_type: record.notification_type || record.category || record.type || 'info',
             title: record.title,
             message: record.message,
-            related_entity_id: record.related_entity_id,
-            action_url: record.action_url,
+            category: record.category || record.type || 'system',
+            entity_type: record.category || record.type || 'system',
+            related_entity_id: record.related_entity_id || null,
+            entity_id: record.related_entity_id || null,
+            action_url: record.action_url || null,
             is_read: false,
             read: false,
             created_at: record.created_at,
             updated_at: record.updated_at,
-            expires_at: record.expires_at,
-            metadata: record.metadata
+            expires_at: record.expires_at || null,
+            metadata: record.metadata || {}
         };
 
         const { error } = await supabase.from('in_app_notifications').upsert(supabasePayload);
@@ -147,7 +154,7 @@ export async function createInAppNotificationRecordAsync(data: {
             try {
                 await supabase.from('notifications').upsert(supabasePayload);
             } catch (fbErr) {
-                // ignore fallback error
+                console.warn("[InAppNotificationModule] Fallback table insert notice:", fbErr);
             }
         }
     } catch (e) {
@@ -196,13 +203,43 @@ export async function getInAppNotificationsStoreAsync(params?: {
     userId?: string;
     unreadOnly?: boolean;
 }): Promise<InAppNotificationRecord[]> {
+    const mapItems = (data: any[]) => data.map(item => ({
+        id: item.id,
+        tenantId: item.tenant_id,
+        tenant_id: item.tenant_id,
+        userId: item.user_id || item.recipient_email,
+        user_id: item.user_id || item.recipient_email,
+        recipientEmail: item.recipient_email || item.user_id,
+        recipient_email: item.recipient_email || item.user_id,
+        recipientUserId: item.recipient_user_id || item.user_id,
+        title: item.title,
+        message: item.message,
+        category: item.entity_type || item.category || item.notification_type || 'system',
+        type: item.type || 'info',
+        notification_type: item.notification_type || item.entity_type || item.category,
+        relatedEntityId: item.entity_id || item.related_entity_id,
+        related_entity_id: item.entity_id || item.related_entity_id,
+        actionUrl: item.action_url,
+        action_url: item.action_url,
+        read: item.is_read ?? item.read ?? false,
+        is_read: item.is_read ?? item.read ?? false,
+        isRead: item.is_read ?? item.read ?? false,
+        createdAt: item.created_at || new Date().toISOString(),
+        created_at: item.created_at || new Date().toISOString(),
+        updatedAt: item.updated_at,
+        updated_at: item.updated_at,
+        expiresAt: item.expires_at,
+        expires_at: item.expires_at,
+        metadata: item.metadata
+    }));
+
     try {
         let query = supabase.from('in_app_notifications').select('*').order('created_at', { ascending: false });
         if (params?.tenantId) {
             query = query.eq('tenant_id', params.tenantId);
         }
         if (params?.recipientEmail) {
-            query = query.eq('recipient_email', params.recipientEmail.toLowerCase());
+            query = query.or(`recipient_email.ilike.${params.recipientEmail.toLowerCase()},user_id.ilike.${params.recipientEmail.toLowerCase()}`);
         }
         if (params?.userId) {
             query = query.eq('user_id', params.userId);
@@ -213,35 +250,26 @@ export async function getInAppNotificationsStoreAsync(params?: {
 
         const { data, error } = await query;
         if (!error && Array.isArray(data) && data.length > 0) {
-            return data.map(item => ({
-                id: item.id,
-                tenantId: item.tenant_id,
-                tenant_id: item.tenant_id,
-                userId: item.user_id,
-                user_id: item.user_id,
-                recipientEmail: item.recipient_email,
-                recipient_email: item.recipient_email,
-                recipientUserId: item.recipient_user_id || item.user_id,
-                title: item.title,
-                message: item.message,
-                category: item.category || item.notification_type || 'system',
-                type: item.type || 'info',
-                notification_type: item.notification_type || item.category,
-                relatedEntityId: item.related_entity_id,
-                related_entity_id: item.related_entity_id,
-                actionUrl: item.action_url,
-                action_url: item.action_url,
-                read: item.is_read ?? item.read ?? false,
-                is_read: item.is_read ?? item.read ?? false,
-                isRead: item.is_read ?? item.read ?? false,
-                createdAt: item.created_at || new Date().toISOString(),
-                created_at: item.created_at || new Date().toISOString(),
-                updatedAt: item.updated_at,
-                updated_at: item.updated_at,
-                expiresAt: item.expires_at,
-                expires_at: item.expires_at,
-                metadata: item.metadata
-            }));
+            return mapItems(data);
+        }
+
+        // Try 'notifications' table as fallback
+        let fallbackQuery = supabase.from('notifications').select('*').order('created_at', { ascending: false });
+        if (params?.tenantId) {
+            fallbackQuery = fallbackQuery.eq('tenant_id', params.tenantId);
+        }
+        if (params?.recipientEmail) {
+            fallbackQuery = fallbackQuery.or(`recipient_email.ilike.${params.recipientEmail.toLowerCase()},user_id.ilike.${params.recipientEmail.toLowerCase()}`);
+        }
+        if (params?.userId) {
+            fallbackQuery = fallbackQuery.eq('user_id', params.userId);
+        }
+        if (params?.unreadOnly) {
+            fallbackQuery = fallbackQuery.eq('is_read', false);
+        }
+        const { data: fbData, error: fbError } = await fallbackQuery;
+        if (!fbError && Array.isArray(fbData) && fbData.length > 0) {
+            return mapItems(fbData);
         }
     } catch (e) {
         console.warn("[InAppNotificationModule] Supabase fetch error, using fallback store:", e);
