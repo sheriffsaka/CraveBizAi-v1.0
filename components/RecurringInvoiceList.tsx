@@ -2,7 +2,6 @@ import React, { useState, useMemo } from 'react';
 import { Invoice, Client, Service } from '../types';
 import InvoiceStatusBadge from './InvoiceStatusBadge';
 import Icon from './common/Icon';
-import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, Cell } from 'recharts';
 
 interface RecurringInvoiceListProps {
   invoices: Invoice[];
@@ -13,6 +12,7 @@ interface RecurringInvoiceListProps {
   onDeleteInvoice?: (invoiceId: string) => void;
   onRenewInvoice?: (template: Invoice) => Promise<void>;
   onTogglePause?: (template: Invoice) => Promise<void>;
+  onToggleArchive?: (template: Invoice) => Promise<void>;
 }
 
 export type RenewalFilter = 'all' | 'due-soon' | 'overdue' | 'due-30-days' | 'paused';
@@ -51,7 +51,7 @@ export function getInvoiceServicesSummary(invoice: Invoice, services: Service[] 
   return `${uniqueNames[0]} (+${uniqueNames.length - 1} more)`;
 }
 
-export function getRenewalUrgency(dueDateStr?: string) {
+export function getRenewalUrgency(dueDateStr?: string, frequency?: string) {
   if (!dueDateStr) {
     return {
       label: 'No Due Date',
@@ -82,6 +82,7 @@ export function getRenewalUrgency(dueDateStr?: string) {
   const diffTime = due.getTime() - today.getTime();
   const daysDiff = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
 
+  // Overdue:Scheduled generation date has passed
   if (daysDiff < 0) {
     const daysAgo = Math.abs(daysDiff);
     return {
@@ -90,18 +91,40 @@ export function getRenewalUrgency(dueDateStr?: string) {
       daysDiff,
       isOverdue: true,
       isDueToday: false,
-      isDueSoon: true
+      isDueSoon: false // STRICTLY false when overdue
     };
-  } else if (daysDiff === 0) {
+  }
+
+  // Frequency specific Due Soon threshold
+  // Monthly: last 7 days
+  // Quarterly: last month (30 days)
+  // Annual: last quarter (90 days)
+  // Weekly / Daily: last 2 days
+  let dueSoonWindowDays = 7;
+  const freq = (frequency || '').toLowerCase();
+  if (freq === 'monthly') {
+    dueSoonWindowDays = 7;
+  } else if (freq === 'quarterly' || freq === 'biannually' || freq === 'bi-annually') {
+    dueSoonWindowDays = 30;
+  } else if (freq === 'annually' || freq === 'yearly') {
+    dueSoonWindowDays = 90;
+  } else if (freq === 'weekly' || freq === 'daily') {
+    dueSoonWindowDays = 2;
+  }
+
+  const isDueToday = daysDiff === 0;
+  const isDueSoon = daysDiff >= 0 && daysDiff <= dueSoonWindowDays;
+
+  if (isDueToday) {
     return {
       label: 'Due Today',
       badgeClass: 'bg-amber-100 text-amber-900 border-amber-300 font-black',
-      daysDiff: 0,
+      daysDiff,
       isOverdue: false,
       isDueToday: true,
       isDueSoon: true
     };
-  } else if (daysDiff <= 7) {
+  } else if (isDueSoon) {
     return {
       label: `Due in ${daysDiff} day${daysDiff > 1 ? 's' : ''}`,
       badgeClass: 'bg-amber-50 text-amber-800 border-amber-200 font-bold',
@@ -109,15 +132,6 @@ export function getRenewalUrgency(dueDateStr?: string) {
       isOverdue: false,
       isDueToday: false,
       isDueSoon: true
-    };
-  } else if (daysDiff <= 30) {
-    return {
-      label: `Due in ${daysDiff} days`,
-      badgeClass: 'bg-blue-50 text-blue-800 border-blue-200 font-semibold',
-      daysDiff,
-      isOverdue: false,
-      isDueToday: false,
-      isDueSoon: false
     };
   } else {
     return {
@@ -139,9 +153,10 @@ const RecurringInvoiceList: React.FC<RecurringInvoiceListProps> = ({
   onEditInvoice,
   onDeleteInvoice,
   onRenewInvoice,
-  onTogglePause
+  onTogglePause,
+  onToggleArchive
 }) => {
-  const [activeTab, setActiveTab] = useState<'renewals' | 'templates'>('renewals');
+  const [activeTab, setActiveTab] = useState<'renewals' | 'templates' | 'archived'>('renewals');
   const [searchTerm, setSearchTerm] = useState('');
   const [renewalFilter, setRenewalFilter] = useState<RenewalFilter>('all');
   const [sortKey, setSortKey] = useState<SortKey>('nextDueDate');
@@ -149,6 +164,7 @@ const RecurringInvoiceList: React.FC<RecurringInvoiceListProps> = ({
   const [currentPage, setCurrentPage] = useState(1);
   const [renewingId, setRenewingId] = useState<string | null>(null);
   const [pausingId, setPausingId] = useState<string | null>(null);
+  const [archivingId, setArchivingId] = useState<string | null>(null);
   const itemsPerPage = 10;
 
   const getClientNameById = (clientId: string) => {
@@ -163,7 +179,10 @@ const RecurringInvoiceList: React.FC<RecurringInvoiceListProps> = ({
     let pausedCount = 0;
     let activeCount = 0;
 
-    invoices.forEach(inv => {
+    const activeInvoices = invoices.filter(inv => inv.recurringStatus !== 'archived');
+    const archivedInvoices = invoices.filter(inv => inv.recurringStatus === 'archived');
+
+    activeInvoices.forEach(inv => {
       totalContractValue += inv.total;
       if (inv.recurringStatus === 'paused') {
         pausedCount++;
@@ -172,62 +191,54 @@ const RecurringInvoiceList: React.FC<RecurringInvoiceListProps> = ({
       }
 
       const dueDateStr = inv.nextRecurrenceDate || inv.nextDueDate || inv.dueDate;
-      const urgency = getRenewalUrgency(dueDateStr);
+      const urgency = getRenewalUrgency(dueDateStr, inv.frequency);
       if (urgency.isOverdue) overdueCount++;
       if (urgency.isDueSoon) dueSoonCount++;
-      if (urgency.daysDiff <= 30) due30Count++;
+      if (urgency.daysDiff >= 0 && urgency.daysDiff <= 30) due30Count++;
     });
-
-    const frequencyCounts: Record<string, { count: number; total: number }> = {};
-    invoices.forEach(inv => {
-      const freqKey = formatFrequencyLabel(inv.frequency);
-      if (!frequencyCounts[freqKey]) {
-        frequencyCounts[freqKey] = { count: 0, total: 0 };
-      }
-      frequencyCounts[freqKey].count++;
-      frequencyCounts[freqKey].total += inv.total;
-    });
-
-    const frequencyData = Object.entries(frequencyCounts).map(([name, data]) => ({
-      name,
-      count: data.count,
-      value: data.total
-    }));
 
     return {
-      totalTemplates: invoices.length,
+      totalTemplates: activeInvoices.length,
+      archivedCount: archivedInvoices.length,
       totalContractValue,
       overdueCount,
       dueSoonCount,
       due30Count,
       pausedCount,
-      activeCount,
-      frequencyData
+      activeCount
     };
   }, [invoices]);
 
   const filteredAndSortedInvoices = useMemo(() => {
     let list = [...invoices];
 
-    // Filter by tab & renewal sub-filter
-    if (activeTab === 'renewals') {
-      if (renewalFilter === 'overdue') {
-        list = list.filter(inv => {
-          const date = inv.nextRecurrenceDate || inv.nextDueDate || inv.dueDate;
-          return getRenewalUrgency(date).isOverdue;
-        });
-      } else if (renewalFilter === 'due-soon') {
-        list = list.filter(inv => {
-          const date = inv.nextRecurrenceDate || inv.nextDueDate || inv.dueDate;
-          return getRenewalUrgency(date).isDueSoon;
-        });
-      } else if (renewalFilter === 'due-30-days') {
-        list = list.filter(inv => {
-          const date = inv.nextRecurrenceDate || inv.nextDueDate || inv.dueDate;
-          return getRenewalUrgency(date).daysDiff <= 30;
-        });
-      } else if (renewalFilter === 'paused') {
-        list = list.filter(inv => inv.recurringStatus === 'paused');
+    if (activeTab === 'archived') {
+      // Archived View: ONLY include archived recurring invoices
+      list = list.filter(inv => inv.recurringStatus === 'archived');
+    } else {
+      // Active Views (renewals & templates): NEVER include archived recurring invoices
+      list = list.filter(inv => inv.recurringStatus !== 'archived');
+
+      if (activeTab === 'renewals') {
+        if (renewalFilter === 'overdue') {
+          list = list.filter(inv => {
+            const date = inv.nextRecurrenceDate || inv.nextDueDate || inv.dueDate;
+            return getRenewalUrgency(date, inv.frequency).isOverdue;
+          });
+        } else if (renewalFilter === 'due-soon') {
+          list = list.filter(inv => {
+            const date = inv.nextRecurrenceDate || inv.nextDueDate || inv.dueDate;
+            return getRenewalUrgency(date, inv.frequency).isDueSoon;
+          });
+        } else if (renewalFilter === 'due-30-days') {
+          list = list.filter(inv => {
+            const date = inv.nextRecurrenceDate || inv.nextDueDate || inv.dueDate;
+            const urgency = getRenewalUrgency(date, inv.frequency);
+            return urgency.daysDiff >= 0 && urgency.daysDiff <= 30;
+          });
+        } else if (renewalFilter === 'paused') {
+          list = list.filter(inv => inv.recurringStatus === 'paused');
+        }
       }
     }
 
@@ -250,7 +261,7 @@ const RecurringInvoiceList: React.FC<RecurringInvoiceListProps> = ({
       });
     }
 
-    // Sort invoices (default nearest due date first!)
+    // Sort invoices
     list.sort((a, b) => {
       let valA: any;
       let valB: any;
@@ -345,6 +356,16 @@ const RecurringInvoiceList: React.FC<RecurringInvoiceListProps> = ({
     }
   };
 
+  const handleToggleArchiveClick = async (invoice: Invoice) => {
+    if (!onToggleArchive) return;
+    setArchivingId(invoice.id);
+    try {
+      await onToggleArchive(invoice);
+    } finally {
+      setArchivingId(null);
+    }
+  };
+
   const handleDelete = (e: React.MouseEvent, id: string, number: string) => {
     e.stopPropagation();
     if (onDeleteInvoice && window.confirm(`Are you sure you want to delete recurring template ${number}? This action cannot be undone.`)) {
@@ -354,34 +375,37 @@ const RecurringInvoiceList: React.FC<RecurringInvoiceListProps> = ({
 
   return (
     <div className="space-y-6">
-      {/* Overview Cards */}
+      {/* Overview Metric Cards */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-        <div className="bg-white p-5 rounded-2xl shadow-sm border border-gray-100 flex flex-col justify-between">
+        {/* Card 1: Due Soon */}
+        <div className="bg-white p-5 rounded-2xl shadow-sm border border-amber-100/80 flex flex-col justify-between">
           <div className="flex items-center justify-between">
-            <p className="text-xs font-bold text-gray-500 uppercase tracking-wider">Due for Renewal</p>
-            <span className="p-2 rounded-xl bg-primary-50 text-primary-600">
+            <p className="text-xs font-bold text-amber-700 uppercase tracking-wider">Due Soon</p>
+            <span className="p-2 rounded-xl bg-amber-50 text-amber-600">
               <Icon name="repeat" className="w-5 h-5" />
             </span>
           </div>
           <div className="mt-3">
-            <h3 className="text-2xl font-black text-gray-900">{stats.due30Count}</h3>
-            <p className="text-xs text-gray-500 mt-1">Invoices due within 30 days</p>
+            <h3 className="text-2xl font-black text-amber-900">{stats.dueSoonCount}</h3>
+            <p className="text-xs text-amber-700 mt-1">Approaching next generation date</p>
           </div>
         </div>
 
-        <div className="bg-white p-5 rounded-2xl shadow-sm border border-gray-100 flex flex-col justify-between">
+        {/* Card 2: Overdue Generation */}
+        <div className="bg-white p-5 rounded-2xl shadow-sm border border-red-100 flex flex-col justify-between">
           <div className="flex items-center justify-between">
-            <p className="text-xs font-bold text-red-600 uppercase tracking-wider">Overdue Renewals</p>
+            <p className="text-xs font-bold text-red-600 uppercase tracking-wider">Overdue Generation</p>
             <span className="p-2 rounded-xl bg-red-50 text-red-600">
               <Icon name="invoices" className="w-5 h-5" />
             </span>
           </div>
           <div className="mt-3">
             <h3 className="text-2xl font-black text-red-600">{stats.overdueCount}</h3>
-            <p className="text-xs text-red-500 mt-1">Require immediate renewal generation</p>
+            <p className="text-xs text-red-500 mt-1">Scheduled generation date passed</p>
           </div>
         </div>
 
+        {/* Card 3: Active Schedules */}
         <div className="bg-white p-5 rounded-2xl shadow-sm border border-gray-100 flex flex-col justify-between">
           <div className="flex items-center justify-between">
             <p className="text-xs font-bold text-green-600 uppercase tracking-wider">Active Schedules</p>
@@ -391,10 +415,11 @@ const RecurringInvoiceList: React.FC<RecurringInvoiceListProps> = ({
           </div>
           <div className="mt-3">
             <h3 className="text-2xl font-black text-green-700">{stats.activeCount}</h3>
-            <p className="text-xs text-green-600 mt-1">{stats.pausedCount} paused schedules</p>
+            <p className="text-xs text-green-600 mt-1">{stats.pausedCount} paused • {stats.archivedCount} archived</p>
           </div>
         </div>
 
+        {/* Card 4: Contract Value */}
         <div className="bg-white p-5 rounded-2xl shadow-sm border border-gray-100 flex flex-col justify-between">
           <div className="flex items-center justify-between">
             <p className="text-xs font-bold text-blue-600 uppercase tracking-wider">Contract Value</p>
@@ -404,14 +429,14 @@ const RecurringInvoiceList: React.FC<RecurringInvoiceListProps> = ({
           </div>
           <div className="mt-3">
             <h3 className="text-2xl font-black text-blue-900">₦{stats.totalContractValue.toLocaleString()}</h3>
-            <p className="text-xs text-blue-600 mt-1">Total value per billing cycle</p>
+            <p className="text-xs text-blue-600 mt-1">Total active value per cycle</p>
           </div>
         </div>
       </div>
 
       {/* Main Module Card */}
       <div className="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden">
-        {/* Module Navigation Header */}
+        {/* Module Header */}
         <div className="p-6 border-b border-gray-100 bg-gray-50/50">
           <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 mb-6">
             <div>
@@ -422,11 +447,11 @@ const RecurringInvoiceList: React.FC<RecurringInvoiceListProps> = ({
                 <h2 className="text-xl font-bold text-gray-900">Recurring Invoices & Renewals</h2>
               </div>
               <p className="text-sm text-gray-500 mt-1">
-                Automated recurring invoice management. View upcoming renewal dates, sort by nearest due date, and trigger instant renewals.
+                Automated recurring invoice management. View upcoming renewal dates, separate due soon from overdue, and archive inactive schedules.
               </p>
             </div>
 
-            {/* Dedicated Section Tabs */}
+            {/* Main Tabs (Renewals, Active Templates, Archived Templates) */}
             <div className="flex items-center bg-gray-200/60 p-1 rounded-xl self-start md:self-auto">
               <button
                 onClick={() => { setActiveTab('renewals'); setCurrentPage(1); }}
@@ -452,10 +477,26 @@ const RecurringInvoiceList: React.FC<RecurringInvoiceListProps> = ({
                     : 'text-gray-600 hover:text-gray-900'
                 }`}
               >
-                <span>All Recurring Templates</span>
+                <span>All Active Templates</span>
                 <span className="px-1.5 py-0.5 text-[10px] font-black rounded-full bg-gray-300 text-gray-700">
                   {stats.totalTemplates}
                 </span>
+              </button>
+
+              <button
+                onClick={() => { setActiveTab('archived'); setCurrentPage(1); }}
+                className={`px-4 py-2 rounded-lg text-xs font-bold transition-all flex items-center gap-2 ${
+                  activeTab === 'archived'
+                    ? 'bg-white text-amber-800 shadow-sm font-black'
+                    : 'text-gray-600 hover:text-gray-900'
+                }`}
+              >
+                <span>📦 Archived</span>
+                {stats.archivedCount > 0 && (
+                  <span className="px-1.5 py-0.5 text-[10px] font-black rounded-full bg-amber-100 text-amber-900 border border-amber-300">
+                    {stats.archivedCount}
+                  </span>
+                )}
               </button>
             </div>
           </div>
@@ -471,7 +512,7 @@ const RecurringInvoiceList: React.FC<RecurringInvoiceListProps> = ({
                 type="text"
                 value={searchTerm}
                 onChange={(e) => { setSearchTerm(e.target.value); setCurrentPage(1); }}
-                placeholder="Search by client, invoice #, service name, frequency..."
+                placeholder="Search by client, invoice #, service, frequency..."
                 className="block w-full pl-9 pr-3 py-2 border border-gray-200 rounded-xl text-xs bg-white focus:ring-2 focus:ring-primary-500 focus:border-primary-500 transition-all"
               />
               {searchTerm && (
@@ -484,7 +525,7 @@ const RecurringInvoiceList: React.FC<RecurringInvoiceListProps> = ({
               )}
             </div>
 
-            {/* Filter Chips for Renewals */}
+            {/* Sub-Filters for Renewals */}
             {activeTab === 'renewals' && (
               <div className="flex items-center gap-1.5 overflow-x-auto pb-1 md:pb-0">
                 <button
@@ -495,7 +536,7 @@ const RecurringInvoiceList: React.FC<RecurringInvoiceListProps> = ({
                       : 'bg-white text-gray-600 hover:bg-gray-100 border border-gray-200'
                   }`}
                 >
-                  All Schedules
+                  All Active
                 </button>
                 <button
                   onClick={() => { setRenewalFilter('due-soon'); setCurrentPage(1); }}
@@ -505,7 +546,7 @@ const RecurringInvoiceList: React.FC<RecurringInvoiceListProps> = ({
                       : 'bg-white text-amber-700 hover:bg-amber-50 border border-amber-200'
                   }`}
                 >
-                  <span>Due Soon / Overdue</span>
+                  <span>Due Soon</span>
                   {stats.dueSoonCount > 0 && (
                     <span className="px-1.5 py-0.2 rounded-full text-[10px] bg-amber-100 text-amber-900 font-bold">
                       {stats.dueSoonCount}
@@ -552,14 +593,16 @@ const RecurringInvoiceList: React.FC<RecurringInvoiceListProps> = ({
           </div>
         </div>
 
-        {/* Section Banner */}
+        {/* Banner */}
         <div className="bg-primary-50/40 px-6 py-2.5 border-b border-primary-100/50 flex items-center justify-between text-xs">
           <div className="flex items-center gap-2 text-primary-900 font-semibold">
             <span className="w-2 h-2 rounded-full bg-primary-600 animate-pulse"></span>
             <span>
               {activeTab === 'renewals'
-                ? `Showing ${filteredAndSortedInvoices.length} recurring invoices due for renewal (sorted by nearest due date first)`
-                : `Showing ${filteredAndSortedInvoices.length} active recurring template contracts`}
+                ? `Showing ${filteredAndSortedInvoices.length} recurring invoices in renewal schedule`
+                : activeTab === 'templates'
+                ? `Showing ${filteredAndSortedInvoices.length} active recurring template contracts`
+                : `Showing ${filteredAndSortedInvoices.length} archived recurring templates (hidden from active generation)`}
             </span>
           </div>
           <span className="text-gray-400 text-[11px]">
@@ -631,18 +674,23 @@ const RecurringInvoiceList: React.FC<RecurringInvoiceListProps> = ({
                 const clientName = getClientNameById(invoice.clientId);
                 const serviceSummary = getInvoiceServicesSummary(invoice, services);
                 const dueDateStr = invoice.nextRecurrenceDate || invoice.nextDueDate || invoice.dueDate;
-                const urgency = getRenewalUrgency(dueDateStr);
+                const urgency = getRenewalUrgency(dueDateStr, invoice.frequency);
+                const isArchived = invoice.recurringStatus === 'archived';
                 const isPaused = invoice.recurringStatus === 'paused';
 
                 return (
                   <tr
                     key={invoice.id}
-                    className="hover:bg-gray-50/80 transition-colors group border-b border-gray-100"
+                    className={`hover:bg-gray-50/80 transition-colors group border-b border-gray-100 ${
+                      isArchived ? 'bg-gray-50/50 opacity-80' : ''
+                    }`}
                   >
                     {/* Client Name */}
                     <td className="px-6 py-4 font-semibold text-gray-900 whitespace-nowrap">
                       <div className="flex items-center gap-2.5">
-                        <div className="w-7 h-7 rounded-full bg-primary-100 text-primary-700 flex items-center justify-center font-bold text-xs uppercase flex-shrink-0">
+                        <div className={`w-7 h-7 rounded-full flex items-center justify-center font-bold text-xs uppercase flex-shrink-0 ${
+                          isArchived ? 'bg-gray-200 text-gray-600' : 'bg-primary-100 text-primary-700'
+                        }`}>
                           {clientName.slice(0, 2)}
                         </div>
                         <div>
@@ -673,15 +721,21 @@ const RecurringInvoiceList: React.FC<RecurringInvoiceListProps> = ({
                       </span>
                     </td>
 
-                    {/* Next Due Date (Urgency Badge) */}
+                    {/* Next Due Date */}
                     <td className="px-6 py-4 whitespace-nowrap">
                       <div className="flex flex-col gap-1">
                         <span className="font-bold text-gray-900">{dueDateStr || 'N/A'}</span>
-                        <span
-                          className={`inline-flex items-center px-2 py-0.5 rounded-full text-[10px] border w-fit ${urgency.badgeClass}`}
-                        >
-                          {urgency.label}
-                        </span>
+                        {isArchived ? (
+                          <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] bg-gray-100 text-gray-500 border border-gray-200 w-fit">
+                            Archived
+                          </span>
+                        ) : (
+                          <span
+                            className={`inline-flex items-center px-2 py-0.5 rounded-full text-[10px] border w-fit ${urgency.badgeClass}`}
+                          >
+                            {urgency.label}
+                          </span>
+                        )}
                       </div>
                     </td>
 
@@ -700,49 +754,89 @@ const RecurringInvoiceList: React.FC<RecurringInvoiceListProps> = ({
                     {/* Status */}
                     <td className="px-6 py-4 whitespace-nowrap">
                       <div className="flex flex-col gap-1">
-                        <InvoiceStatusBadge status={invoice.status} />
-                        <span
-                          className={`text-[9px] font-black uppercase tracking-wider ${
-                            isPaused ? 'text-amber-600' : 'text-green-600'
-                          }`}
-                        >
-                          {isPaused ? '⏸️ Paused' : '⚡ Schedule Active'}
-                        </span>
+                        {isArchived ? (
+                          <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-bold bg-gray-200 text-gray-700 border border-gray-300 w-fit">
+                            📦 Archived
+                          </span>
+                        ) : (
+                          <>
+                            <InvoiceStatusBadge status={invoice.status} />
+                            <span
+                              className={`text-[9px] font-black uppercase tracking-wider ${
+                                isPaused ? 'text-amber-600' : 'text-green-600'
+                              }`}
+                            >
+                              {isPaused ? '⏸️ Paused' : '⚡ Schedule Active'}
+                            </span>
+                          </>
+                        )}
                       </div>
                     </td>
 
                     {/* Actions */}
                     <td className="px-6 py-4 text-right whitespace-nowrap space-x-2">
-                      {/* Renew Now Action Button */}
-                      {onRenewInvoice && (
-                        <button
-                          onClick={() => handleRenewClick(invoice)}
-                          disabled={renewingId === invoice.id || isPaused}
-                          className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold transition-all shadow-sm ${
-                            isPaused
-                              ? 'bg-gray-100 text-gray-400 cursor-not-allowed border border-gray-200'
-                              : 'bg-primary-600 hover:bg-primary-700 text-white active:scale-95'
-                          }`}
-                          title={isPaused ? 'Resume schedule to generate renewal' : 'Generate current cycle renewal invoice'}
-                        >
-                          {renewingId === invoice.id ? (
-                            <span className="inline-block w-3 h-3 border-2 border-white border-t-transparent rounded-full animate-spin"></span>
-                          ) : (
-                            <span>⚡ Renew Now</span>
+                      {isArchived ? (
+                        /* Restore Action Button */
+                        onToggleArchive && (
+                          <button
+                            onClick={() => handleToggleArchiveClick(invoice)}
+                            disabled={archivingId === invoice.id}
+                            className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold bg-amber-500 hover:bg-amber-600 text-white shadow-sm transition-all active:scale-95"
+                            title="Restore recurring schedule to active lists"
+                          >
+                            {archivingId === invoice.id ? (
+                              <span className="inline-block w-3 h-3 border-2 border-white border-t-transparent rounded-full animate-spin"></span>
+                            ) : (
+                              <span>🔄 Restore Schedule</span>
+                            )}
+                          </button>
+                        )
+                      ) : (
+                        <>
+                          {/* Renew Now Action Button */}
+                          {onRenewInvoice && (
+                            <button
+                              onClick={() => handleRenewClick(invoice)}
+                              disabled={renewingId === invoice.id || isPaused}
+                              className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold transition-all shadow-sm ${
+                                isPaused
+                                  ? 'bg-gray-100 text-gray-400 cursor-not-allowed border border-gray-200'
+                                  : 'bg-primary-600 hover:bg-primary-700 text-white active:scale-95'
+                              }`}
+                              title={isPaused ? 'Resume schedule to generate renewal' : 'Generate current cycle renewal invoice'}
+                            >
+                              {renewingId === invoice.id ? (
+                                <span className="inline-block w-3 h-3 border-2 border-white border-t-transparent rounded-full animate-spin"></span>
+                              ) : (
+                                <span>⚡ Renew Now</span>
+                              )}
+                            </button>
                           )}
-                        </button>
-                      )}
 
-                      {/* Pause / Resume Button */}
-                      {onTogglePause && (
-                        <button
-                          onClick={() => handleTogglePauseClick(invoice)}
-                          disabled={pausingId === invoice.id}
-                          className="px-2.5 py-1.5 rounded-lg text-xs font-semibold border border-gray-200 bg-white text-gray-700 hover:bg-gray-50 transition-colors"
-                          title={isPaused ? 'Resume renewal schedule' : 'Pause automatic renewal schedule'}
-                        >
-                          {pausingId === invoice.id ? '...' : isPaused ? '▶️ Resume' : '⏸️ Pause'}
-                        </button>
+                          {/* Pause / Resume Button */}
+                          {onTogglePause && (
+                            <button
+                              onClick={() => handleTogglePauseClick(invoice)}
+                              disabled={pausingId === invoice.id}
+                              className="px-2.5 py-1.5 rounded-lg text-xs font-semibold border border-gray-200 bg-white text-gray-700 hover:bg-gray-50 transition-colors"
+                              title={isPaused ? 'Resume renewal schedule' : 'Pause automatic renewal schedule'}
+                            >
+                              {pausingId === invoice.id ? '...' : isPaused ? '▶️ Resume' : '⏸️ Pause'}
+                            </button>
+                          )}
+
+                          {/* Archive Action Button */}
+                          {onToggleArchive && (
+                            <button
+                              onClick={() => handleToggleArchiveClick(invoice)}
+                              disabled={archivingId === invoice.id}
+                              className="px-2.5 py-1.5 rounded-lg text-xs font-semibold border border-amber-200 bg-amber-50 text-amber-800 hover:bg-amber-100 transition-colors"
+                              title="Archive schedule (hide without deleting)"
+                            >
+                              {archivingId === invoice.id ? '...' : '📦 Archive'}
+                            </button>
+                          )}
+                        </>
                       )}
 
                       {/* View Action */}
@@ -755,7 +849,7 @@ const RecurringInvoiceList: React.FC<RecurringInvoiceListProps> = ({
                       </button>
 
                       {/* Edit Action */}
-                      {onEditInvoice && (
+                      {!isArchived && onEditInvoice && (
                         <button
                           onClick={() => onEditInvoice(invoice.id)}
                           className="p-1.5 text-gray-500 hover:text-amber-600 hover:bg-amber-50 rounded-lg transition-colors"
@@ -787,10 +881,16 @@ const RecurringInvoiceList: React.FC<RecurringInvoiceListProps> = ({
                       <span className="p-3 bg-gray-100 rounded-full text-gray-400">
                         <Icon name="repeat" className="w-8 h-8" />
                       </span>
-                      <p className="font-bold text-gray-700 text-sm">No recurring invoices found</p>
+                      <p className="font-bold text-gray-700 text-sm">
+                        {activeTab === 'archived'
+                          ? 'No archived recurring invoices'
+                          : 'No recurring invoices found'}
+                      </p>
                       <p className="text-xs text-gray-400 max-w-sm">
                         {searchTerm || renewalFilter !== 'all'
                           ? 'Try clearing your search query or changing filter settings.'
+                          : activeTab === 'archived'
+                          ? 'Archived recurring templates will appear here and can be restored at any time.'
                           : 'Create a recurring invoice template from the "Invoices" or "Create Invoice" tab to enable automated renewal tracking.'}
                       </p>
                     </div>

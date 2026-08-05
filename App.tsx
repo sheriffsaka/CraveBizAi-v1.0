@@ -286,7 +286,7 @@ export default function App() {
       // Automated recurring invoice processing
       try {
         const todayStr = new Date().toISOString().split('T')[0];
-        const templates = inv.filter(i => i.isRecurringTemplate && i.recurringStatus !== 'paused' && i.autoGenerate !== false && (i.nextRecurrenceDate || i.nextDueDate));
+        const templates = inv.filter(i => i.isRecurringTemplate && i.recurringStatus !== 'paused' && i.recurringStatus !== 'archived' && i.autoGenerate !== false && (i.nextRecurrenceDate || i.nextDueDate));
         let createdAny = false;
 
         for (const template of templates) {
@@ -721,6 +721,29 @@ export default function App() {
         recurringStatus: newStatus
       });
       await triggerAuditLog('TOGGLE_RECURRING_STATUS', template.id, `Set recurring schedule for ${template.invoiceNumber} to ${newStatus}`);
+      await forceSyncData(activeTenantId);
+    } catch (e) {
+      alert(`Update Error: ${stringifyError(e)}`);
+    } finally {
+      if (isMounted.current) setIsDataSyncing(false);
+    }
+  };
+
+  const handleToggleArchiveAction = async (template: Invoice) => {
+    if (!activeTenantId) return;
+    setIsDataSyncing(true);
+    try {
+      const isCurrentlyArchived = template.recurringStatus === 'archived';
+      const newStatus = isCurrentlyArchived ? 'active' : 'archived';
+      await api.updateInvoice({
+        ...template,
+        recurringStatus: newStatus
+      });
+      await triggerAuditLog(
+        'TOGGLE_RECURRING_ARCHIVE',
+        template.id,
+        `${isCurrentlyArchived ? 'Restored' : 'Archived'} recurring template ${template.invoiceNumber}`
+      );
       await forceSyncData(activeTenantId);
     } catch (e) {
       alert(`Update Error: ${stringifyError(e)}`);
@@ -1186,6 +1209,7 @@ export default function App() {
           onDeleteInvoice={handleDeleteInvoice}
           onRenewInvoice={handleRenewInvoiceAction}
           onTogglePause={handleTogglePauseAction}
+          onToggleArchive={handleToggleArchiveAction}
         />
       );
       case 'sent-receipts': return <SentReceiptsList invoices={invoices.filter(i => i.isReceiptSent)} clients={clients} userRole={userRole} onViewInvoice={(id) => { setSelectedInvoiceId(id); navigateTo('receipt-detail'); }} onEditInvoice={handleEditInvoiceAction} onDeleteReceipt={handleDeleteReceipt} />;

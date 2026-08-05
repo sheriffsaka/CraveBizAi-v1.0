@@ -135,7 +135,7 @@ export interface InvoiceItem {
   renewalReminderDaysBefore?: number;
 }
 
-export type RecurringStatus = 'active' | 'paused' | 'completed' | 'cancelled';
+export type RecurringStatus = 'active' | 'paused' | 'completed' | 'cancelled' | 'archived';
 
 export interface Invoice {
   id: string;
