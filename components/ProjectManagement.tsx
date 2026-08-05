@@ -22,10 +22,10 @@ interface ProjectManagementProps {
 
 const LIFECYCLE_STAGES: { status: ProjectStatus; label: string; desc: string; icon: string; actionText?: string; actionPage?: string }[] = [
   { status: 'Planning', label: '1. Planning', desc: 'Identify goals, define scope, and estimate baseline service requirements.', icon: 'dashboard' },
-  { status: 'Proposal', label: '2. Proposal', desc: 'Draft and send smart document proposal with detailed quotes.', icon: 'edit', actionText: 'Create Proposal Document', actionPage: 'document-transformer' },
+  { status: 'Proposal', label: '2. Proposal', desc: 'Draft and send smart proposal with detailed quotes.', icon: 'invoices', actionText: 'Create Invoice Proposal', actionPage: 'create-invoice' },
   { status: 'Negotiation', label: '3. Negotiation', desc: 'Collaborate on adjustments, prices, and service schedules.', icon: 'repeat' },
-  { status: 'Contract', label: '4. Contract', desc: 'Review legal clauses, security, and payment terms.', icon: 'edit', actionText: 'Generate Agreement Contract', actionPage: 'document-transformer' },
-  { status: 'Signing', label: '5. Signing', desc: 'Collect secure electronic signatures through DocSignify.', icon: 'clients', actionText: 'Collect Electronic Signatures', actionPage: 'document-transformer' },
+  { status: 'Contract', label: '4. Contract', desc: 'Review legal clauses, security, and payment terms.', icon: 'doc-signify', actionText: 'Review in DocSignify', actionPage: 'doc-signify' },
+  { status: 'Signing', label: '5. Signing', desc: 'Collect secure electronic signatures through DocSignify.', icon: 'clients', actionText: 'Collect Electronic Signatures', actionPage: 'doc-signify' },
   { status: 'Invoice', label: '6. Invoice', desc: 'Automatically generate and issue invoice for contract payment.', icon: 'invoices', actionText: 'Create New Invoice', actionPage: 'create-invoice' },
   { status: 'Payment', label: '7. Payment', desc: 'Process payment, monitor collection, and issue receipts.', icon: 'reports' },
   { status: 'Completed', label: '8. Completed', desc: 'All deliverables met, final receipts issued, and values recognized.', icon: 'mail' },

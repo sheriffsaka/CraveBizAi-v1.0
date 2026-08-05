@@ -82,6 +82,33 @@ const extractMissingColumnName = (msg: string): string | null => {
   return null;
 };
 
+const inFlightRequests = new Map<string, Promise<any>>();
+
+export function dedupeRequest<T>(key: string, fetcher: () => Promise<T>, ttlMs = 1500): Promise<T> {
+  if (inFlightRequests.has(key)) {
+    return inFlightRequests.get(key) as Promise<T>;
+  }
+  const promise = fetcher().finally(() => {
+    setTimeout(() => {
+      inFlightRequests.delete(key);
+    }, ttlMs);
+  });
+  inFlightRequests.set(key, promise);
+  return promise;
+}
+
+export function invalidateRequestCache(prefix?: string) {
+  if (!prefix) {
+    inFlightRequests.clear();
+    return;
+  }
+  for (const key of inFlightRequests.keys()) {
+    if (key.startsWith(prefix)) {
+      inFlightRequests.delete(key);
+    }
+  }
+}
+
 interface RecurringMeta {
   frequency?: InvoiceFrequency;
   nextRecurrenceDate?: string;
@@ -602,20 +629,23 @@ class CraveBizApi {
   }
 
   async fetchInvoices(companyId: string): Promise<Invoice[]> {
-    const { data, error } = await supabase.from('invoices').select('*, invoice_items(*)').eq('company_id', cleanCompanyId(companyId)).order('created_at', { ascending: false });
-    if (error) throw error;
+    const cleanId = cleanCompanyId(companyId);
+    return dedupeRequest(`invoices:${cleanId}`, async () => {
+      const { data, error } = await supabase.from('invoices').select('*, invoice_items(*)').eq('company_id', cleanId).order('created_at', { ascending: false });
+      if (error) throw error;
 
-    if (data) {
-      const cleanCompId = cleanCompanyId(companyId);
-      import("../services/subscriptionService").then(({ saveSubscriptionInfoToDb }) => {
-        saveSubscriptionInfoToDb(cleanCompId).catch(err => console.warn("Background count sync failed:", err));
-      }).catch(err => console.warn("Deferred import failed:", err));
-    }
-    
-    return (data || []).map(mapDbInvoiceToInvoice);
+      if (data) {
+        import("../services/subscriptionService").then(({ saveSubscriptionInfoToDb }) => {
+          saveSubscriptionInfoToDb(cleanId).catch(err => console.warn("Background count sync failed:", err));
+        }).catch(err => console.warn("Deferred import failed:", err));
+      }
+      
+      return (data || []).map(mapDbInvoiceToInvoice);
+    });
   }
 
   async createInvoice(companyId: string, invoice: Omit<Invoice, 'id' | 'invoiceNumber'>): Promise<Invoice> {
+    invalidateRequestCache('invoices');
     const invId = generateId();
     const invNum = `INV-${Date.now().toString().slice(-6)}`;
     
@@ -862,12 +892,16 @@ class CraveBizApi {
   }
 
   async fetchClients(companyId: string): Promise<Client[]> {
-    const { data, error } = await supabase.from('clients').select('*').eq('company_id', cleanCompanyId(companyId));
-    if (error) throw error;
-    return (data || []).map(c => ({ id: c.id, companyId: c.company_id, name: c.name, email: c.email, companyName: c.company_name }));
+    const cleanId = cleanCompanyId(companyId);
+    return dedupeRequest(`clients:${cleanId}`, async () => {
+      const { data, error } = await supabase.from('clients').select('*').eq('company_id', cleanId);
+      if (error) throw error;
+      return (data || []).map(c => ({ id: c.id, companyId: c.company_id, name: c.name, email: c.email, companyName: c.company_name }));
+    });
   }
 
   async createClient(client: Omit<Client, 'id'>): Promise<Client> {
+    invalidateRequestCache('clients');
     const { data, error } = await supabase.from('clients').insert({
         id: generateId(),
         company_id: cleanCompanyId(client.companyId),
@@ -900,28 +934,32 @@ class CraveBizApi {
   }
 
   async fetchProjects(companyId: string): Promise<Project[]> {
-    try {
-      const { data, error } = await supabase.from('projects').select('*').eq('company_id', cleanCompanyId(companyId));
-      if (error) throw error;
-      return (data || []).map(p => ({
-        id: p.id,
-        companyId: p.company_id,
-        clientId: p.client_id,
-        name: p.name,
-        description: p.description || '',
-        status: p.status,
-        value: Number(p.value || 0),
-        startDate: p.start_date,
-        endDate: p.end_date,
-        createdAt: p.created_at
-      }));
-    } catch (dbErr) {
-      console.warn("Supabase projects select failed:", dbErr);
-      return [];
-    }
+    const cleanId = cleanCompanyId(companyId);
+    return dedupeRequest(`projects:${cleanId}`, async () => {
+      try {
+        const { data, error } = await supabase.from('projects').select('*').eq('company_id', cleanId);
+        if (error) throw error;
+        return (data || []).map(p => ({
+          id: p.id,
+          companyId: p.company_id,
+          clientId: p.client_id,
+          name: p.name,
+          description: p.description || '',
+          status: p.status,
+          value: Number(p.value || 0),
+          startDate: p.start_date,
+          endDate: p.end_date,
+          createdAt: p.created_at
+        }));
+      } catch (dbErr) {
+        console.warn("Supabase projects select failed:", dbErr);
+        return [];
+      }
+    });
   }
 
   async createProject(project: Omit<Project, 'id' | 'createdAt'>): Promise<Project> {
+    invalidateRequestCache('projects');
     const id = generateId();
     const createdAt = new Date().toISOString();
     const newProject: Project = { ...project, id, createdAt };
@@ -962,22 +1000,26 @@ class CraveBizApi {
   }
 
   async fetchServices(companyId: string): Promise<Service[]> {
-    const { data, error } = await supabase.from('services').select('*').eq('company_id', cleanCompanyId(companyId));
-    if (error) throw error;
-    return (data || []).map(s => ({
-      id: s.id,
-      companyId: s.company_id,
-      name: s.name,
-      packageName: s.package_name || s.packageName || '',
-      category: s.category,
-      description: s.description,
-      price: Number(s.price),
-      directCost: s.direct_cost !== undefined && s.direct_cost !== null ? Number(s.direct_cost) : (s.directCost !== undefined && s.directCost !== null ? Number(s.directCost) : 0),
-      indirectCost: s.indirect_cost !== undefined && s.indirect_cost !== null ? Number(s.indirect_cost) : (s.indirectCost !== undefined && s.indirectCost !== null ? Number(s.indirectCost) : 0)
-    }));
+    const cleanId = cleanCompanyId(companyId);
+    return dedupeRequest(`services:${cleanId}`, async () => {
+      const { data, error } = await supabase.from('services').select('*').eq('company_id', cleanId);
+      if (error) throw error;
+      return (data || []).map(s => ({
+        id: s.id,
+        companyId: s.company_id,
+        name: s.name,
+        packageName: s.package_name || s.packageName || '',
+        category: s.category,
+        description: s.description,
+        price: Number(s.price),
+        directCost: s.direct_cost !== undefined && s.direct_cost !== null ? Number(s.direct_cost) : (s.directCost !== undefined && s.directCost !== null ? Number(s.directCost) : 0),
+        indirectCost: s.indirect_cost !== undefined && s.indirect_cost !== null ? Number(s.indirect_cost) : (s.indirectCost !== undefined && s.indirectCost !== null ? Number(s.indirectCost) : 0)
+      }));
+    });
   }
 
   async createService(service: Omit<Service, 'id'>): Promise<Service> {
+    invalidateRequestCache('services');
     const newId = generateId();
     const payload: any = {
       id: newId,
@@ -1182,138 +1224,8 @@ class CraveBizApi {
   }
 
   async fetchGeneratedDocs(companyId: string): Promise<StoredGeneratedDoc[]> {
-    let dbDocs: StoredGeneratedDoc[] = [];
-    
-    // 1. Fetch from generated_documents
-    try {
-      const { data, error } = await supabase.from('generated_documents')
-        .select('*')
-        .eq('company_id', cleanCompanyId(companyId))
-        .order('created_at', { ascending: false });
-        
-      if (!error && data) {
-        dbDocs = data.map(doc => {
-          let blocks: DocumentBlock[] = [];
-          let signatures: any[] = [];
-          let originalFileBase64: string | undefined = undefined;
-          let originalFileType: string | undefined = undefined;
-          let originalFileName: string | undefined = undefined;
-          let ownerId: string | undefined = undefined;
-          if (doc.content) {
-            if (Array.isArray(doc.content)) {
-              blocks = doc.content;
-            } else if (typeof doc.content === 'object') {
-              blocks = (doc.content as any).blocks || [];
-              signatures = (doc.content as any).signatures || [];
-              originalFileBase64 = (doc.content as any).originalFileBase64;
-              originalFileType = (doc.content as any).originalFileType;
-              originalFileName = (doc.content as any).originalFileName;
-              ownerId = (doc.content as any).ownerId;
-            }
-          }
-          return {
-            id: doc.id,
-            companyId: doc.company_id,
-            createdAt: doc.created_at,
-            documentType: doc.document_type,
-            blocks,
-            signatures,
-            originalFileBase64,
-            originalFileType,
-            originalFileName,
-            ownerId
-          };
-        });
-      }
-    } catch (dbError) {
-      console.warn("Supabase fetch failed for generated_documents:", dbError);
-    }
-
-    // 2. Fetch from alternative documents table if empty/failed
-    if (dbDocs.length === 0) {
-      try {
-        const { data, error } = await supabase.from('documents')
-          .select('*')
-          .eq('company_id', companyId)
-          .order('created_at', { ascending: false });
-          
-        if (!error && data) {
-          dbDocs = data.map(doc => {
-            let blocks: DocumentBlock[] = [];
-            let signatures: any[] = [];
-            let originalFileBase64: string | undefined = undefined;
-            let originalFileType: string | undefined = undefined;
-            let originalFileName: string | undefined = undefined;
-            let ownerId: string | undefined = undefined;
-            if (doc.content) {
-              if (Array.isArray(doc.content)) {
-                blocks = doc.content;
-              } else if (typeof doc.content === 'object') {
-                blocks = (doc.content as any).blocks || [];
-                signatures = (doc.content as any).signatures || [];
-                originalFileBase64 = (doc.content as any).originalFileBase64;
-                originalFileType = (doc.content as any).originalFileType;
-                originalFileName = (doc.content as any).originalFileName;
-                ownerId = (doc.content as any).ownerId;
-              }
-            }
-            return {
-              id: doc.id,
-              companyId: doc.company_id,
-              createdAt: doc.created_at || doc.created_at,
-              documentType: doc.document_type || doc.title || 'Document',
-              blocks,
-              signatures,
-              originalFileBase64,
-              originalFileType,
-              originalFileName,
-              ownerId
-            };
-          });
-        }
-      } catch (altErr) {
-        console.warn("Alternative documents fetch failed:", altErr);
-      }
-    }
-    
-    // Merge with localStorage docs to guarantee persistence even under RLS/network constraints
-    const combined = [...dbDocs];
-
-    // Merge with server-side public documents
-    try {
-      const resp = await fetch('/api/public/documents', {
-        headers: await this.getAuthHeaders(companyId)
-      });
-      if (resp.ok) {
-        const fsDocsMap = await resp.json();
-        const fsDocs = Object.values(fsDocsMap) as StoredGeneratedDoc[];
-        for (const fsDoc of fsDocs) {
-          if (fsDoc.companyId === companyId && !combined.some(d => d.id === fsDoc.id)) {
-            combined.push(fsDoc);
-          }
-        }
-      }
-    } catch (err) {
-      console.warn("Could not merge server-side public documents:", err);
-    }
-    
-    try {
-      const resp = await fetch('/api/public/signatures', {
-        headers: await this.getAuthHeaders(companyId)
-      });
-      if (resp.ok) {
-        const sigMap = await resp.json();
-        for (const doc of combined) {
-          if (sigMap[doc.id]) {
-            doc.signatures = sigMap[doc.id];
-          }
-        }
-      }
-    } catch (err) {
-      console.warn("Could not merge server-side public signatures:", err);
-    }
-    
-    return combined.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+    // DocGenerator module temporarily disabled
+    return [];
   }
 
   async saveGeneratedDoc(companyId: string, doc: GeneratedDocument): Promise<StoredGeneratedDoc> {

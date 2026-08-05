@@ -26,6 +26,7 @@ import DocSignify from './components/DocSignify';
 import PublicSigningPortal from './components/PublicSigningPortal';
 import ProjectManagement from './components/ProjectManagement';
 import NotificationsPage from './components/NotificationsPage';
+import SyncOverlay from './components/SyncOverlay';
 import { api, supabase } from './lib/api';
 import { generateRenewalInvoiceSuggestion } from './services/aiGenerationService';
 import { getSubscriptionInfo, setSubscriptionInfo, SubscriptionTier, TIER_LIMITS, syncGlobalPlanSettings, syncSubscriptionInfoFromDb, secureRefillCreditsOnDb, safeFlutterwaveCheckout, getFlutterwavePublicKey, saveSubscriptionInfoToDb, fetchAndCacheFlutterwavePublicKey, incrementInvoiceCount, incrementReceiptCount, syncGlobalRefillPacks, REFILL_PACKS } from './services/subscriptionService';
@@ -422,14 +423,17 @@ export default function App() {
             }
             
             if (profile.isAdmin) {
-                const [allComps, allUsrs, allInvs] = await Promise.all([
+                const [allComps, allUsrs] = await Promise.all([
                     api.getAllCompanies(),
-                    api.getAllProfiles(),
-                    api.getAllInvoices()
+                    api.getAllProfiles()
                 ]);
                 setCompanies(allComps);
                 setAllUsers(allUsrs);
-                setAllInvoices(allInvs);
+                
+                // Deferred background fetch for system console invoices
+                api.getAllInvoices().then(invs => {
+                    if (isMounted.current) setAllInvoices(invs);
+                }).catch(console.warn);
                 
                 if (allComps.length > 0) {
                     const tid = (activeTenantId && allComps.some(c => c.id === activeTenantId)) ? activeTenantId : allComps[0].id;
@@ -739,7 +743,7 @@ export default function App() {
     }
   };
 
-  const navigateTo = (page: Page) => { if (isMounted.current) { setActivePage(page); setIsMobileMenuOpen(false); } };
+  const navigateTo = (page: Page) => { if (isMounted.current) { setActivePage(page === 'document-transformer' ? 'dashboard' : page); setIsMobileMenuOpen(false); } };
   const handleEditInvoiceAction = (id: string) => { setSelectedInvoiceId(id); navigateTo('edit-invoice'); };
   const displayCompanies = useMemo(() => {
     return companies.map(c => {
@@ -988,11 +992,12 @@ export default function App() {
   }
 
   if (isLoading) return (
-    <div className="min-h-screen flex flex-col items-center justify-center bg-white">
-        <h1 className="text-3xl font-bold text-primary-700 mb-4 tracking-tighter">CraveBiZ AI</h1>
-        <div className="animate-spin rounded-full h-8 w-8 border-t-2 border-primary-600 mb-4"></div>
-        <p className="text-gray-400 font-bold uppercase tracking-[0.3em] text-[10px]">Initializing Cloud Vault...</p>
-    </div>
+    <SyncOverlay 
+      isVisible={isLoading} 
+      message="Preparing Workspace..." 
+      onRetry={() => window.location.reload()}
+      onDismiss={() => setIsLoading(false)}
+    />
   );
 
   const renderContent = () => {
@@ -1166,80 +1171,10 @@ export default function App() {
           initialFile={docTransformerPrefill?.initialFile}
           onBackToDashboard={() => navigateTo('dashboard')}
       />;
-      case 'document-transformer': return <DocumentTransformer 
-          company={activeCompany} 
-          user={currentUser} 
-          userRole={userRole}
-          generatedDocs={generatedDocs} 
-          initialTab={docTransformerPrefill?.initialTab}
-          prefillProject={docTransformerPrefill?.prefillProject}
-          prefillClient={docTransformerPrefill?.prefillClient}
-          onSaveDoc={async (doc, id) => { 
-              try {
-                  let saved;
-                  const docWithOwner = { ...doc, ownerId: doc.ownerId || currentUser?.id };
-                  if (id) {
-                      saved = await api.updateGeneratedDoc(activeTenantId!, id, docWithOwner);
-                  } else {
-                      saved = await api.saveGeneratedDoc(activeTenantId!, docWithOwner); 
-                  }
-                  const savedId = saved?.id;
-                  if (savedId && (doc.originalFileBase64 || doc.originalFileUrl)) {
-                      // Synchronize with modern DocSignify database tables
-                  const signatoriesMapped = (doc.signatures || []).map((s: any, idx: number) => ({
-                      id: s.id || `sig-${idx}`,
-                      name: s.name || 'Signatory',
-                      email: s.email || '',
-                      role: (s.signatoryType === 'Main' ? 'main_signatory' : s.signatoryType === 'Witness' ? 'witness' : 'additional_signatory') as DbDocumentSignatory['role']
-                  }));
-                  const contentJson = {
-                      fields: (doc.signatures || []).map((s: any, idx: number) => ({
-                          id: `field_${s.id || 'sig-' + idx}`,
-                          type: 'signature',
-                          page_number: s.page_number || 1,
-                          x_position: s.x_position !== undefined ? s.x_position : 50,
-                          y_position: s.y_position !== undefined ? s.y_position : (80 + idx * 5),
-                          width: s.width || 140,
-                          height: s.height || 55,
-                          assigned_signer_id: s.id || `sig-${idx}`,
-                          required: true
-                      }))
-                  };
-                  await api.createDocSignifyDocument(
-                      savedId,
-                      doc.documentType || 'Uploaded Agreement',
-                      doc.originalFileUrl || doc.originalFileBase64 || '',
-                      currentUser?.id || 'owner',
-                      doc.originalFileType || 'pdf',
-                      doc.originalFileName || 'document.pdf',
-                      signatoriesMapped,
-                      contentJson
-                  ).catch(err => {
-                      console.warn("DocSignify tables sync warning:", err);
-                  });
-              }
-              await forceSyncData(activeTenantId!); 
-              return savedId;
-          } catch (e) {
-              setSyncError(stringifyError(e));
-              return undefined;
-          }
-      }} 
-      onNavigateToSignify={(doc) => {
-          setDocTransformerPrefill({
-              initialFile: doc,
-              initialTab: 'sign'
-          });
-          navigateTo('doc-signify');
-      }}
-      onDeleteDoc={async (id) => {
-          try {
-              await api.deleteGeneratedDoc(activeTenantId!, id);
-              await forceSyncData(activeTenantId!);
-          } catch (e) {
-              setSyncError(stringifyError(e));
-          }
-      }} />;
+      /* DocGenerator module temporarily disabled
+      case 'document-transformer': return <DocumentTransformer ... />;
+      */
+      case 'document-transformer': return <Dashboard invoices={invoices} clients={clients} services={services} activeTenantId={activeTenantId} setActivePage={navigateTo} onViewInvoice={(id) => { setSelectedInvoiceId(id); navigateTo('invoice-detail'); }} onEditInvoice={handleEditInvoiceAction} onGenerateRenewal={handleGenerateRenewal} globalFilter={globalFilter} onFilterChange={handleGlobalFilterChange} />;
       case 'invoices': return <InvoiceList invoices={invoices} clients={clients} services={services} onViewInvoice={(id) => { setSelectedInvoiceId(id); navigateTo('invoice-detail'); }} onEditInvoice={handleEditInvoiceAction} onDeleteInvoice={handleDeleteInvoice} globalFilter={globalFilter} onFilterChange={handleGlobalFilterChange} />;
       case 'recurring-invoices': return (
         <RecurringInvoiceList 
@@ -1522,11 +1457,12 @@ export default function App() {
                     <button onClick={() => window.location.reload()} className="bg-white px-4 py-2 rounded-xl text-xs hover:bg-gray-50 transition-colors shadow-sm">Refresh Vault</button>
                 </div>
             )}
-            {isDataSyncing && (
-                <div className="fixed top-4 right-8 z-50 flex items-center bg-primary-600 text-white px-5 py-2 rounded-full text-[10px] font-black uppercase shadow-2xl animate-pulse">
-                    Syncing Vault...
-                </div>
-            )}
+            <SyncOverlay 
+              isVisible={isDataSyncing} 
+              message="Synchronizing Data..." 
+              onRetry={() => { if (activeTenantId) forceSyncData(activeTenantId); }}
+              onDismiss={() => setIsDataSyncing(false)}
+            />
             {renderContent()}
         </main>
       </div>

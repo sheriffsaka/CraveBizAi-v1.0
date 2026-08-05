@@ -45,7 +45,7 @@ const NavItem: React.FC<{
 const Sidebar: React.FC<SidebarProps> = ({ activePage, setActivePage, companyName, onLogout, isAdmin, isOpen, onClose, isCollapsed = false }) => {
   const navItems: { id: Page; label: string; icon: string }[] = [
     { id: 'dashboard', label: 'Dashboard', icon: 'dashboard' },
-    { id: 'document-transformer', label: 'DocGenerator', icon: 'edit' },
+    // { id: 'document-transformer', label: 'DocGenerator', icon: 'edit' }, // Temporarily disabled module
     { id: 'doc-signify', label: 'DocSignify', icon: 'signature' },
     { id: 'invoices', label: 'Invoices', icon: 'invoices' },
     { id: 'recurring-invoices', label: 'Recurring Invoices', icon: 'repeat' },
