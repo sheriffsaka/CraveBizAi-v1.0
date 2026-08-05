@@ -1,59 +1,21 @@
-import { SESClient, SendEmailCommand } from "@aws-sdk/client-ses";
 import nodemailer from "nodemailer";
 import { createInAppNotificationRecordAsync } from "./inAppNotificationModule.js";
 
-// AWS SES Client Instance Singleton
-let sesClientInstance: SESClient | null = null;
-
-export function getSESClient(): SESClient | null {
-    const region = process.env.AWS_SES_REGION || process.env.AWS_REGION || process.env.AWS_DEFAULT_REGION || "us-east-1";
-    const accessKeyId = process.env.AWS_SES_ACCESS_KEY_ID || process.env.AWS_ACCESS_KEY_ID;
-    const secretAccessKey = process.env.AWS_SES_SECRET_ACCESS_KEY || process.env.AWS_SECRET_ACCESS_KEY;
-
-    if (accessKeyId && secretAccessKey) {
-        if (!sesClientInstance) {
-            sesClientInstance = new SESClient({
-                region,
-                credentials: {
-                    accessKeyId,
-                    secretAccessKey
-                }
-            });
-        }
-        return sesClientInstance;
-    }
-
-    if (process.env.AWS_REGION || process.env.AWS_DEFAULT_REGION) {
-        if (!sesClientInstance) {
-            sesClientInstance = new SESClient({ region });
-        }
-        return sesClientInstance;
-    }
-
-    return null;
-}
-
 /**
- * Creates a nodemailer transport instance using env variables or fallback
+ * Creates a nodemailer transport instance using environment variables for credentials
  */
 function createTransporter() {
-    const host = process.env.SMTP_HOST;
+    const host = process.env.SMTP_HOST || "u68gmz62qy7g.fips.mail-manager-smtp.us-east-2.on.aws";
     const port = parseInt(process.env.SMTP_PORT || '587', 10);
-    const user = process.env.SMTP_USER;
-    const pass = process.env.SMTP_PASS;
-
-    if (host && user && pass) {
-        return nodemailer.createTransport({
-            host,
-            port,
-            secure: port === 465,
-            auth: { user, pass },
-            tls: { rejectUnauthorized: false }
-        });
-    }
+    const user = process.env.SMTP_USER || "inp-swyctvudaud66iimc7vl4dt3";
+    const pass = process.env.SMTP_PASS || "?97&l6xrbQ5xX)A$%2gx^RjuelxC8HEq";
 
     return nodemailer.createTransport({
-        jsonTransport: true
+        host,
+        port,
+        secure: port === 465,
+        auth: { user, pass },
+        tls: { rejectUnauthorized: false }
     });
 }
 
@@ -67,61 +29,18 @@ export interface SendEmailOptions {
 }
 
 /**
- * Core Dispatcher: Sends transactional email using AWS SES with graceful error logging and SMTP fallback
+ * Centralized Email Dispatcher:
+ * Routes every email through the configured SMTP server.
+ * Gracefully logs errors without interrupting user workflow.
  */
-export async function sendEmailViaSES(options: SendEmailOptions): Promise<{ success: boolean; messageId?: string; message: string }> {
-    const defaultFrom = process.env.AWS_SES_FROM || process.env.AWS_SES_SENDER || process.env.SMTP_FROM || "CraveBiZ AI <no-reply@cravebiz.ai>";
+export async function sendEmailViaSMTP(options: SendEmailOptions): Promise<{ success: boolean; messageId?: string; message: string }> {
+    const defaultFrom = process.env.SMTP_FROM || "noreply@cloudcraves.com";
+    const defaultReplyTo = process.env.SMTP_REPLY_TO || "support@cloudcraves.com";
+
     const fromAddress = options.from || defaultFrom;
+    const replyToAddress = options.replyTo || defaultReplyTo;
     const toAddresses = Array.isArray(options.to) ? options.to : [options.to];
 
-    const sesClient = getSESClient();
-
-    if (sesClient) {
-        try {
-            const command = new SendEmailCommand({
-                Source: fromAddress,
-                Destination: {
-                    ToAddresses: toAddresses
-                },
-                Message: {
-                    Subject: {
-                        Data: options.subject,
-                        Charset: "UTF-8"
-                    },
-                    Body: {
-                        Html: {
-                            Data: options.html,
-                            Charset: "UTF-8"
-                        },
-                        Text: options.text ? {
-                            Data: options.text,
-                            Charset: "UTF-8"
-                        } : undefined
-                    }
-                },
-                ReplyToAddresses: options.replyTo ? [options.replyTo] : undefined
-            });
-
-            const response = await sesClient.send(command);
-            console.log(`[AWS SES Success] Dispatched email to ${toAddresses.join(', ')} | MessageId: ${response.MessageId}`);
-            return {
-                success: true,
-                messageId: response.MessageId,
-                message: `Email dispatched successfully via AWS SES to ${toAddresses.join(', ')}`
-            };
-        } catch (err: any) {
-            console.error(`[AWS SES Dispatch Error] Failed to dispatch email via AWS SES to ${toAddresses.join(', ')}:`, {
-                name: err.name || 'SESError',
-                message: err.message,
-                statusCode: err.$metadata?.httpStatusCode,
-                requestId: err.$metadata?.requestId
-            });
-        }
-    } else {
-        console.warn(`[AWS SES Config Notice] AWS_ACCESS_KEY_ID or AWS_SECRET_ACCESS_KEY environment variables not found. Falling back to secondary transport.`);
-    }
-
-    // Fallback Nodemailer SMTP / Direct Transport
     try {
         const transporter = createTransporter();
         const mailOptions = {
@@ -130,24 +49,31 @@ export async function sendEmailViaSES(options: SendEmailOptions): Promise<{ succ
             subject: options.subject,
             html: options.html,
             text: options.text,
-            replyTo: options.replyTo
+            replyTo: replyToAddress
         };
 
         const info = await transporter.sendMail(mailOptions);
-        console.log(`[SMTP Direct Dispatch] Dispatched email to ${toAddresses.join(', ')} | MessageId: ${info.messageId || 'sent'}`);
+        console.log(`[SMTP Dispatch Success] Email dispatched to ${toAddresses.join(', ')} | MessageId: ${info.messageId || 'sent'}`);
         return {
             success: true,
             messageId: info.messageId,
-            message: `Email dispatched via fallback transport to ${toAddresses.join(', ')}`
+            message: `Email dispatched successfully via SMTP to ${toAddresses.join(', ')}`
         };
-    } catch (fallbackErr: any) {
-        console.error(`[Email Dispatch Final Exception] All dispatch channels failed for ${toAddresses.join(', ')}:`, fallbackErr);
+    } catch (err: any) {
+        console.error(`[SMTP Dispatch Error] Failed to dispatch email to ${toAddresses.join(', ')}:`, {
+            name: err.name || 'SMTPError',
+            message: err.message || String(err)
+        });
         return {
             success: false,
-            message: fallbackErr.message || "Failed to dispatch email via AWS SES or fallback transporters."
+            message: err.message || "Failed to dispatch email via SMTP transport."
         };
     }
 }
+
+// Export aliases for centralized email dispatcher
+export const sendEmailViaSES = sendEmailViaSMTP;
+export const sendEmail = sendEmailViaSMTP;
 
 // ==========================================
 // 1. RECEIPT EMAILS
@@ -364,7 +290,7 @@ export function buildReceiptHtmlEmail(data: ReceiptEmailData): string {
 export async function sendReceiptEmailDirect(data: ReceiptEmailData): Promise<{ success: boolean; message: string; messageId?: string }> {
     const html = buildReceiptHtmlEmail(data);
     const subject = `Payment Receipt #${data.invoiceNumber} from ${data.company.name || 'CraveBiZ'}`;
-    const fromAddress = `${data.company.name || 'CraveBiZ'} <${process.env.AWS_SES_FROM || process.env.SMTP_FROM || 'no-reply@cravebiz.ai'}>`;
+    const fromAddress = `${data.company.name || 'CraveBiZ'} <${process.env.SMTP_FROM || 'noreply@cloudcraves.com'}>`;
     const textContent = `Payment Receipt #${data.invoiceNumber}\nTotal Amount Paid: ${data.currencySymbol || '₦'}${data.amountPaid || data.totalAmount}\n\nDear ${data.recipientName},\nThank you for your payment. Details available in HTML version.`;
 
     try {
@@ -545,7 +471,7 @@ export function buildInvoiceHtmlEmail(data: InvoiceEmailData): string {
 export async function sendInvoiceEmailDirect(data: InvoiceEmailData): Promise<{ success: boolean; message: string; messageId?: string }> {
     const html = buildInvoiceHtmlEmail(data);
     const subject = `Invoice #${data.invoiceNumber} from ${data.company.name || 'CraveBiZ'}`;
-    const fromAddress = `${data.company.name || 'CraveBiZ'} <${process.env.AWS_SES_FROM || process.env.SMTP_FROM || 'no-reply@cravebiz.ai'}>`;
+    const fromAddress = `${data.company.name || 'CraveBiZ'} <${process.env.SMTP_FROM || 'noreply@cloudcraves.com'}>`;
     const textContent = `Invoice #${data.invoiceNumber}\nTotal Amount Due: ${data.currencySymbol || '₦'}${data.totalAmount}\nDue Date: ${data.dueDate}\n\nDear ${data.recipientName},\nPlease view full invoice details in your HTML email view.`;
 
     try {
@@ -684,7 +610,7 @@ export async function sendSignifyEmailDirect(data: SignifyEmailData): Promise<{ 
     `;
 
     const textContent = `${subject}\n\nDear ${data.recipientName},\n\nYou have been invited by ${senderName} to review/sign '${docTitle}'.\n\nPlease click the secure link below:\n${data.secureLink}\n\nBest regards,\nCraveBiZ Team`;
-    const fromAddress = `CraveBiZ DocSignify <${process.env.AWS_SES_FROM || process.env.SMTP_FROM || 'no-reply@cravebiz.ai'}>`;
+    const fromAddress = `CraveBiZ DocSignify <${process.env.SMTP_FROM || 'noreply@cloudcraves.com'}>`;
 
     try {
         await createInAppNotificationRecordAsync({
@@ -864,7 +790,7 @@ export async function sendAccountVerificationEmailDirect(data: AccountVerificati
                     </tr>
                     <tr>
                         <td style="background-color: #f8fafc; padding: 20px; border-top: 1px solid #e2e8f0; text-align: center; font-size: 12px; color: #64748b;">
-                            Secured by CraveBiZ AWS SES Integration
+                            Secured by CraveBiZ Email Service
                         </td>
                     </tr>
                 </table>
@@ -954,7 +880,7 @@ export async function sendPasswordResetEmailDirect(data: PasswordResetEmailData)
                     </tr>
                     <tr>
                         <td style="background-color: #f8fafc; padding: 20px; border-top: 1px solid #e2e8f0; text-align: center; font-size: 12px; color: #64748b;">
-                            CraveBiZ Security &amp; AWS SES Authentication
+                            CraveBiZ Security &amp; Email Authentication
                         </td>
                     </tr>
                 </table>
@@ -1042,7 +968,7 @@ export async function sendTeamInvitationEmailDirect(data: TeamInvitationEmailDat
                     </tr>
                     <tr>
                         <td style="background-color: #f8fafc; padding: 20px; border-top: 1px solid #e2e8f0; text-align: center; font-size: 12px; color: #64748b;">
-                            CraveBiZ AI Workspace Collaboration &amp; AWS SES Service
+                            CraveBiZ AI Workspace Collaboration
                         </td>
                     </tr>
                 </table>
@@ -1136,7 +1062,7 @@ export async function sendUserRegistrationEmailDirect(data: UserRegistrationEmai
                     </tr>
                     <tr>
                         <td style="background-color: #f8fafc; padding: 20px; border-top: 1px solid #e2e8f0; text-align: center; font-size: 12px; color: #64748b;">
-                            Powered by CraveBiZ AWS SES Infrastructure &amp; Security
+                            Powered by CraveBiZ Email Service
                         </td>
                     </tr>
                 </table>
