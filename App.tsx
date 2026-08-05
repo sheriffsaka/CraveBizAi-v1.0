@@ -532,7 +532,7 @@ export default function App() {
 
     const updatedInvoice: Invoice = { 
       ...inv, 
-      amountPaid: cumulativeAmount, 
+      amountPaid: isFullyPaid ? inv.total : Number(cumulativeAmount.toFixed(2)), 
       status: nextStatus,
       isReceiptSent: willAutoGenerateReceipt ? true : inv.isReceiptSent
     };

@@ -34,8 +34,10 @@ const InvoiceDetail: React.FC<InvoiceDetailProps> = ({ invoice, client, services
     const tax = (subtotal - discount) * 0.075;
     
     // Payment breakdown logic
-    const hasPayment = (invoice.amountPaid || 0) > 0;
-    const balanceDue = invoice.total - (invoice.amountPaid || 0);
+    const isPaid = invoice.status === InvoiceStatus.Paid || (invoice.amountPaid || 0) >= invoice.total - 0.001;
+    const amountPaid = isPaid ? invoice.total : (invoice.amountPaid || 0);
+    const hasPayment = amountPaid > 0 || isPaid;
+    const balanceDue = isPaid ? 0 : Math.max(0, invoice.total - amountPaid);
 
     const handleSend = async () => {
         if (isSending || invoice.id === 'preview') return;
@@ -268,7 +270,7 @@ const InvoiceDetail: React.FC<InvoiceDetailProps> = ({ invoice, client, services
                 <>
                     <div className="flex justify-between font-bold text-lg text-green-600">
                         <span>Amount Paid</span>
-                        <span>- ₦{(invoice.amountPaid || 0).toLocaleString()}</span>
+                        <span>- ₦{amountPaid.toLocaleString()}</span>
                     </div>
                     <div className="flex justify-between border-t-2 border-gray-200 pt-4 font-black text-3xl text-primary-600 tracking-tighter">
                         <span>Balance Due</span>

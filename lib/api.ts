@@ -147,6 +147,12 @@ const mapDbInvoiceToInvoice = (inv: any): Invoice => {
   const { cleanTerms, meta } = parsePaymentTermsMeta(inv.payment_terms);
   const nextRecDate = inv.next_recurrence_date || inv.next_due_date || meta.nextRecurrenceDate || meta.nextDueDate || undefined;
 
+  const total = Number(inv.total || 0);
+  const rawAmountPaid = Number(inv.amount_paid || 0);
+  const isFullyPaid = (inv.status === InvoiceStatus.Paid) || (total > 0 && rawAmountPaid >= total - 0.001);
+  const amountPaid = isFullyPaid ? total : rawAmountPaid;
+  const status = isFullyPaid ? InvoiceStatus.Paid : (inv.status as InvoiceStatus);
+
   return {
     id: inv.id,
     companyId: inv.company_id,
@@ -155,10 +161,10 @@ const mapDbInvoiceToInvoice = (inv: any): Invoice => {
     projectId: inv.project_id || undefined,
     issueDate: inv.issue_date,
     dueDate: inv.due_date,
-    total: Number(inv.total),
-    status: inv.status as InvoiceStatus,
+    total,
+    status,
     discount: Number(inv.discount || 0),
-    amountPaid: Number(inv.amount_paid || 0),
+    amountPaid,
     paymentTerms: cleanTerms,
     selectedBankAccountId: inv.selected_bank_account_id || undefined,
     manualBankName: inv.manual_bank_name || undefined,

@@ -25,8 +25,10 @@ const PlainInvoiceDetail: React.FC<PlainInvoiceDetailProps> = ({ invoice, client
     const subtotal = invoice.items.reduce((sum, item) => sum + item.price * item.quantity, 0);
     const discount = invoice.discount || 0;
     const tax = (subtotal - discount) * 0.075; 
-    const balanceDue = invoice.total - (invoice.amountPaid || 0);
-    const isReceipt = invoice.status === 'Paid';
+    const isFullyPaid = invoice.status === 'Paid' || (invoice.amountPaid || 0) >= invoice.total - 0.001;
+    const amountPaid = isFullyPaid ? invoice.total : (invoice.amountPaid || 0);
+    const balanceDue = isFullyPaid ? 0 : Math.max(0, invoice.total - amountPaid);
+    const isReceipt = isFullyPaid;
     
     const selectedBankAccount: BankAccount | undefined = company?.bankAccounts?.find(
         (account) => account.id === invoice.selectedBankAccountId

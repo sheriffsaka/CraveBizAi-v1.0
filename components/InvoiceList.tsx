@@ -71,7 +71,10 @@ const InvoicesTable: React.FC<{
         </thead>
         <tbody>
           {invoices.map((invoice) => {
-            const balance = invoice.total - (invoice.amountPaid || 0);
+            const rawBalance = invoice.total - (invoice.amountPaid || 0);
+            const isPaid = invoice.status === InvoiceStatus.Paid || rawBalance <= 0.001;
+            const balance = isPaid ? 0 : Math.max(0, rawBalance);
+            const statusToDisplay = isPaid ? InvoiceStatus.Paid : invoice.status;
             return (
               <tr key={invoice.id} className="bg-white border-b hover:bg-gray-50 group">
                 <th scope="row" className="px-6 py-4 font-medium text-gray-900 whitespace-nowrap">
@@ -81,10 +84,10 @@ const InvoicesTable: React.FC<{
                 <td className="px-6 py-4">{invoice.dueDate}</td>
                 <td className="px-6 py-4 font-medium">₦{invoice.total.toLocaleString()}</td>
                 <td className={`px-6 py-4 font-bold ${balance > 0 ? 'text-red-600' : 'text-green-600'}`}>
-                  ₦{balance.toLocaleString()}
+                  ₦{balance.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 2 })}
                 </td>
                 <td className="px-6 py-4">
-                  <InvoiceStatusBadge status={invoice.status} />
+                  <InvoiceStatusBadge status={statusToDisplay} />
                 </td>
                 <td className="px-6 py-4 text-right space-x-3">
                   <button onClick={() => onViewInvoice(invoice.id)} className="font-bold text-primary-600 hover:text-primary-800 transition-colors uppercase text-[10px] tracking-widest">View</button>
@@ -237,14 +240,18 @@ const InvoiceList: React.FC<InvoiceListProps> = ({
 
     nonTemplateInvoices.forEach(inv => {
       totalInvoiced += inv.total;
-      const paid = inv.amountPaid || 0;
+      const isPaid = inv.status === InvoiceStatus.Paid || (inv.amountPaid || 0) >= inv.total - 0.001;
+      const paid = isPaid ? inv.total : (inv.amountPaid || 0);
       totalPaid += paid;
-      totalOutstanding += (inv.total - paid);
+      const rawOutstanding = inv.total - paid;
+      const outstanding = isPaid ? 0 : Math.max(0, rawOutstanding);
+      totalOutstanding += (outstanding <= 0.001 ? 0 : outstanding);
       
-      if (inv.status === 'Paid') paidCount++;
-      else if (inv.status === 'Sent') sentCount++;
-      else if (inv.status === 'Draft') draftCount++;
-      else if (inv.status === 'Overdue') overdueCount++;
+      if (isPaid) paidCount++;
+      else if (inv.status === InvoiceStatus.Sent) sentCount++;
+      else if (inv.status === InvoiceStatus.Draft) draftCount++;
+      else if (inv.status === InvoiceStatus.Overdue) overdueCount++;
+      else if (inv.status === InvoiceStatus.PartiallyPaid) sentCount++;
     });
 
     const collectionRate = totalInvoiced > 0 ? (totalPaid / totalInvoiced) * 100 : 0;

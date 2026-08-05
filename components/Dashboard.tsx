@@ -116,13 +116,17 @@ const Dashboard: React.FC<DashboardProps> = ({
             });
         }
 
-        filteredInvoices.filter(inv => inv.status === InvoiceStatus.Paid).forEach(inv => {
-            const invDate = new Date(inv.issueDate);
-            const m = invDate.getMonth();
-            const y = invDate.getFullYear();
-            const match = last6.find(d => d.month === m && d.year === y);
-            if (match) {
-                match.revenue += Number(inv.total);
+        filteredInvoices.forEach(inv => {
+            const isPaid = inv.status === InvoiceStatus.Paid || (inv.amountPaid || 0) >= inv.total - 0.001;
+            const revAmt = isPaid ? Number(inv.total || 0) : Number(inv.amountPaid || 0);
+            if (revAmt > 0) {
+                const invDate = new Date(inv.issueDate);
+                const m = invDate.getMonth();
+                const y = invDate.getFullYear();
+                const match = last6.find(d => d.month === m && d.year === y);
+                if (match) {
+                    match.revenue += revAmt;
+                }
             }
         });
 
@@ -135,21 +139,22 @@ const Dashboard: React.FC<DashboardProps> = ({
         let pCount = 0;
 
         filteredInvoices.forEach(inv => {
-            if (inv.status === InvoiceStatus.Paid) {
+            const isPaid = inv.status === InvoiceStatus.Paid || (inv.amountPaid || 0) >= inv.total - 0.001;
+            const paidAmt = isPaid ? Number(inv.total || 0) : Number(inv.amountPaid || 0);
+            if (isPaid) {
                 pCount++;
-                const invRev = Number(inv.total || 0);
-                rev += invRev;
+            }
+            rev += paidAmt;
 
-                if (inv.items && inv.items.length > 0) {
-                    inv.items.forEach(item => {
-                        const qty = Number(item.quantity) || 1;
-                        const matchingSrv = services.find(s => s.id === item.serviceId || s.name.toLowerCase() === (item.description || '').toLowerCase());
-                        const itemDc = item.directCost !== undefined && item.directCost !== null ? Number(item.directCost) : -1;
-                        const srvDc = Number(matchingSrv?.directCost || 0);
-                        const unitDc = itemDc >= 0 ? itemDc : srvDc;
-                        cost += unitDc * qty;
-                    });
-                }
+            if (inv.items && inv.items.length > 0) {
+                inv.items.forEach(item => {
+                    const qty = Number(item.quantity) || 1;
+                    const matchingSrv = services.find(s => s.id === item.serviceId || s.name.toLowerCase() === (item.description || '').toLowerCase());
+                    const itemDc = item.directCost !== undefined && item.directCost !== null ? Number(item.directCost) : -1;
+                    const srvDc = Number(matchingSrv?.directCost || 0);
+                    const unitDc = itemDc >= 0 ? itemDc : srvDc;
+                    cost += unitDc * qty;
+                });
             }
         });
 
@@ -165,12 +170,22 @@ const Dashboard: React.FC<DashboardProps> = ({
     }, [filteredInvoices, services]);
 
     const outstanding = useMemo(() => filteredInvoices
-        .filter(inv => inv.status === InvoiceStatus.Sent || inv.status === InvoiceStatus.Overdue)
-        .reduce((sum, inv) => sum + (inv.total - (inv.amountPaid || 0)), 0), [filteredInvoices]);
+        .filter(inv => inv.status !== InvoiceStatus.Paid && inv.status !== InvoiceStatus.Draft)
+        .reduce((sum, inv) => {
+            const isPaid = inv.status === InvoiceStatus.Paid || (inv.amountPaid || 0) >= inv.total - 0.001;
+            if (isPaid) return sum;
+            const bal = Math.max(0, inv.total - (inv.amountPaid || 0));
+            return sum + (bal <= 0.001 ? 0 : bal);
+        }, 0), [filteredInvoices]);
     
     const overdue = useMemo(() => filteredInvoices
         .filter(inv => inv.status === InvoiceStatus.Overdue)
-        .reduce((sum, inv) => sum + (inv.total - (inv.amountPaid || 0)), 0), [filteredInvoices]);
+        .reduce((sum, inv) => {
+            const isPaid = inv.status === InvoiceStatus.Paid || (inv.amountPaid || 0) >= inv.total - 0.001;
+            if (isPaid) return sum;
+            const bal = Math.max(0, inv.total - (inv.amountPaid || 0));
+            return sum + (bal <= 0.001 ? 0 : bal);
+        }, 0), [filteredInvoices]);
 
     // Filtered Client Registry
     const filteredClients = useMemo(() => {

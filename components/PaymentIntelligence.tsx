@@ -80,10 +80,13 @@ const PaymentIntelligence: React.FC<PaymentIntelligenceProps> = ({ invoices, cli
         return { ...m, status };
       });
 
-      const totalPaid = clientInvoices.reduce((sum, inv) => sum + (inv.amountPaid || 0), 0);
+      const totalPaid = clientInvoices.reduce((sum, inv) => {
+        const isPaid = inv.status === InvoiceStatus.Paid || (inv.amountPaid || 0) >= inv.total - 0.001;
+        return sum + (isPaid ? inv.total : (inv.amountPaid || 0));
+      }, 0);
       
       const totalOutstanding = clientInvoices
-        .filter(inv => inv.status !== InvoiceStatus.Paid && inv.status !== InvoiceStatus.Draft)
+        .filter(inv => inv.status !== InvoiceStatus.Paid && inv.status !== InvoiceStatus.Draft && (inv.amountPaid || 0) < inv.total - 0.001)
         .reduce((sum, inv) => sum + Math.max(0, inv.total - (inv.amountPaid || 0)), 0);
 
       const isPaidAhead = monthlyStatus.some((m, idx) => {

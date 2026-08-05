@@ -604,11 +604,11 @@ const Reports: React.FC<ReportsProps> = ({
       const client = clients.find(c => c.id === invoice.clientId);
       const name = client ? client.companyName : 'Unassigned Client';
       const current = clientLTVMap.get(name) || { companyName: name, totalRevenue: 0, outstanding: 0, invoiceCount: 0 };
-      if (invoice.status === InvoiceStatus.Paid) {
-        current.totalRevenue += invoice.total;
-      } else if (invoice.status === InvoiceStatus.Overdue || invoice.status === InvoiceStatus.Sent) {
-        current.outstanding += invoice.total;
-      }
+      const isPaid = invoice.status === InvoiceStatus.Paid || (invoice.amountPaid || 0) >= invoice.total - 0.001;
+      const paidAmt = isPaid ? invoice.total : (invoice.amountPaid || 0);
+      const outstandingAmt = isPaid ? 0 : Math.max(0, invoice.total - paidAmt);
+      current.totalRevenue += paidAmt;
+      current.outstanding += outstandingAmt;
       current.invoiceCount += 1;
       clientLTVMap.set(name, current);
     });
