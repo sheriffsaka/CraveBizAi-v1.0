@@ -358,3 +358,73 @@ ALTER TABLE IF EXISTS public.services ADD COLUMN IF NOT EXISTS indirect_cost NUM
 ALTER TABLE IF EXISTS public.invoice_items ADD COLUMN IF NOT EXISTS direct_cost NUMERIC(15, 2) DEFAULT 0.00;
 ALTER TABLE IF EXISTS public.invoice_items ADD COLUMN IF NOT EXISTS indirect_cost NUMERIC(15, 2) DEFAULT 0.00;
 
+-- Ensure notifications & in_app_notifications tables exist
+CREATE TABLE IF NOT EXISTS public.notifications (
+    id TEXT PRIMARY KEY DEFAULT gen_random_uuid()::text,
+    user_id TEXT NULL,
+    recipient_email TEXT NULL,
+    recipient_user_id TEXT NULL,
+    tenant_id TEXT NULL,
+    type TEXT NOT NULL DEFAULT 'info',
+    notification_type TEXT DEFAULT 'info',
+    title TEXT NOT NULL,
+    message TEXT NOT NULL,
+    category TEXT DEFAULT 'system',
+    entity_type TEXT NULL,
+    entity_id TEXT NULL,
+    related_entity_id TEXT NULL,
+    action_url TEXT NULL,
+    is_read BOOLEAN NOT NULL DEFAULT FALSE,
+    read BOOLEAN NOT NULL DEFAULT FALSE,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    expires_at TIMESTAMPTZ NULL,
+    metadata JSONB DEFAULT '{}'::jsonb
+);
+
+CREATE TABLE IF NOT EXISTS public.in_app_notifications (
+    id TEXT PRIMARY KEY DEFAULT gen_random_uuid()::text,
+    user_id TEXT NULL,
+    recipient_email TEXT NULL,
+    recipient_user_id TEXT NULL,
+    tenant_id TEXT NULL,
+    type TEXT NOT NULL DEFAULT 'info',
+    notification_type TEXT DEFAULT 'info',
+    title TEXT NOT NULL,
+    message TEXT NOT NULL,
+    category TEXT DEFAULT 'system',
+    entity_type TEXT NULL,
+    entity_id TEXT NULL,
+    related_entity_id TEXT NULL,
+    action_url TEXT NULL,
+    is_read BOOLEAN NOT NULL DEFAULT FALSE,
+    read BOOLEAN NOT NULL DEFAULT FALSE,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    expires_at TIMESTAMPTZ NULL,
+    metadata JSONB DEFAULT '{}'::jsonb
+);
+
+CREATE INDEX IF NOT EXISTS idx_notifications_user_id ON public.notifications(user_id);
+CREATE INDEX IF NOT EXISTS idx_notifications_recipient_email ON public.notifications(recipient_email);
+CREATE INDEX IF NOT EXISTS idx_notifications_tenant_id ON public.notifications(tenant_id);
+CREATE INDEX IF NOT EXISTS idx_notifications_is_read ON public.notifications(is_read);
+CREATE INDEX IF NOT EXISTS idx_notifications_created_at ON public.notifications(created_at DESC);
+
+CREATE INDEX IF NOT EXISTS idx_in_app_notif_user_id ON public.in_app_notifications(user_id);
+CREATE INDEX IF NOT EXISTS idx_in_app_notif_recipient_email ON public.in_app_notifications(recipient_email);
+CREATE INDEX IF NOT EXISTS idx_in_app_notif_tenant_id ON public.in_app_notifications(tenant_id);
+CREATE INDEX IF NOT EXISTS idx_in_app_notif_is_read ON public.in_app_notifications(is_read);
+CREATE INDEX IF NOT EXISTS idx_in_app_notif_created_at ON public.in_app_notifications(created_at DESC);
+
+ALTER TABLE public.notifications ENABLE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS "Allow all operations on notifications" ON public.notifications;
+CREATE POLICY "Allow all operations on notifications" ON public.notifications FOR ALL USING (true) WITH CHECK (true);
+GRANT ALL ON public.notifications TO anon, authenticated, service_role;
+
+ALTER TABLE public.in_app_notifications ENABLE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS "Allow all operations on in_app_notifications" ON public.in_app_notifications;
+CREATE POLICY "Allow all operations on in_app_notifications" ON public.in_app_notifications FOR ALL USING (true) WITH CHECK (true);
+GRANT ALL ON public.in_app_notifications TO anon, authenticated, service_role;
+
+
