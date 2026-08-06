@@ -421,10 +421,10 @@ const Reports: React.FC<ReportsProps> = ({
         const qty = Number(item.quantity) || 1;
         const itemRevenue = Number(item.price) * qty;
 
-        const matchingService = services.find(s => s.id === item.serviceId || s.name.toLowerCase() === item.description.toLowerCase());
-        const itemDc = item.directCost !== undefined && item.directCost !== null ? Number(item.directCost) : -1;
+        const matchingService = services.find(s => (item.serviceId && s.id === item.serviceId) || (s.name && item.description && s.name.trim().toLowerCase() === item.description.trim().toLowerCase()));
+        const itemDc = item.directCost !== undefined && item.directCost !== null ? Number(item.directCost) : 0;
         const serviceDc = Number(matchingService?.directCost || 0);
-        const unitDirectCost = itemDc >= 0 ? itemDc : serviceDc;
+        const unitDirectCost = itemDc > 0 ? itemDc : (serviceDc > 0 ? serviceDc : itemDc);
         const itemDirectCost = unitDirectCost * qty;
 
         revSum += itemRevenue;
@@ -531,10 +531,10 @@ const Reports: React.FC<ReportsProps> = ({
         inv.items.forEach(item => {
           const qty = Number(item.quantity) || 1;
           const r = Number(item.price) * qty;
-          const matchingService = services.find(s => s.id === item.serviceId || s.name.toLowerCase() === item.description.toLowerCase());
-          const itemDc = item.directCost !== undefined && item.directCost !== null ? Number(item.directCost) : -1;
+          const matchingService = services.find(s => (item.serviceId && s.id === item.serviceId) || (s.name && item.description && s.name.trim().toLowerCase() === item.description.trim().toLowerCase()));
+          const itemDc = item.directCost !== undefined && item.directCost !== null ? Number(item.directCost) : 0;
           const serviceDc = Number(matchingService?.directCost || 0);
-          const unitDc = itemDc >= 0 ? itemDc : serviceDc;
+          const unitDc = itemDc > 0 ? itemDc : (serviceDc > 0 ? serviceDc : itemDc);
           const c = unitDc * qty;
           invRev += r;
           invCost += c;

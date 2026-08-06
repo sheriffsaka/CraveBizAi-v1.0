@@ -1087,6 +1087,88 @@ class CraveBizApi {
     if (error) throw error;
   }
 
+  async bulkArchiveInvoices(ids: string[], targetStatus: 'archived' | 'active' = 'archived'): Promise<void> {
+    if (!ids || ids.length === 0) return;
+    invalidateRequestCache('invoices');
+    const { error } = await supabase.from('invoices').update({ recurring_status: targetStatus }).in('id', ids);
+    if (error) {
+      console.warn("bulkArchiveInvoices warning:", error);
+      for (const id of ids) {
+        await supabase.from('invoices').update({ recurring_status: targetStatus }).eq('id', id);
+      }
+    }
+  }
+
+  async bulkDeleteInvoices(ids: string[]): Promise<void> {
+    if (!ids || ids.length === 0) return;
+    invalidateRequestCache('invoices');
+    try {
+      await supabase.from('invoice_items').delete().in('invoice_id', ids);
+    } catch (e) {
+      console.warn("Bulk items delete warning:", e);
+    }
+    const { error } = await supabase.from('invoices').delete().in('id', ids);
+    if (error) console.warn("bulkDeleteInvoices warning:", error);
+  }
+
+  async bulkArchiveUsers(ids: string[], targetStatus: 'archived' | 'active' = 'archived'): Promise<void> {
+    if (!ids || ids.length === 0) return;
+    const isArchived = targetStatus === 'archived';
+    const nowIso = isArchived ? new Date().toISOString() : null;
+    const { error } = await supabase.from('profiles').update({
+      status: isArchived ? 'Archived' : 'Active',
+      is_archived: isArchived,
+      archived_at: nowIso
+    }).in('id', ids);
+    if (error) console.warn("bulkArchiveUsers warning:", error);
+  }
+
+  async bulkRestoreUsers(ids: string[]): Promise<void> {
+    return this.bulkArchiveUsers(ids, 'active');
+  }
+
+  async bulkDeleteUsers(ids: string[]): Promise<void> {
+    if (!ids || ids.length === 0) return;
+    try {
+      await supabase.from('company_members').delete().in('user_id', ids);
+    } catch (e) {
+      console.warn("bulkDeleteUsers company_members warning:", e);
+    }
+    const { error } = await supabase.from('profiles').delete().in('id', ids);
+    if (error) {
+      await supabase.from('profiles').update({ status: 'Deleted', deleted_at: new Date().toISOString() }).in('id', ids);
+    }
+  }
+
+  async bulkArchiveClients(ids: string[], targetStatus: 'archived' | 'active' = 'archived'): Promise<void> {
+    if (!ids || ids.length === 0) return;
+    invalidateRequestCache('clients');
+    const isArchived = targetStatus === 'archived';
+    const nowIso = isArchived ? new Date().toISOString() : null;
+    const { error } = await supabase.from('clients').update({
+      status: isArchived ? 'Archived' : 'Active',
+      is_archived: isArchived,
+      archived_at: nowIso
+    }).in('id', ids);
+    if (error) console.warn("bulkArchiveClients warning:", error);
+  }
+
+  async bulkRestoreClients(ids: string[]): Promise<void> {
+    return this.bulkArchiveClients(ids, 'active');
+  }
+
+  async bulkDeleteClients(ids: string[]): Promise<void> {
+    if (!ids || ids.length === 0) return;
+    invalidateRequestCache('clients');
+    try {
+      await supabase.from('invoices').update({ client_id: null }).in('client_id', ids);
+    } catch (e) {
+      console.warn("Unlink invoices warning:", e);
+    }
+    const { error } = await supabase.from('clients').delete().in('id', ids);
+    if (error) console.warn("bulkDeleteClients warning:", error);
+  }
+
   async fetchProjects(companyId: string): Promise<Project[]> {
     const cleanId = cleanCompanyId(companyId);
     return dedupeRequest(`projects:${cleanId}`, async () => {

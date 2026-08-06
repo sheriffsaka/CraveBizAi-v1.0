@@ -660,10 +660,12 @@ export default function App() {
     if (!invoiceIds || invoiceIds.length === 0) return;
     setIsDataSyncing(true);
     try {
-      for (const id of invoiceIds) {
-        await api.deleteInvoice(id);
-        await triggerAuditLog('DELETE_INVOICE', id, `Bulk deleted invoice record`);
-      }
+      await api.bulkDeleteInvoices(invoiceIds);
+      await triggerAuditLog('BULK_DELETE_INVOICE', invoiceIds.join(','), `Bulk deleted ${invoiceIds.length} invoice record(s)`);
+      setTenantData(prev => ({
+        ...prev,
+        invoices: prev.invoices.filter(inv => !invoiceIds.includes(inv.id))
+      }));
       if (activeTenantId) await forceSyncData(activeTenantId);
       if (currentUser?.isAdmin) {
         const allInvs = await api.getAllInvoices();
@@ -680,18 +682,18 @@ export default function App() {
     if (!invoicesToArchive || invoicesToArchive.length === 0) return;
     setIsDataSyncing(true);
     try {
-      for (const inv of invoicesToArchive) {
-        const newStatus = targetStatus || (inv.recurringStatus === 'archived' ? 'active' : 'archived');
-        await api.updateInvoice({
-          ...inv,
-          recurringStatus: newStatus
-        });
-        await triggerAuditLog(
-          'TOGGLE_RECURRING_ARCHIVE',
-          inv.id,
-          `Bulk updated status to ${newStatus} for invoice ${inv.invoiceNumber}`
-        );
-      }
+      const ids = invoicesToArchive.map(i => i.id);
+      const resolvedStatus = targetStatus || (invoicesToArchive[0]?.recurringStatus === 'archived' ? 'active' : 'archived');
+      await api.bulkArchiveInvoices(ids, resolvedStatus);
+      await triggerAuditLog(
+        'BULK_ARCHIVE_INVOICES',
+        ids.join(','),
+        `Bulk updated status to ${resolvedStatus} for ${ids.length} invoice(s)`
+      );
+      setTenantData(prev => ({
+        ...prev,
+        invoices: prev.invoices.map(inv => ids.includes(inv.id) ? { ...inv, recurringStatus: resolvedStatus } : inv)
+      }));
       if (activeTenantId) await forceSyncData(activeTenantId);
     } catch (e) {
       alert(`Bulk Archive Error: ${stringifyError(e)}`);
@@ -946,13 +948,87 @@ export default function App() {
     }
   };
 
-  const handleBulkArchiveUsers = async (userIds: string[]) => {
+  const handleArchiveClient = async (client: Client) => {
     try {
       setIsDataSyncing(true);
-      for (const id of userIds) {
-        await api.archiveUser(id);
-      }
-      await triggerAuditLog('BULK_ARCHIVE_USERS', userIds.join(','), `Bulk archived ${userIds.length} users`);
+      await api.archiveClient(client, currentUser);
+      setTenantData(prev => ({
+        ...prev,
+        clients: prev.clients.map(c => c.id === client.id ? { ...c, is_archived: true, status: 'Archived' } : c)
+      }));
+      if (activeTenantId) await forceSyncData(activeTenantId);
+    } catch (e) {
+      alert("Error archiving client: " + stringifyError(e));
+    } finally {
+      if (isMounted.current) setIsDataSyncing(false);
+    }
+  };
+
+  const handleRestoreClient = async (client: Client) => {
+    try {
+      setIsDataSyncing(true);
+      await api.restoreClient(client, currentUser);
+      setTenantData(prev => ({
+        ...prev,
+        clients: prev.clients.map(c => c.id === client.id ? { ...c, is_archived: false, status: 'Active' } : c)
+      }));
+      if (activeTenantId) await forceSyncData(activeTenantId);
+    } catch (e) {
+      alert("Error restoring client: " + stringifyError(e));
+    } finally {
+      if (isMounted.current) setIsDataSyncing(false);
+    }
+  };
+
+  const handleBulkArchiveClients = async (clientIds: string[], targetStatus: 'archived' | 'active' = 'archived') => {
+    if (!clientIds || clientIds.length === 0) return;
+    try {
+      setIsDataSyncing(true);
+      await api.bulkArchiveClients(clientIds, targetStatus);
+      const isArch = targetStatus === 'archived';
+      setTenantData(prev => ({
+        ...prev,
+        clients: prev.clients.map(c => clientIds.includes(c.id) ? { ...c, is_archived: isArch, status: isArch ? 'Archived' : 'Active' } : c)
+      }));
+      await triggerAuditLog('BULK_ARCHIVE_CLIENTS', clientIds.join(','), `Bulk ${targetStatus} for ${clientIds.length} clients`);
+      if (activeTenantId) await forceSyncData(activeTenantId);
+    } catch (e) {
+      alert("Error bulk archiving clients: " + stringifyError(e));
+    } finally {
+      if (isMounted.current) setIsDataSyncing(false);
+    }
+  };
+
+  const handleBulkRestoreClients = async (clientIds: string[]) => {
+    return handleBulkArchiveClients(clientIds, 'active');
+  };
+
+  const handleBulkDeleteClients = async (clientIds: string[]) => {
+    if (!clientIds || clientIds.length === 0) return;
+    try {
+      setIsDataSyncing(true);
+      await api.bulkDeleteClients(clientIds);
+      setTenantData(prev => ({
+        ...prev,
+        clients: prev.clients.filter(c => !clientIds.includes(c.id))
+      }));
+      await triggerAuditLog('BULK_DELETE_CLIENTS', clientIds.join(','), `Bulk deleted ${clientIds.length} clients`);
+      if (activeTenantId) await forceSyncData(activeTenantId);
+    } catch (e) {
+      alert("Error bulk deleting clients: " + stringifyError(e));
+    } finally {
+      if (isMounted.current) setIsDataSyncing(false);
+    }
+  };
+
+  const handleBulkArchiveUsers = async (userIds: string[], targetStatus: 'archived' | 'active' = 'archived') => {
+    if (!userIds || userIds.length === 0) return;
+    try {
+      setIsDataSyncing(true);
+      await api.bulkArchiveUsers(userIds, targetStatus);
+      const isArch = targetStatus === 'archived';
+      setAllUsers(prev => prev.map(u => userIds.includes(u.id) ? { ...u, is_archived: isArch, status: isArch ? 'Archived' : 'Active' } : u));
+      await triggerAuditLog('BULK_ARCHIVE_USERS', userIds.join(','), `Bulk ${targetStatus} for ${userIds.length} users`);
       const updatedUsers = await api.getAllProfiles();
       setAllUsers(updatedUsers);
     } catch (e) {
@@ -963,27 +1039,15 @@ export default function App() {
   };
 
   const handleBulkRestoreUsers = async (userIds: string[]) => {
-    try {
-      setIsDataSyncing(true);
-      for (const id of userIds) {
-        await api.restoreUser(id);
-      }
-      await triggerAuditLog('BULK_RESTORE_USERS', userIds.join(','), `Bulk restored ${userIds.length} users`);
-      const updatedUsers = await api.getAllProfiles();
-      setAllUsers(updatedUsers);
-    } catch (e) {
-      alert("Error bulk restoring users: " + stringifyError(e));
-    } finally {
-      if (isMounted.current) setIsDataSyncing(false);
-    }
+    return handleBulkArchiveUsers(userIds, 'active');
   };
 
   const handleBulkDeleteUsers = async (userIds: string[]) => {
+    if (!userIds || userIds.length === 0) return;
     try {
       setIsDataSyncing(true);
-      for (const id of userIds) {
-        await api.deleteUser(id);
-      }
+      await api.bulkDeleteUsers(userIds);
+      setAllUsers(prev => prev.filter(u => !userIds.includes(u.id)));
       await triggerAuditLog('BULK_DELETE_USERS', userIds.join(','), `Bulk deleted ${userIds.length} users`);
       const updatedUsers = await api.getAllProfiles();
       setAllUsers(updatedUsers);
@@ -1469,7 +1533,18 @@ export default function App() {
           onTriggerAuditLog={triggerAuditLog}
           invoices={invoices}
       />;
-      case 'clients': return <ClientList companyId={activeTenantId!} clients={clients} invoices={invoices} userRole={userRole} onDeleteClient={handleDeleteClient} onAddClient={async (c) => { 
+      case 'clients': return <ClientList 
+        companyId={activeTenantId!} 
+        clients={clients} 
+        invoices={invoices} 
+        userRole={userRole} 
+        onDeleteClient={handleDeleteClient}
+        onArchiveClient={handleArchiveClient}
+        onRestoreClient={handleRestoreClient}
+        onBulkArchiveClients={handleBulkArchiveClients}
+        onBulkRestoreClients={handleBulkRestoreClients}
+        onBulkDeleteClients={handleBulkDeleteClients}
+        onAddClient={async (c) => { 
           try {
               await api.createClient(c); 
               await forceSyncData(activeTenantId!); 

@@ -187,10 +187,10 @@ const Dashboard: React.FC<DashboardProps> = ({
             if (inv.items && inv.items.length > 0) {
                 inv.items.forEach(item => {
                     const qty = Number(item.quantity) || 1;
-                    const matchingSrv = services.find(s => s.id === item.serviceId || s.name.toLowerCase() === (item.description || '').toLowerCase());
-                    const itemDc = item.directCost !== undefined && item.directCost !== null ? Number(item.directCost) : -1;
+                    const matchingSrv = services.find(s => (item.serviceId && s.id === item.serviceId) || (s.name && item.description && s.name.trim().toLowerCase() === item.description.trim().toLowerCase()));
+                    const itemDc = item.directCost !== undefined && item.directCost !== null ? Number(item.directCost) : 0;
                     const srvDc = Number(matchingSrv?.directCost || 0);
-                    const unitDc = itemDc >= 0 ? itemDc : srvDc;
+                    const unitDc = itemDc > 0 ? itemDc : (srvDc > 0 ? srvDc : itemDc);
                     cost += unitDc * qty;
                 });
             }
