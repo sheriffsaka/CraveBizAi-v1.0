@@ -258,7 +258,9 @@ const InvoiceForm: React.FC<InvoiceFormProps> = ({ initialInvoice, clients, serv
                 <label className="block text-[10px] font-black text-gray-500 uppercase tracking-widest mb-2">Client</label>
                 <select value={clientId} onChange={e => setClientId(e.target.value)} className="w-full p-3.5 border rounded-lg bg-gray-50 text-gray-900 shadow-sm focus:ring-2 focus:ring-primary-500 outline-none font-bold">
                     <option value="" disabled>Select client...</option>
-                    {clients.map(c => <option key={c.id} value={c.id}>{c.companyName}</option>)}
+                    {clients
+                      .filter(c => (!c.is_archived && c.status !== 'Archived' && c.status !== 'Deleted') || c.id === clientId)
+                      .map(c => <option key={c.id} value={c.id}>{c.companyName}{c.is_archived || c.status === 'Archived' ? ' (Archived)' : ''}</option>)}
                 </select>
             </div>
             <div>

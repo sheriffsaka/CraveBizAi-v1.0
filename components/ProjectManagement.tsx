@@ -1399,9 +1399,11 @@ locked.
                       onChange={(e) => setFormClientId(e.target.value)}
                       className="w-full px-3 py-2 border rounded-md text-sm focus:outline-none focus:ring-1 focus:ring-primary-500 focus:border-primary-500 bg-white"
                     >
-                      {clients.map(c => (
-                        <option key={c.id} value={c.id}>{c.companyName} ({c.name})</option>
-                      ))}
+                      {clients
+                        .filter(c => (!c.is_archived && c.status !== 'Archived' && c.status !== 'Deleted') || c.id === formClientId)
+                        .map(c => (
+                          <option key={c.id} value={c.id}>{c.companyName} ({c.name}){c.is_archived || c.status === 'Archived' ? ' (Archived)' : ''}</option>
+                        ))}
                     </select>
                   </div>
 

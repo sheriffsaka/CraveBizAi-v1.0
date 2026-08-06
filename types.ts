@@ -68,12 +68,16 @@ export interface User {
   verificationCode?: string;
   tenantIds: string[];
   isAdmin: boolean;
-  status: 'Pending' | 'Active' | 'Declined';
+  status: 'Pending' | 'Active' | 'Declined' | 'Archived' | 'Deleted';
   avatarUrl?: string;
   user_metadata?: any;
   invoicesCreated?: number;
   receiptsCreated?: number;
   remainingAiCredits?: number;
+  is_archived?: boolean;
+  archived_at?: string;
+  archived_by?: string;
+  deleted_at?: string;
 }
 
 export interface BankAccount {
@@ -103,6 +107,11 @@ export interface Client {
   name: string;
   email: string;
   companyName: string;
+  status?: 'Active' | 'Archived' | 'Deleted';
+  is_archived?: boolean;
+  archived_at?: string;
+  archived_by?: string;
+  deleted_at?: string;
 }
 
 export interface Service {

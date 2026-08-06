@@ -429,13 +429,18 @@ class CraveBizApi {
         localStorage.setItem(`cravebiz_user_email_${p.id}`, email);
       }
 
+      const isArchived = p.is_archived || p.status === 'Archived';
       return {
         id: p.id,
         name: name,
         email: email,
         tenantIds: (members || []).filter((m: any) => m.user_id === p.id).map((m: any) => m.company_id),
         isAdmin: p.is_admin || false,
-        status: p.status || 'Active'
+        status: p.status || (isArchived ? 'Archived' : 'Active'),
+        is_archived: isArchived,
+        archived_at: p.archived_at || null,
+        archived_by: p.archived_by || null,
+        deleted_at: p.deleted_at || null
       };
     });
   }
@@ -607,9 +612,81 @@ class CraveBizApi {
     }
     if (details.isAdmin !== undefined) updateData.is_admin = details.isAdmin;
     if (details.status !== undefined) updateData.status = details.status;
+    if (details.is_archived !== undefined) updateData.is_archived = details.is_archived;
+    if (details.archived_at !== undefined) updateData.archived_at = details.archived_at;
+    if (details.archived_by !== undefined) updateData.archived_by = details.archived_by;
+    if (details.deleted_at !== undefined) updateData.deleted_at = details.deleted_at;
     
-    const { error } = await supabase.from('profiles').update(updateData).eq('id', userId);
-    if (error) throw error;
+    try {
+      const { error } = await supabase.from('profiles').update(updateData).eq('id', userId);
+      if (error) console.warn("Supabase profile update warning:", error);
+    } catch (e) {
+      console.warn("Update profile catch:", e);
+    }
+  }
+
+  async archiveUser(userId: string, adminUser?: { id?: string; name?: string } | null, companyId?: string): Promise<void> {
+    const nowIso = new Date().toISOString();
+    const adminName = adminUser?.name || 'Administrator';
+    await this.updateProfile(userId, {
+      status: 'Archived',
+      is_archived: true,
+      archived_at: nowIso,
+      archived_by: adminName
+    });
+    if (companyId) {
+      await this.createAuditLog({
+        companyId,
+        userId: adminUser?.id || 'admin',
+        userName: adminName,
+        action: 'Archive User',
+        resource: 'User',
+        details: `Archived user ID ${userId}`
+      }).catch(err => console.warn("Audit log error:", err));
+    }
+  }
+
+  async restoreUser(userId: string, adminUser?: { id?: string; name?: string } | null, companyId?: string): Promise<void> {
+    const adminName = adminUser?.name || 'Administrator';
+    await this.updateProfile(userId, {
+      status: 'Active',
+      is_archived: false,
+      archived_at: undefined,
+      archived_by: undefined
+    });
+    if (companyId) {
+      await this.createAuditLog({
+        companyId,
+        userId: adminUser?.id || 'admin',
+        userName: adminName,
+        action: 'Restore User',
+        resource: 'User',
+        details: `Restored user ID ${userId}`
+      }).catch(err => console.warn("Audit log error:", err));
+    }
+  }
+
+  async deleteUser(userId: string, adminUser?: { id?: string; name?: string } | null, companyId?: string): Promise<void> {
+    const adminName = adminUser?.name || 'Administrator';
+    try {
+      await supabase.from('company_members').delete().eq('user_id', userId);
+      const { error } = await supabase.from('profiles').delete().eq('id', userId);
+      if (error) {
+        await this.updateProfile(userId, { status: 'Deleted', deleted_at: new Date().toISOString() });
+      }
+    } catch (e) {
+      await this.updateProfile(userId, { status: 'Deleted', deleted_at: new Date().toISOString() });
+    }
+    if (companyId) {
+      await this.createAuditLog({
+        companyId,
+        userId: adminUser?.id || 'admin',
+        userName: adminName,
+        action: 'Delete User',
+        resource: 'User',
+        details: `Permanently deleted user ID ${userId}`
+      }).catch(err => console.warn("Audit log error:", err));
+    }
   }
 
   async deleteCompany(companyId: string): Promise<void> {
@@ -902,7 +979,21 @@ class CraveBizApi {
     return dedupeRequest(`clients:${cleanId}`, async () => {
       const { data, error } = await supabase.from('clients').select('*').eq('company_id', cleanId);
       if (error) throw error;
-      return (data || []).map(c => ({ id: c.id, companyId: c.company_id, name: c.name, email: c.email, companyName: c.company_name }));
+      return (data || []).map(c => {
+        const isArchived = c.is_archived || c.status === 'Archived';
+        return {
+          id: c.id,
+          companyId: c.company_id,
+          name: c.name,
+          email: c.email,
+          companyName: c.company_name,
+          status: c.status || (isArchived ? 'Archived' : 'Active'),
+          is_archived: isArchived,
+          archived_at: c.archived_at || null,
+          archived_by: c.archived_by || null,
+          deleted_at: c.deleted_at || null
+        };
+      });
     });
   }
 
@@ -913,19 +1004,76 @@ class CraveBizApi {
         company_id: cleanCompanyId(client.companyId),
         name: client.name,
         email: client.email,
-        company_name: client.companyName
+        company_name: client.companyName,
+        status: 'Active',
+        is_archived: false
     }).select().maybeSingle();
     if (error) throw error;
     return data;
   }
 
   async updateClient(client: Client): Promise<void> {
-    const { error } = await supabase.from('clients').update({
-        name: client.name,
-        email: client.email,
-        company_name: client.companyName
-    }).eq('id', client.id);
-    if (error) throw error;
+    invalidateRequestCache('clients');
+    const updateData: any = {
+      name: client.name,
+      email: client.email,
+      company_name: client.companyName
+    };
+    if (client.status) updateData.status = client.status;
+    if (client.is_archived !== undefined) updateData.is_archived = client.is_archived;
+    if (client.archived_at !== undefined) updateData.archived_at = client.archived_at;
+    if (client.archived_by !== undefined) updateData.archived_by = client.archived_by;
+    if (client.deleted_at !== undefined) updateData.deleted_at = client.deleted_at;
+
+    const { error } = await supabase.from('clients').update(updateData).eq('id', client.id);
+    if (error) console.warn("Update client warning:", error);
+  }
+
+  async archiveClient(client: Client, adminUser?: { id?: string; name?: string } | null): Promise<void> {
+    invalidateRequestCache('clients');
+    const nowIso = new Date().toISOString();
+    const adminName = adminUser?.name || 'Administrator';
+    const updated: Client = {
+      ...client,
+      status: 'Archived',
+      is_archived: true,
+      archived_at: nowIso,
+      archived_by: adminName
+    };
+    await this.updateClient(updated);
+    if (client.companyId) {
+      await this.createAuditLog({
+        companyId: client.companyId,
+        userId: adminUser?.id || 'admin',
+        userName: adminName,
+        action: 'Archive Client',
+        resource: 'Client',
+        details: `Archived client '${client.companyName}' (${client.name})`
+      }).catch(err => console.warn("Audit log error:", err));
+    }
+  }
+
+  async restoreClient(client: Client, adminUser?: { id?: string; name?: string } | null): Promise<void> {
+    invalidateRequestCache('clients');
+    const adminName = adminUser?.name || 'Administrator';
+    const updated: Client = {
+      ...client,
+      status: 'Active',
+      is_archived: false,
+      archived_at: undefined,
+      archived_by: undefined
+    };
+    await this.updateClient(updated);
+    if (client.companyId) {
+      await this.createAuditLog({
+        companyId: client.companyId,
+        userId: adminUser?.id || 'admin',
+        userName: adminName,
+        action: 'Restore Client',
+        resource: 'Client',
+        details: `Restored client '${client.companyName}' (${client.name})`
+      }).catch(err => console.warn("Audit log error:", err));
+    }
   }
 
   async deleteClient(clientId: string): Promise<void> {

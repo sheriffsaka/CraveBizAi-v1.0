@@ -7,6 +7,7 @@ import Icon from './common/Icon';
 import { generateTextResponse } from '../services/aiGenerationService';
 import CompanyDetailModal from './CompanyDetailModal';
 import EditUserModal from './EditUserModal';
+import DeleteConfirmationModal from './DeleteConfirmationModal';
 import { api } from '../lib/api';
 import { getSubscriptionInfo, setSubscriptionInfo, TIER_LIMITS, SubscriptionTier, saveGlobalPlanSettings, REFILL_PACKS, saveGlobalRefillPacks, syncGlobalRefillPacks } from '../services/subscriptionService';
 
@@ -17,6 +18,12 @@ interface AdminDashboardProps {
   onUpdateCompany: (companyId: string, details: Partial<Company>) => Promise<void>;
   onDeleteCompany: (companyId: string) => Promise<void>;
   onUpdateUser: (userId: string, details: Partial<User>) => Promise<void>;
+  onArchiveUser?: (userId: string) => Promise<void> | void;
+  onRestoreUser?: (userId: string) => Promise<void> | void;
+  onDeleteUser?: (userId: string) => Promise<void> | void;
+  onBulkArchiveUsers?: (userIds: string[]) => Promise<void> | void;
+  onBulkRestoreUsers?: (userIds: string[]) => Promise<void> | void;
+  onBulkDeleteUsers?: (userIds: string[]) => Promise<void> | void;
 }
 
 const AdminDashboardIcon = ({ d }: { d: string }) => (
@@ -84,60 +91,158 @@ const CompaniesTable: React.FC<{
 
 const UsersTable: React.FC<{
   users: User[];
+  selectedUserIds: string[];
+  onToggleSelectUser: (id: string) => void;
+  onToggleSelectAll: () => void;
   onEditUser: (user: User) => void;
+  onArchiveUser?: (user: User) => void;
+  onRestoreUser?: (user: User) => void;
+  onDeleteUser?: (user: User) => void;
   sortKey: 'name' | 'email' | 'tenantCount' | 'isAdmin' | 'status';
   sortDirection: 'asc' | 'desc';
   onSort: (key: 'name' | 'email' | 'tenantCount' | 'isAdmin' | 'status') => void;
-}> = ({ users, onEditUser, sortKey, sortDirection, onSort }) => {
+}> = ({
+  users,
+  selectedUserIds,
+  onToggleSelectUser,
+  onToggleSelectAll,
+  onEditUser,
+  onArchiveUser,
+  onRestoreUser,
+  onDeleteUser,
+  sortKey,
+  sortDirection,
+  onSort
+}) => {
+  const allSelected = users.length > 0 && users.every(u => selectedUserIds.includes(u.id));
   const getSortIcon = (key: string) => (sortKey === key ? (sortDirection === 'asc' ? ' ▲' : ' ▼') : null);
 
   return (
     <div className="overflow-x-auto">
       <table className="w-full text-sm text-left text-gray-500">
-        <thead className="text-xs text-gray-700 uppercase bg-gray-50">
+        <thead className="text-xs text-gray-700 uppercase bg-gray-50 border-b">
           <tr>
+            <th scope="col" className="p-4 w-4">
+              <input
+                type="checkbox"
+                checked={allSelected}
+                onChange={onToggleSelectAll}
+                className="w-4 h-4 text-primary-600 bg-gray-100 border-gray-300 rounded focus:ring-primary-500"
+              />
+            </th>
             <th scope="col" className="px-6 py-3 cursor-pointer" onClick={() => onSort('name')}>Name{getSortIcon('name')}</th>
             <th scope="col" className="px-6 py-3 cursor-pointer" onClick={() => onSort('email')}>Email{getSortIcon('email')}</th>
             <th scope="col" className="px-6 py-3 cursor-pointer" onClick={() => onSort('tenantCount')}>Tenants{getSortIcon('tenantCount')}</th>
             <th scope="col" className="px-6 py-3 cursor-pointer" onClick={() => onSort('isAdmin')}>Type{getSortIcon('isAdmin')}</th>
             <th scope="col" className="px-6 py-3 cursor-pointer" onClick={() => onSort('status')}>Status{getSortIcon('status')}</th>
-            <th scope="col" className="px-6 py-3"><span className="sr-only">Actions</span></th>
+            <th scope="col" className="px-6 py-3 text-right">Actions</th>
           </tr>
         </thead>
         <tbody>
-          {users.map((user) => (
-            <tr key={user.id} className="bg-white border-b hover:bg-gray-50">
-              <th scope="row" className="px-6 py-4 font-medium text-gray-900 whitespace-nowrap">{user.name}</th>
-              <td className="px-6 py-4">
-                {user.email ? (
-                  <span className="font-semibold text-gray-800">{user.email}</span>
-                ) : (
-                  <span className="text-gray-400 italic text-xs">No email (Click Edit to add)</span>
-                )}
-              </td>
-              <td className="px-6 py-4">{user.tenantIds?.length || 0}</td>
-              <td className="px-6 py-4">
-                <span className={`px-2 py-1 text-xs font-semibold rounded-full ${user.isAdmin ? 'bg-purple-100 text-purple-800' : 'bg-gray-100 text-gray-700'}`}>
-                  {user.isAdmin ? 'Admin' : 'User'}
-                </span>
-              </td>
-              <td className="px-6 py-4">
-                <span className={`px-2 py-1 text-xs font-semibold rounded-full ${user.status === 'Active' ? 'bg-green-100 text-green-800' : 'bg-yellow-100 text-yellow-800'}`}>
-                  {user.status}
-                </span>
-              </td>
-              <td className="px-6 py-4 text-right">
-                <button onClick={() => onEditUser(user)} className="font-medium text-primary-600 hover:underline">Edit</button>
+          {users.map((user) => {
+            const isArchived = user.is_archived || user.status === 'Archived';
+            const isSelected = selectedUserIds.includes(user.id);
+
+            return (
+              <tr key={user.id} className={`border-b hover:bg-gray-50 transition-colors ${isSelected ? 'bg-primary-50/30' : 'bg-white'}`}>
+                <td className="w-4 p-4">
+                  <input
+                    type="checkbox"
+                    checked={isSelected}
+                    onChange={() => onToggleSelectUser(user.id)}
+                    className="w-4 h-4 text-primary-600 bg-gray-100 border-gray-300 rounded focus:ring-primary-500"
+                  />
+                </td>
+                <th scope="row" className="px-6 py-4 font-bold text-gray-900 whitespace-nowrap">{user.name}</th>
+                <td className="px-6 py-4">
+                  {user.email ? (
+                    <span className="font-semibold text-gray-800">{user.email}</span>
+                  ) : (
+                    <span className="text-gray-400 italic text-xs">No email</span>
+                  )}
+                </td>
+                <td className="px-6 py-4 font-medium text-gray-700">{user.tenantIds?.length || 0}</td>
+                <td className="px-6 py-4">
+                  <span className={`px-2.5 py-0.5 text-xs font-bold rounded-full ${user.isAdmin ? 'bg-purple-100 text-purple-800' : 'bg-gray-100 text-gray-700'}`}>
+                    {user.isAdmin ? 'Super Admin' : 'User'}
+                  </span>
+                </td>
+                <td className="px-6 py-4">
+                  {isArchived ? (
+                    <span className="px-2.5 py-0.5 text-xs font-bold rounded-full bg-amber-100 text-amber-800">
+                      Archived
+                    </span>
+                  ) : (
+                    <span className={`px-2.5 py-0.5 text-xs font-bold rounded-full ${user.status === 'Active' ? 'bg-emerald-100 text-emerald-800' : 'bg-amber-100 text-amber-800'}`}>
+                      {user.status || 'Active'}
+                    </span>
+                  )}
+                </td>
+                <td className="px-6 py-4 text-right space-x-2">
+                  <button onClick={() => onEditUser(user)} className="font-bold text-primary-600 hover:text-primary-800 uppercase text-[10px] tracking-wider transition-colors">
+                    Edit
+                  </button>
+
+                  {!isArchived && onArchiveUser && (
+                    <button
+                      onClick={() => onArchiveUser(user)}
+                      className="font-bold text-amber-600 hover:text-amber-800 uppercase text-[10px] tracking-wider transition-colors ml-2"
+                      title="Archive user profile"
+                    >
+                      Archive
+                    </button>
+                  )}
+
+                  {isArchived && onRestoreUser && (
+                    <button
+                      onClick={() => onRestoreUser(user)}
+                      className="font-bold text-emerald-600 hover:text-emerald-800 uppercase text-[10px] tracking-wider transition-colors ml-2"
+                      title="Restore user to active"
+                    >
+                      Restore
+                    </button>
+                  )}
+
+                  {onDeleteUser && (
+                    <button
+                      onClick={() => onDeleteUser(user)}
+                      className="font-bold text-red-600 hover:text-red-800 uppercase text-[10px] tracking-wider transition-colors ml-2"
+                      title="Delete user profile"
+                    >
+                      Delete
+                    </button>
+                  )}
+                </td>
+              </tr>
+            );
+          })}
+          {users.length === 0 && (
+            <tr>
+              <td colSpan={7} className="text-center py-10 text-gray-500 font-medium">
+                No user records found for this filter.
               </td>
             </tr>
-          ))}
+          )}
         </tbody>
       </table>
     </div>
   );
 };
 
-const AdminDashboard: React.FC<AdminDashboardProps> = ({ allTenantData, companies, users, onUpdateCompany, onDeleteCompany, onUpdateUser }) => {
+const AdminDashboard: React.FC<AdminDashboardProps> = ({
+  allTenantData,
+  companies,
+  users,
+  onUpdateCompany,
+  onDeleteCompany,
+  onUpdateUser,
+  onArchiveUser,
+  onRestoreUser,
+  onDeleteUser,
+  onBulkArchiveUsers,
+  onBulkRestoreUsers,
+  onBulkDeleteUsers
+}) => {
   const [query, setQuery] = useState('');
   const [response, setResponse] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
@@ -147,6 +252,79 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ allTenantData, companie
   const [aiLedgerEntries, setAiLedgerEntries] = useState<any[]>([]);
   const [isFetchingLedger, setIsFetchingLedger] = useState<boolean>(false);
   const [ledgerSearch, setLedgerSearch] = useState('');
+
+  const [userFilterTab, setUserFilterTab] = useState<'active' | 'archived' | 'all'>('active');
+  const [userSearchTerm, setUserSearchTerm] = useState('');
+  const [selectedUserIds, setSelectedUserIds] = useState<string[]>([]);
+  const [userSortKey, setUserSortKey] = useState<'name' | 'email' | 'tenantCount' | 'isAdmin' | 'status'>('name');
+  const [userSortDirection, setUserSortDirection] = useState<'asc' | 'desc'>('asc');
+  const [userDependencyLocked, setUserDependencyLocked] = useState<{ user: User; count: number } | null>(null);
+  const [userDeletingTarget, setUserDeletingTarget] = useState<User | null>(null);
+
+  const activeUsers = useMemo(() => users.filter(u => !u.is_archived && u.status !== 'Archived' && u.status !== 'Deleted'), [users]);
+  const archivedUsers = useMemo(() => users.filter(u => u.is_archived || u.status === 'Archived'), [users]);
+
+  const displayedUsersByTab = useMemo(() => {
+    if (userFilterTab === 'active') return activeUsers;
+    if (userFilterTab === 'archived') return archivedUsers;
+    return users.filter(u => u.status !== 'Deleted');
+  }, [userFilterTab, activeUsers, archivedUsers, users]);
+
+  const filteredAndSortedUsers = useMemo(() => {
+    let filtered = displayedUsersByTab.filter(u =>
+      (u.name || '').toLowerCase().includes(userSearchTerm.toLowerCase()) ||
+      (u.email || '').toLowerCase().includes(userSearchTerm.toLowerCase())
+    );
+
+    filtered.sort((a, b) => {
+      let valA: any = a[userSortKey] || '';
+      let valB: any = b[userSortKey] || '';
+      if (userSortKey === 'tenantCount') {
+        valA = a.tenantIds?.length || 0;
+        valB = b.tenantIds?.length || 0;
+        return userSortDirection === 'asc' ? valA - valB : valB - valA;
+      }
+      if (typeof valA === 'string' && typeof valB === 'string') {
+        return userSortDirection === 'asc' ? valA.localeCompare(valB) : valB.localeCompare(valA);
+      }
+      return 0;
+    });
+
+    return filtered;
+  }, [displayedUsersByTab, userSearchTerm, userSortKey, userSortDirection]);
+
+  const handleToggleSelectUser = (id: string) => {
+    setSelectedUserIds(prev =>
+      prev.includes(id) ? prev.filter(item => item !== id) : [...prev, id]
+    );
+  };
+
+  const handleToggleSelectAllUsers = () => {
+    const currentTabIds = filteredAndSortedUsers.map(u => u.id);
+    const allSelected = currentTabIds.every(id => selectedUserIds.includes(id));
+    if (allSelected) {
+      setSelectedUserIds(prev => prev.filter(id => !currentTabIds.includes(id)));
+    } else {
+      setSelectedUserIds(prev => Array.from(new Set([...prev, ...currentTabIds])));
+    }
+  };
+
+  const handleDeleteUserAttempt = (user: User) => {
+    let recordsCount = 0;
+    if (allTenantData) {
+      Object.values(allTenantData).forEach(tenant => {
+        if (tenant.invoices) {
+          recordsCount += tenant.invoices.filter(i => (i as any).userId === user.id || (i as any).user_id === user.id).length;
+        }
+      });
+    }
+
+    if (recordsCount > 0) {
+      setUserDependencyLocked({ user, count: recordsCount });
+    } else {
+      setUserDeletingTarget(user);
+    }
+  };
 
   const [transactions, setTransactions] = useState<any[]>([]);
   const [isFetchingTransactions, setIsFetchingTransactions] = useState<boolean>(false);
@@ -1900,14 +2078,106 @@ Admin Query: ${activePrompt}
       )}
 
       {activeTab === 'users' && (
-        <div className="bg-white rounded-xl shadow-xl border border-gray-100 overflow-hidden">
-          <div className="p-6 border-b font-black uppercase text-xs tracking-widest text-gray-400 bg-gray-50/50">User Access Management</div>
+        <div className="bg-white rounded-2xl shadow-xl border border-gray-100 overflow-hidden space-y-4">
+          <div className="p-6 border-b border-gray-100 flex flex-col md:flex-row md:items-center md:justify-between gap-4 bg-gray-50/50">
+            <div>
+              <h3 className="text-xs font-black uppercase tracking-widest text-gray-500">User Access Management</h3>
+              <p className="text-xs text-gray-500 mt-1">Manage workspace users, permissions, and archived user profiles</p>
+            </div>
+
+            <div className="flex bg-gray-200/80 p-1 rounded-xl">
+              <button
+                onClick={() => { setUserFilterTab('active'); setSelectedUserIds([]); }}
+                className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all ${userFilterTab === 'active' ? 'bg-white text-gray-900 shadow-sm' : 'text-gray-600 hover:text-gray-900'}`}
+              >
+                Active ({activeUsers.length})
+              </button>
+              <button
+                onClick={() => { setUserFilterTab('archived'); setSelectedUserIds([]); }}
+                className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all ${userFilterTab === 'archived' ? 'bg-white text-amber-800 shadow-sm' : 'text-gray-600 hover:text-gray-900'}`}
+              >
+                Archived ({archivedUsers.length})
+              </button>
+              <button
+                onClick={() => { setUserFilterTab('all'); setSelectedUserIds([]); }}
+                className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all ${userFilterTab === 'all' ? 'bg-white text-gray-900 shadow-sm' : 'text-gray-600 hover:text-gray-900'}`}
+              >
+                All ({users.filter(u => u.status !== 'Deleted').length})
+              </button>
+            </div>
+          </div>
+
+          <div className="p-4 flex flex-col md:flex-row md:items-center justify-between gap-3">
+            <input
+              type="text"
+              placeholder="Search user name or email..."
+              value={userSearchTerm}
+              onChange={(e) => setUserSearchTerm(e.target.value)}
+              className="w-full md:w-72 px-4 py-2 bg-gray-50 border border-gray-200 rounded-xl text-xs font-bold outline-none focus:ring-2 focus:ring-primary-500"
+            />
+
+            {selectedUserIds.length > 0 && (
+              <div className="flex items-center space-x-2 bg-primary-50 px-3 py-1.5 rounded-xl border border-primary-200">
+                <span className="text-xs font-bold text-primary-800">
+                  {selectedUserIds.length} User(s) Selected
+                </span>
+
+                {userFilterTab !== 'archived' && onBulkArchiveUsers && (
+                  <button
+                    onClick={async () => {
+                      await onBulkArchiveUsers(selectedUserIds);
+                      setSelectedUserIds([]);
+                    }}
+                    className="px-2.5 py-1 bg-amber-600 hover:bg-amber-700 text-white rounded-lg text-[10px] font-bold uppercase tracking-wider transition-colors"
+                  >
+                    Bulk Archive
+                  </button>
+                )}
+
+                {userFilterTab === 'archived' && onBulkRestoreUsers && (
+                  <button
+                    onClick={async () => {
+                      await onBulkRestoreUsers(selectedUserIds);
+                      setSelectedUserIds([]);
+                    }}
+                    className="px-2.5 py-1 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg text-[10px] font-bold uppercase tracking-wider transition-colors"
+                  >
+                    Bulk Restore
+                  </button>
+                )}
+
+                {onBulkDeleteUsers && (
+                  <button
+                    onClick={async () => {
+                      if (window.confirm(`Are you sure you want to delete ${selectedUserIds.length} selected user(s)?`)) {
+                        await onBulkDeleteUsers(selectedUserIds);
+                        setSelectedUserIds([]);
+                      }
+                    }}
+                    className="px-2.5 py-1 bg-red-600 hover:bg-red-700 text-white rounded-lg text-[10px] font-bold uppercase tracking-wider transition-colors"
+                  >
+                    Bulk Delete
+                  </button>
+                )}
+              </div>
+            )}
+          </div>
+
           <UsersTable 
-            users={users} 
+            users={filteredAndSortedUsers} 
+            selectedUserIds={selectedUserIds}
+            onToggleSelectUser={handleToggleSelectUser}
+            onToggleSelectAll={handleToggleSelectAllUsers}
             onEditUser={(u) => { setSelectedUser(u); setIsUserModalOpen(true); }} 
-            sortKey="name" 
-            sortDirection="asc" 
-            onSort={() => {}} 
+            onArchiveUser={onArchiveUser ? (u) => onArchiveUser(u.id) : undefined}
+            onRestoreUser={onRestoreUser ? (u) => onRestoreUser(u.id) : undefined}
+            onDeleteUser={handleDeleteUserAttempt}
+            sortKey={userSortKey} 
+            sortDirection={userSortDirection} 
+            onSort={(key) => {
+              if (userSortKey === key) setUserSortDirection(prev => prev === 'asc' ? 'desc' : 'asc');
+              else { setUserSortKey(key); setUserSortDirection('asc'); }
+            }}
           />
         </div>
       )}
@@ -1917,7 +2187,7 @@ Admin Query: ${activePrompt}
           isOpen={isCompanyModalOpen}
           onClose={() => setIsCompanyModalOpen(false)}
           company={selectedCompany}
-          users={users.filter(u => u.tenantIds.includes(selectedCompany.id))}
+          users={users.filter(u => u.tenantIds.includes(selectedCompany.id) && !u.is_archived && u.status !== 'Archived' && u.status !== 'Deleted')}
           onUpdateCompanyDetails={onUpdateCompany}
           onDeleteCompany={onDeleteCompany}
         />
@@ -1929,6 +2199,75 @@ Admin Query: ${activePrompt}
           onClose={() => setIsUserModalOpen(false)}
           user={selectedUser}
           onUpdateUser={onUpdateUser}
+        />
+      )}
+
+      {/* User Dependency Lock Modal */}
+      {userDependencyLocked && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm animate-in fade-in">
+          <div className="bg-white rounded-2xl max-w-md w-full p-6 shadow-2xl border border-amber-200">
+            <div className="flex items-center space-x-3 text-amber-600 mb-4">
+              <div className="p-2 bg-amber-100 rounded-xl">
+                <AdminDashboardIcon d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
+              </div>
+              <div>
+                <span className="text-[10px] font-black uppercase tracking-widest text-amber-700 bg-amber-100 px-2 py-0.5 rounded-full">
+                  Audit Lock Active
+                </span>
+                <h3 className="text-base font-bold text-gray-900 mt-1">
+                  Hard Deletion Prevented
+                </h3>
+              </div>
+            </div>
+
+            <p className="text-xs text-gray-600 leading-relaxed mb-4">
+              User <strong className="text-gray-900">{userDependencyLocked.user.name}</strong> ({userDependencyLocked.user.email}) is linked to{' '}
+              <strong className="text-amber-700">{userDependencyLocked.count}</strong> existing business transactions across workspaces.
+            </p>
+
+            <div className="bg-amber-50 p-3 rounded-xl border border-amber-100 text-xs text-amber-900 mb-6 font-medium">
+              💡 <strong>Recommended Action:</strong> Archive this user. Archived users are hidden from workspace dropdowns and assignment lists while preserving all historical activity logs.
+            </div>
+
+            <div className="flex items-center justify-end space-x-3">
+              <button
+                onClick={() => setUserDependencyLocked(null)}
+                className="px-4 py-2 text-xs font-bold text-gray-600 hover:text-gray-800 rounded-xl"
+              >
+                Cancel
+              </button>
+              {onArchiveUser && (
+                <button
+                  onClick={async () => {
+                    await onArchiveUser(userDependencyLocked.user.id);
+                    setUserDependencyLocked(null);
+                  }}
+                  className="px-4 py-2 bg-amber-600 hover:bg-amber-700 text-white text-xs font-bold rounded-xl shadow-sm transition-colors"
+                >
+                  Archive User Instead
+                </button>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* User Hard Delete Confirmation Modal */}
+      {userDeletingTarget && (
+        <DeleteConfirmationModal
+          isOpen={!!userDeletingTarget}
+          onClose={() => setUserDeletingTarget(null)}
+          onConfirm={async () => {
+            if (userDeletingTarget && onDeleteUser) {
+              await onDeleteUser(userDeletingTarget.id);
+            }
+            setUserDeletingTarget(null);
+          }}
+          title="Permanently Delete User Profile"
+          itemName={`${userDeletingTarget.name} (${userDeletingTarget.email || 'No email'})`}
+          itemType="User Profile"
+          warningText="This action will permanently delete this user profile and remove their tenant memberships."
+          impactText="Ensure this account is no longer required before confirming."
         />
       )}
 

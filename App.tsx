@@ -904,6 +904,96 @@ export default function App() {
     }
   };
 
+  const handleArchiveUser = async (userId: string) => {
+    try {
+      setIsDataSyncing(true);
+      await api.archiveUser(userId);
+      await triggerAuditLog('ARCHIVE_USER', userId, `Archived user profile ${userId}`);
+      const updatedUsers = await api.getAllProfiles();
+      setAllUsers(updatedUsers);
+    } catch (e) {
+      alert("Error archiving user: " + stringifyError(e));
+    } finally {
+      if (isMounted.current) setIsDataSyncing(false);
+    }
+  };
+
+  const handleRestoreUser = async (userId: string) => {
+    try {
+      setIsDataSyncing(true);
+      await api.restoreUser(userId);
+      await triggerAuditLog('RESTORE_USER', userId, `Restored user profile ${userId}`);
+      const updatedUsers = await api.getAllProfiles();
+      setAllUsers(updatedUsers);
+    } catch (e) {
+      alert("Error restoring user: " + stringifyError(e));
+    } finally {
+      if (isMounted.current) setIsDataSyncing(false);
+    }
+  };
+
+  const handleDeleteUser = async (userId: string) => {
+    try {
+      setIsDataSyncing(true);
+      await api.deleteUser(userId);
+      await triggerAuditLog('DELETE_USER', userId, `Deleted user profile ${userId}`);
+      const updatedUsers = await api.getAllProfiles();
+      setAllUsers(updatedUsers);
+    } catch (e) {
+      alert("Error deleting user: " + stringifyError(e));
+    } finally {
+      if (isMounted.current) setIsDataSyncing(false);
+    }
+  };
+
+  const handleBulkArchiveUsers = async (userIds: string[]) => {
+    try {
+      setIsDataSyncing(true);
+      for (const id of userIds) {
+        await api.archiveUser(id);
+      }
+      await triggerAuditLog('BULK_ARCHIVE_USERS', userIds.join(','), `Bulk archived ${userIds.length} users`);
+      const updatedUsers = await api.getAllProfiles();
+      setAllUsers(updatedUsers);
+    } catch (e) {
+      alert("Error bulk archiving users: " + stringifyError(e));
+    } finally {
+      if (isMounted.current) setIsDataSyncing(false);
+    }
+  };
+
+  const handleBulkRestoreUsers = async (userIds: string[]) => {
+    try {
+      setIsDataSyncing(true);
+      for (const id of userIds) {
+        await api.restoreUser(id);
+      }
+      await triggerAuditLog('BULK_RESTORE_USERS', userIds.join(','), `Bulk restored ${userIds.length} users`);
+      const updatedUsers = await api.getAllProfiles();
+      setAllUsers(updatedUsers);
+    } catch (e) {
+      alert("Error bulk restoring users: " + stringifyError(e));
+    } finally {
+      if (isMounted.current) setIsDataSyncing(false);
+    }
+  };
+
+  const handleBulkDeleteUsers = async (userIds: string[]) => {
+    try {
+      setIsDataSyncing(true);
+      for (const id of userIds) {
+        await api.deleteUser(id);
+      }
+      await triggerAuditLog('BULK_DELETE_USERS', userIds.join(','), `Bulk deleted ${userIds.length} users`);
+      const updatedUsers = await api.getAllProfiles();
+      setAllUsers(updatedUsers);
+    } catch (e) {
+      alert("Error bulk deleting users: " + stringifyError(e));
+    } finally {
+      if (isMounted.current) setIsDataSyncing(false);
+    }
+  };
+
   const handleDeleteReceipt = async (invoiceId: string) => {
     if (userRole !== 'Owner') {
       alert("Only Workspace Owners can delete receipts.");
@@ -1447,6 +1537,12 @@ export default function App() {
                     setAllUsers(updatedUsers);
                 } catch (e) { setSyncError(stringifyError(e)); }
             }}
+            onArchiveUser={handleArchiveUser}
+            onRestoreUser={handleRestoreUser}
+            onDeleteUser={handleDeleteUser}
+            onBulkArchiveUsers={handleBulkArchiveUsers}
+            onBulkRestoreUsers={handleBulkRestoreUsers}
+            onBulkDeleteUsers={handleBulkDeleteUsers}
           />;
       }
       case 'projects': return <ProjectManagement companyId={activeTenantId!} projects={projects} clients={clients} generatedDocs={generatedDocs} invoices={invoices} auditLogs={auditLogs} onAddProject={handleAddProject} onUpdateProject={handleUpdateProject} onDeleteProject={handleDeleteProject} onRecordPayment={handleRecordPayment} onSendReceipt={handleSendReceipt} onNavigateTo={(page, props) => {

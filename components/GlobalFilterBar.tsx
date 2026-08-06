@@ -74,7 +74,9 @@ export const GlobalFilterBar: React.FC<GlobalFilterBarProps> = ({
   }, []);
 
   // Filtered Client Options
-  const filteredClientOptions = clients.filter((c) =>
+  const activeClients = useMemo(() => clients.filter((c) => !c.is_archived && c.status !== 'Archived' && c.status !== 'Deleted'), [clients]);
+
+  const filteredClientOptions = activeClients.filter((c) =>
     c.companyName.toLowerCase().includes(clientSearch.toLowerCase()) ||
     c.name.toLowerCase().includes(clientSearch.toLowerCase())
   );
@@ -297,7 +299,7 @@ export const GlobalFilterBar: React.FC<GlobalFilterBarProps> = ({
 
               <div className="flex justify-between items-center text-[10px] font-black uppercase text-gray-400 px-1 pt-1">
                 <button
-                  onClick={() => onFilterChange({ ...filter, selectedClientIds: clients.map((c) => c.id) })}
+                  onClick={() => onFilterChange({ ...filter, selectedClientIds: activeClients.map((c) => c.id) })}
                   className="hover:text-primary-600 cursor-pointer"
                 >
                   Select All

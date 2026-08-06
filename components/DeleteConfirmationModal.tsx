@@ -8,7 +8,7 @@ interface DeleteConfirmationModalProps {
   onConfirm: () => Promise<void> | void;
   title: string;
   itemName: string;
-  itemType: 'Service' | 'Client' | 'Receipt' | 'Record';
+  itemType: 'Service' | 'Client' | 'Receipt' | 'Record' | 'User Profile' | string;
   warningText?: string;
   impactText?: string;
 }

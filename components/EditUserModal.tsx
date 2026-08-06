@@ -94,12 +94,21 @@ const EditUserModal: React.FC<EditUserModalProps> = ({ isOpen, onClose, user, on
               <select 
                 id="status" 
                 value={formData.status} 
-                onChange={handleChange}
+                onChange={(e) => {
+                  const newStatus = e.target.value as any;
+                  setFormData(prev => ({
+                    ...prev,
+                    status: newStatus,
+                    is_archived: newStatus === 'Archived',
+                    archived_at: newStatus === 'Archived' ? (prev.archived_at || new Date().toISOString()) : undefined
+                  }));
+                }}
                 className="w-full px-4 py-3 border-2 border-gray-100 rounded-xl focus:border-primary-500 outline-none font-medium"
               >
-                <option value="Pending">Pending</option>
                 <option value="Active">Active</option>
+                <option value="Pending">Pending</option>
                 <option value="Declined">Declined</option>
+                <option value="Archived">Archived</option>
               </select>
             </div>
             
