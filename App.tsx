@@ -656,6 +656,50 @@ export default function App() {
     finally { if (isMounted.current) setIsDataSyncing(false); }
   };
 
+  const handleBulkDeleteInvoices = async (invoiceIds: string[]) => {
+    if (!invoiceIds || invoiceIds.length === 0) return;
+    setIsDataSyncing(true);
+    try {
+      for (const id of invoiceIds) {
+        await api.deleteInvoice(id);
+        await triggerAuditLog('DELETE_INVOICE', id, `Bulk deleted invoice record`);
+      }
+      if (activeTenantId) await forceSyncData(activeTenantId);
+      if (currentUser?.isAdmin) {
+        const allInvs = await api.getAllInvoices();
+        setAllInvoices(allInvs);
+      }
+    } catch (e) {
+      alert(`Bulk Delete Error: ${stringifyError(e)}`);
+    } finally {
+      if (isMounted.current) setIsDataSyncing(false);
+    }
+  };
+
+  const handleBulkArchiveInvoices = async (invoicesToArchive: Invoice[], targetStatus?: 'archived' | 'active') => {
+    if (!invoicesToArchive || invoicesToArchive.length === 0) return;
+    setIsDataSyncing(true);
+    try {
+      for (const inv of invoicesToArchive) {
+        const newStatus = targetStatus || (inv.recurringStatus === 'archived' ? 'active' : 'archived');
+        await api.updateInvoice({
+          ...inv,
+          recurringStatus: newStatus
+        });
+        await triggerAuditLog(
+          'TOGGLE_RECURRING_ARCHIVE',
+          inv.id,
+          `Bulk updated status to ${newStatus} for invoice ${inv.invoiceNumber}`
+        );
+      }
+      if (activeTenantId) await forceSyncData(activeTenantId);
+    } catch (e) {
+      alert(`Bulk Archive Error: ${stringifyError(e)}`);
+    } finally {
+      if (isMounted.current) setIsDataSyncing(false);
+    }
+  };
+
   const handleRenewInvoiceAction = async (template: Invoice) => {
     if (!activeTenantId) return;
     setIsDataSyncing(true);
@@ -1198,7 +1242,7 @@ export default function App() {
       case 'document-transformer': return <DocumentTransformer ... />;
       */
       case 'document-transformer': return <Dashboard invoices={invoices} clients={clients} services={services} activeTenantId={activeTenantId} setActivePage={navigateTo} onViewInvoice={(id) => { setSelectedInvoiceId(id); navigateTo('invoice-detail'); }} onEditInvoice={handleEditInvoiceAction} onGenerateRenewal={handleGenerateRenewal} globalFilter={globalFilter} onFilterChange={handleGlobalFilterChange} />;
-      case 'invoices': return <InvoiceList invoices={invoices} clients={clients} services={services} onViewInvoice={(id) => { setSelectedInvoiceId(id); navigateTo('invoice-detail'); }} onEditInvoice={handleEditInvoiceAction} onDeleteInvoice={handleDeleteInvoice} globalFilter={globalFilter} onFilterChange={handleGlobalFilterChange} />;
+      case 'invoices': return <InvoiceList invoices={invoices} clients={clients} services={services} onViewInvoice={(id) => { setSelectedInvoiceId(id); navigateTo('invoice-detail'); }} onEditInvoice={handleEditInvoiceAction} onDeleteInvoice={handleDeleteInvoice} onBulkDeleteInvoices={handleBulkDeleteInvoices} onToggleArchive={handleToggleArchiveAction} onBulkArchiveInvoices={handleBulkArchiveInvoices} globalFilter={globalFilter} onFilterChange={handleGlobalFilterChange} />;
       case 'recurring-invoices': return (
         <RecurringInvoiceList 
           invoices={invoices.filter(i => i.isRecurringTemplate || (i.frequency && i.frequency !== 'one-time' && !i.parentInvoiceId))} 
@@ -1210,6 +1254,8 @@ export default function App() {
           onRenewInvoice={handleRenewInvoiceAction}
           onTogglePause={handleTogglePauseAction}
           onToggleArchive={handleToggleArchiveAction}
+          onBulkDeleteInvoices={handleBulkDeleteInvoices}
+          onBulkArchiveInvoices={handleBulkArchiveInvoices}
         />
       );
       case 'sent-receipts': return <SentReceiptsList invoices={invoices.filter(i => i.isReceiptSent)} clients={clients} userRole={userRole} onViewInvoice={(id) => { setSelectedInvoiceId(id); navigateTo('receipt-detail'); }} onEditInvoice={handleEditInvoiceAction} onDeleteReceipt={handleDeleteReceipt} />;

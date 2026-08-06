@@ -125,7 +125,7 @@ export async function createInAppNotificationRecordAsync(data: {
     }
     persistNotifications();
 
-    // Persist to Supabase table (trying both in_app_notifications and notifications)
+    // Persist to Supabase table (writing to both notifications and in_app_notifications)
     try {
         const supabasePayload = {
             id: record.id,
@@ -149,13 +149,16 @@ export async function createInAppNotificationRecordAsync(data: {
             metadata: record.metadata || {}
         };
 
-        const { error } = await supabase.from('in_app_notifications').upsert(supabasePayload);
-        if (error) {
-            try {
-                await supabase.from('notifications').upsert(supabasePayload);
-            } catch (fbErr) {
-                console.warn("[InAppNotificationModule] Fallback table insert notice:", fbErr);
-            }
+        try {
+            await supabase.from('notifications').upsert(supabasePayload);
+        } catch (notifErr) {
+            console.warn("[InAppNotificationModule] 'notifications' table upsert notice:", notifErr);
+        }
+
+        try {
+            await supabase.from('in_app_notifications').upsert(supabasePayload);
+        } catch (inAppErr) {
+            console.warn("[InAppNotificationModule] 'in_app_notifications' table upsert notice:", inAppErr);
         }
     } catch (e) {
         console.warn("[InAppNotificationModule] Supabase insert warning:", e);

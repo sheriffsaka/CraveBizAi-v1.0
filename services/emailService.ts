@@ -41,6 +41,21 @@ export async function sendEmailViaSMTP(options: SendEmailOptions): Promise<{ suc
     const replyToAddress = options.replyTo || defaultReplyTo;
     const toAddresses = Array.isArray(options.to) ? options.to : [options.to];
 
+    // Ensure notification record exists in notifications table before dispatching email
+    for (const recipient of toAddresses) {
+        try {
+            await createInAppNotificationRecordAsync({
+                recipientEmail: recipient,
+                title: options.subject || 'Email Notification',
+                message: options.text || options.subject || 'An email notification was sent to your inbox.',
+                category: 'email',
+                type: 'info'
+            });
+        } catch (notifErr) {
+            console.warn("[emailService] Notification creation notice in sendEmailViaSMTP:", notifErr);
+        }
+    }
+
     try {
         const transporter = createTransporter();
         const mailOptions = {

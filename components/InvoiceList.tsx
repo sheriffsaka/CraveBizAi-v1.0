@@ -22,6 +22,9 @@ interface InvoiceListProps {
   onViewInvoice: (invoiceId: string) => void;
   onEditInvoice?: (invoiceId: string) => void;
   onDeleteInvoice?: (invoiceId: string) => void;
+  onBulkDeleteInvoices?: (invoiceIds: string[]) => Promise<void> | void;
+  onToggleArchive?: (invoice: Invoice) => Promise<void> | void;
+  onBulkArchiveInvoices?: (invoices: Invoice[], targetStatus?: 'archived' | 'active') => Promise<void> | void;
   globalFilter?: GlobalFilterState;
   onFilterChange?: (filter: GlobalFilterState) => void;
 }
@@ -35,10 +38,29 @@ const InvoicesTable: React.FC<{
   onViewInvoice: (invoiceId: string) => void;
   onEditInvoice?: (invoiceId: string) => void;
   onDeleteInvoice?: (invoiceId: string) => void;
+  onToggleArchive?: (invoice: Invoice) => void;
   sortKey: SortKey;
   sortDirection: SortDirection;
   onSort: (key: SortKey) => void;
-}> = ({ invoices, clients, onViewInvoice, onEditInvoice, onDeleteInvoice, sortKey, sortDirection, onSort }) => {
+  selectedIds?: string[];
+  onToggleSelect?: (id: string) => void;
+  onToggleSelectAll?: () => void;
+  isAllSelected?: boolean;
+}> = ({
+  invoices,
+  clients,
+  onViewInvoice,
+  onEditInvoice,
+  onDeleteInvoice,
+  onToggleArchive,
+  sortKey,
+  sortDirection,
+  onSort,
+  selectedIds = [],
+  onToggleSelect,
+  onToggleSelectAll,
+  isAllSelected = false
+}) => {
   const getClientName = (clientId: string) => {
     return clients.find(c => c.id === clientId)?.companyName || 'Unknown Client';
   };
@@ -60,6 +82,18 @@ const InvoicesTable: React.FC<{
       <table className="w-full text-sm text-left text-gray-500">
         <thead className="text-xs text-gray-700 uppercase bg-gray-50">
           <tr>
+            {onToggleSelectAll && (
+              <th scope="col" className="p-4 w-10">
+                <div className="flex items-center">
+                  <input
+                    type="checkbox"
+                    checked={isAllSelected && invoices.length > 0}
+                    onChange={onToggleSelectAll}
+                    className="w-4 h-4 text-primary-600 bg-gray-100 border-gray-300 rounded focus:ring-primary-500 cursor-pointer"
+                  />
+                </div>
+              </th>
+            )}
             <th scope="col" className="px-6 py-3 cursor-pointer" onClick={() => onSort('invoiceNumber')}>Invoice ID{getSortIcon('invoiceNumber')}</th>
             <th scope="col" className="px-6 py-3 cursor-pointer" onClick={() => onSort('clientName')}>Client{getSortIcon('clientName')}</th>
             <th scope="col" className="px-6 py-3 cursor-pointer" onClick={() => onSort('dueDate')}>Due Date{getSortIcon('dueDate')}</th>
@@ -75,10 +109,30 @@ const InvoicesTable: React.FC<{
             const isPaid = invoice.status === InvoiceStatus.Paid || rawBalance <= 0.001;
             const balance = isPaid ? 0 : Math.max(0, rawBalance);
             const statusToDisplay = isPaid ? InvoiceStatus.Paid : invoice.status;
+            const isSelected = selectedIds.includes(invoice.id);
+            const isArchived = invoice.recurringStatus === 'archived';
+
             return (
-              <tr key={invoice.id} className="bg-white border-b hover:bg-gray-50 group">
-                <th scope="row" className="px-6 py-4 font-medium text-gray-900 whitespace-nowrap">
-                  {invoice.invoiceNumber}
+              <tr key={invoice.id} className={`border-b hover:bg-gray-50 group transition-colors ${isSelected ? 'bg-primary-50/50' : 'bg-white'}`}>
+                {onToggleSelect && (
+                  <td className="p-4 w-10">
+                    <div className="flex items-center">
+                      <input
+                        type="checkbox"
+                        checked={isSelected}
+                        onChange={() => onToggleSelect(invoice.id)}
+                        className="w-4 h-4 text-primary-600 bg-gray-100 border-gray-300 rounded focus:ring-primary-500 cursor-pointer"
+                      />
+                    </div>
+                  </td>
+                )}
+                <th scope="row" className="px-6 py-4 font-medium text-gray-900 whitespace-nowrap flex items-center gap-2">
+                  <span>{invoice.invoiceNumber}</span>
+                  {isArchived && (
+                    <span className="px-1.5 py-0.5 text-[9px] font-black uppercase rounded bg-gray-200 text-gray-600 border border-gray-300">
+                      Archived
+                    </span>
+                  )}
                 </th>
                 <td className="px-6 py-4">{getClientName(invoice.clientId)}</td>
                 <td className="px-6 py-4">{invoice.dueDate}</td>
@@ -89,10 +143,18 @@ const InvoicesTable: React.FC<{
                 <td className="px-6 py-4">
                   <InvoiceStatusBadge status={statusToDisplay} />
                 </td>
-                <td className="px-6 py-4 text-right space-x-3">
+                <td className="px-6 py-4 text-right space-x-2">
                   <button onClick={() => onViewInvoice(invoice.id)} className="font-bold text-primary-600 hover:text-primary-800 transition-colors uppercase text-[10px] tracking-widest">View</button>
-                  {onEditInvoice && (
+                  {onEditInvoice && !isArchived && (
                       <button onClick={() => onEditInvoice(invoice.id)} className="font-bold text-amber-600 hover:text-amber-800 transition-colors uppercase text-[10px] tracking-widest">Edit</button>
+                  )}
+                  {onToggleArchive && (
+                    <button
+                      onClick={() => onToggleArchive(invoice)}
+                      className={`font-bold transition-colors uppercase text-[10px] tracking-widest ${isArchived ? 'text-green-600 hover:text-green-800' : 'text-amber-700 hover:text-amber-900'}`}
+                    >
+                      {isArchived ? 'Restore' : 'Archive'}
+                    </button>
                   )}
                   {onDeleteInvoice && (
                       <button onClick={(e) => handleDelete(e, invoice.id, invoice.invoiceNumber)} className="font-bold text-red-600 hover:text-red-800 transition-colors uppercase text-[10px] tracking-widest">Delete</button>
@@ -103,7 +165,7 @@ const InvoicesTable: React.FC<{
           })}
            {invoices.length === 0 && (
               <tr>
-                  <td colSpan={7} className="text-center py-10 text-gray-500">No invoices found.</td>
+                  <td colSpan={onToggleSelectAll ? 8 : 7} className="text-center py-10 text-gray-500">No invoices found.</td>
               </tr>
           )}
         </tbody>
@@ -121,13 +183,19 @@ const InvoiceList: React.FC<InvoiceListProps> = ({
   onViewInvoice,
   onEditInvoice,
   onDeleteInvoice,
+  onBulkDeleteInvoices,
+  onToggleArchive,
+  onBulkArchiveInvoices,
   globalFilter,
   onFilterChange
 }) => {
   const [searchTerm, setSearchTerm] = useState('');
+  const [activeTab, setActiveTab] = useState<'active' | 'archived'>('active');
+  const [selectedIds, setSelectedIds] = useState<string[]>([]);
   const [sortKey, setSortKey] = useState<SortKey>('issueDate');
   const [sortDirection, setSortDirection] = useState<SortDirection>('desc');
   const [currentPage, setCurrentPage] = useState(1);
+  const [isProcessingBulk, setIsProcessingBulk] = useState(false);
   const itemsPerPage = limit || 10; 
 
   const [internalFilter, setInternalFilter] = useState<GlobalFilterState>(() => loadGlobalFilterFromSession());
@@ -154,8 +222,15 @@ const InvoiceList: React.FC<InvoiceListProps> = ({
     return globallyFilteredInvoices.filter(inv => !inv.isRecurringTemplate);
   }, [globallyFilteredInvoices]);
 
+  const tabFilteredInvoices = useMemo(() => {
+    if (activeTab === 'archived') {
+      return nonTemplateInvoices.filter(inv => inv.recurringStatus === 'archived');
+    }
+    return nonTemplateInvoices.filter(inv => inv.recurringStatus !== 'archived');
+  }, [nonTemplateInvoices, activeTab]);
+
   const filteredAndSortedInvoices = useMemo(() => {
-    let filtered = nonTemplateInvoices.filter(invoice => 
+    let filtered = tabFilteredInvoices.filter(invoice => 
       invoice.invoiceNumber.toLowerCase().includes(searchTerm.toLowerCase()) ||
       getClientNameById(invoice.clientId).toLowerCase().includes(searchTerm.toLowerCase()) ||
       invoice.status.toLowerCase().includes(searchTerm.toLowerCase())
@@ -204,7 +279,7 @@ const InvoiceList: React.FC<InvoiceListProps> = ({
     });
 
     return filtered;
-  }, [nonTemplateInvoices, clients, searchTerm, sortKey, sortDirection]);
+  }, [tabFilteredInvoices, clients, searchTerm, sortKey, sortDirection]);
 
   const paginatedInvoices = useMemo(() => {
     const startIndex = (currentPage - 1) * itemsPerPage;
@@ -213,6 +288,74 @@ const InvoiceList: React.FC<InvoiceListProps> = ({
   }, [filteredAndSortedInvoices, currentPage, itemsPerPage]);
 
   const totalPages = Math.ceil(filteredAndSortedInvoices.length / itemsPerPage);
+
+  const visibleInvoices = limit ? tabFilteredInvoices.slice(0, limit) : paginatedInvoices;
+
+  const isAllSelected = useMemo(() => {
+    if (visibleInvoices.length === 0) return false;
+    return visibleInvoices.every(inv => selectedIds.includes(inv.id));
+  }, [visibleInvoices, selectedIds]);
+
+  const handleToggleSelect = (id: string) => {
+    setSelectedIds(prev =>
+      prev.includes(id) ? prev.filter(item => item !== id) : [...prev, id]
+    );
+  };
+
+  const handleToggleSelectAll = () => {
+    if (isAllSelected) {
+      const visibleSet = new Set(visibleInvoices.map(i => i.id));
+      setSelectedIds(prev => prev.filter(id => !visibleSet.has(id)));
+    } else {
+      const visibleIds = visibleInvoices.map(i => i.id);
+      setSelectedIds(prev => Array.from(new Set([...prev, ...visibleIds])));
+    }
+  };
+
+  const handleBulkDelete = async () => {
+    if (selectedIds.length === 0) return;
+    if (!window.confirm(`Are you sure you want to delete ${selectedIds.length} selected invoice(s)? This action cannot be undone.`)) return;
+
+    setIsProcessingBulk(true);
+    try {
+      if (onBulkDeleteInvoices) {
+        await onBulkDeleteInvoices(selectedIds);
+      } else if (onDeleteInvoice) {
+        for (const id of selectedIds) {
+          await onDeleteInvoice(id);
+        }
+      }
+      setSelectedIds([]);
+    } catch (e) {
+      console.error("Bulk delete error:", e);
+    } finally {
+      setIsProcessingBulk(false);
+    }
+  };
+
+  const handleBulkArchive = async () => {
+    if (selectedIds.length === 0) return;
+    const actionLabel = activeTab === 'archived' ? 'restore' : 'archive';
+    const targetStatus = activeTab === 'archived' ? 'active' : 'archived';
+    if (!window.confirm(`Are you sure you want to ${actionLabel} ${selectedIds.length} selected invoice(s)?`)) return;
+
+    setIsProcessingBulk(true);
+    try {
+      const selectedInvoices = invoices.filter(i => selectedIds.includes(i.id));
+      if (onBulkArchiveInvoices) {
+        await onBulkArchiveInvoices(selectedInvoices, targetStatus);
+      } else if (onToggleArchive) {
+        for (const inv of selectedInvoices) {
+          await onToggleArchive(inv);
+        }
+      }
+      setSelectedIds([]);
+    } catch (e) {
+      console.error("Bulk archive error:", e);
+    } finally {
+      setIsProcessingBulk(false);
+    }
+  };
 
   const handlePageChange = (page: number) => {
     if (page > 0 && page <= totalPages) {
@@ -238,7 +381,9 @@ const InvoiceList: React.FC<InvoiceListProps> = ({
     let draftCount = 0;
     let overdueCount = 0;
 
-    nonTemplateInvoices.forEach(inv => {
+    const activeList = nonTemplateInvoices.filter(i => i.recurringStatus !== 'archived');
+
+    activeList.forEach(inv => {
       totalInvoiced += inv.total;
       const isPaid = inv.status === InvoiceStatus.Paid || (inv.amountPaid || 0) >= inv.total - 0.001;
       const paid = isPaid ? inv.total : (inv.amountPaid || 0);
@@ -261,6 +406,7 @@ const InvoiceList: React.FC<InvoiceListProps> = ({
       totalPaid,
       totalOutstanding,
       collectionRate,
+      archivedCount: nonTemplateInvoices.filter(i => i.recurringStatus === 'archived').length,
       statusData: [
         { name: 'Paid', value: paidCount, color: '#10B981' },
         { name: 'Sent', value: sentCount, color: '#3B82F6' },
@@ -349,11 +495,84 @@ const InvoiceList: React.FC<InvoiceListProps> = ({
         </>
       )}
 
+      {/* Bulk Operations Toolbar */}
+      {selectedIds.length > 0 && (
+        <div className="bg-primary-50 border border-primary-200 rounded-xl p-3.5 px-5 flex flex-wrap items-center justify-between gap-3 shadow-sm">
+          <div className="flex items-center gap-3">
+            <span className="w-6 h-6 rounded-full bg-primary-600 text-white flex items-center justify-center text-xs font-black">
+              {selectedIds.length}
+            </span>
+            <span className="text-sm font-bold text-gray-800">
+              {selectedIds.length} invoice{selectedIds.length > 1 ? 's' : ''} selected
+            </span>
+          </div>
+
+          <div className="flex items-center gap-2">
+            <button
+              onClick={handleBulkArchive}
+              disabled={isProcessingBulk}
+              className={`px-3.5 py-1.5 rounded-lg text-xs font-bold transition-all shadow-sm flex items-center gap-1.5 text-white ${
+                activeTab === 'archived' ? 'bg-emerald-600 hover:bg-emerald-700' : 'bg-amber-600 hover:bg-amber-700'
+              }`}
+            >
+              {activeTab === 'archived' ? '🔄 Bulk Restore' : '📦 Bulk Archive'} ({selectedIds.length})
+            </button>
+
+            <button
+              onClick={handleBulkDelete}
+              disabled={isProcessingBulk}
+              className="px-3.5 py-1.5 rounded-lg text-xs font-bold bg-red-600 hover:bg-red-700 text-white transition-all shadow-sm flex items-center gap-1.5"
+            >
+              🗑️ Bulk Delete ({selectedIds.length})
+            </button>
+
+            <button
+              onClick={() => setSelectedIds([])}
+              className="px-3 py-1.5 rounded-lg text-xs font-semibold text-gray-600 hover:bg-gray-200 transition-colors"
+            >
+              Deselect All
+            </button>
+          </div>
+        </div>
+      )}
+
       <div className="bg-white rounded-xl shadow-md overflow-hidden">
         <div className="p-4 border-b flex flex-col md:flex-row justify-between items-center space-y-3 md:space-y-0 md:space-x-4">
-            <h2 className="text-xl font-semibold">
-              {limit ? 'Recent Documents' : 'Full Registry'}
-            </h2>
+            <div className="flex items-center gap-4">
+              <h2 className="text-xl font-semibold">
+                {limit ? 'Recent Documents' : 'Full Registry'}
+              </h2>
+              {!limit && (
+                <div className="flex items-center bg-gray-100 p-1 rounded-xl text-xs font-bold">
+                  <button
+                    onClick={() => { setActiveTab('active'); setSelectedIds([]); setCurrentPage(1); }}
+                    className={`px-3 py-1.5 rounded-lg transition-all ${
+                      activeTab === 'active'
+                        ? 'bg-white text-gray-900 shadow-sm'
+                        : 'text-gray-500 hover:text-gray-900'
+                    }`}
+                  >
+                    Active
+                  </button>
+                  <button
+                    onClick={() => { setActiveTab('archived'); setSelectedIds([]); setCurrentPage(1); }}
+                    className={`px-3 py-1.5 rounded-lg transition-all flex items-center gap-1 ${
+                      activeTab === 'archived'
+                        ? 'bg-white text-amber-900 shadow-sm font-black'
+                        : 'text-gray-500 hover:text-gray-900'
+                    }`}
+                  >
+                    <span>📦 Archived</span>
+                    {stats.archivedCount > 0 && (
+                      <span className="px-1.5 py-0.2 rounded-full text-[10px] bg-amber-100 text-amber-800 border border-amber-200">
+                        {stats.archivedCount}
+                      </span>
+                    )}
+                  </button>
+                </div>
+              )}
+            </div>
+
             {!limit && ( 
               <div className="flex flex-col md:flex-row items-center space-y-3 md:space-y-0 md:space-x-4 w-full md:w-auto">
                   <div className="relative w-full md:w-64">
@@ -372,14 +591,19 @@ const InvoiceList: React.FC<InvoiceListProps> = ({
             )}
         </div>
         <InvoicesTable 
-          invoices={limit ? nonTemplateInvoices.slice(0, limit) : paginatedInvoices} 
+          invoices={visibleInvoices} 
           clients={clients}
           onViewInvoice={onViewInvoice}
           onEditInvoice={onEditInvoice}
           onDeleteInvoice={onDeleteInvoice}
+          onToggleArchive={onToggleArchive}
           sortKey={sortKey}
           sortDirection={sortDirection}
           onSort={handleSort}
+          selectedIds={selectedIds}
+          onToggleSelect={handleToggleSelect}
+          onToggleSelectAll={handleToggleSelectAll}
+          isAllSelected={isAllSelected}
         />
         {!limit && totalPages > 1 && (
           <div className="p-4 border-t flex justify-center items-center space-x-2">

@@ -13,6 +13,8 @@ interface RecurringInvoiceListProps {
   onRenewInvoice?: (template: Invoice) => Promise<void>;
   onTogglePause?: (template: Invoice) => Promise<void>;
   onToggleArchive?: (template: Invoice) => Promise<void>;
+  onBulkDeleteInvoices?: (invoiceIds: string[]) => Promise<void> | void;
+  onBulkArchiveInvoices?: (invoices: Invoice[], targetStatus?: 'archived' | 'active') => Promise<void> | void;
 }
 
 export type RenewalFilter = 'all' | 'due-soon' | 'overdue' | 'due-30-days' | 'paused';
@@ -154,7 +156,9 @@ const RecurringInvoiceList: React.FC<RecurringInvoiceListProps> = ({
   onDeleteInvoice,
   onRenewInvoice,
   onTogglePause,
-  onToggleArchive
+  onToggleArchive,
+  onBulkDeleteInvoices,
+  onBulkArchiveInvoices
 }) => {
   const [activeTab, setActiveTab] = useState<'renewals' | 'templates' | 'archived'>('renewals');
   const [searchTerm, setSearchTerm] = useState('');
@@ -162,6 +166,8 @@ const RecurringInvoiceList: React.FC<RecurringInvoiceListProps> = ({
   const [sortKey, setSortKey] = useState<SortKey>('nextDueDate');
   const [sortDirection, setSortDirection] = useState<SortDirection>('asc');
   const [currentPage, setCurrentPage] = useState(1);
+  const [selectedIds, setSelectedIds] = useState<string[]>([]);
+  const [isProcessingBulk, setIsProcessingBulk] = useState(false);
   const [renewingId, setRenewingId] = useState<string | null>(null);
   const [pausingId, setPausingId] = useState<string | null>(null);
   const [archivingId, setArchivingId] = useState<string | null>(null);
@@ -370,6 +376,72 @@ const RecurringInvoiceList: React.FC<RecurringInvoiceListProps> = ({
     e.stopPropagation();
     if (onDeleteInvoice && window.confirm(`Are you sure you want to delete recurring template ${number}? This action cannot be undone.`)) {
       onDeleteInvoice(id);
+    }
+  };
+
+  const isAllSelected = useMemo(() => {
+    if (paginatedInvoices.length === 0) return false;
+    return paginatedInvoices.every(inv => selectedIds.includes(inv.id));
+  }, [paginatedInvoices, selectedIds]);
+
+  const handleToggleSelect = (id: string) => {
+    setSelectedIds(prev =>
+      prev.includes(id) ? prev.filter(item => item !== id) : [...prev, id]
+    );
+  };
+
+  const handleToggleSelectAll = () => {
+    if (isAllSelected) {
+      const visibleSet = new Set(paginatedInvoices.map(i => i.id));
+      setSelectedIds(prev => prev.filter(id => !visibleSet.has(id)));
+    } else {
+      const visibleIds = paginatedInvoices.map(i => i.id);
+      setSelectedIds(prev => Array.from(new Set([...prev, ...visibleIds])));
+    }
+  };
+
+  const handleBulkDelete = async () => {
+    if (selectedIds.length === 0) return;
+    if (!window.confirm(`Are you sure you want to delete ${selectedIds.length} selected recurring invoice(s)? This action cannot be undone.`)) return;
+
+    setIsProcessingBulk(true);
+    try {
+      if (onBulkDeleteInvoices) {
+        await onBulkDeleteInvoices(selectedIds);
+      } else if (onDeleteInvoice) {
+        for (const id of selectedIds) {
+          await onDeleteInvoice(id);
+        }
+      }
+      setSelectedIds([]);
+    } catch (e) {
+      console.error("Bulk delete recurring invoices error:", e);
+    } finally {
+      setIsProcessingBulk(false);
+    }
+  };
+
+  const handleBulkArchive = async () => {
+    if (selectedIds.length === 0) return;
+    const actionLabel = activeTab === 'archived' ? 'restore' : 'archive';
+    const targetStatus = activeTab === 'archived' ? 'active' : 'archived';
+    if (!window.confirm(`Are you sure you want to ${actionLabel} ${selectedIds.length} selected recurring invoice(s)?`)) return;
+
+    setIsProcessingBulk(true);
+    try {
+      const selectedInvoices = invoices.filter(i => selectedIds.includes(i.id));
+      if (onBulkArchiveInvoices) {
+        await onBulkArchiveInvoices(selectedInvoices, targetStatus);
+      } else if (onToggleArchive) {
+        for (const inv of selectedInvoices) {
+          await onToggleArchive(inv);
+        }
+      }
+      setSelectedIds([]);
+    } catch (e) {
+      console.error("Bulk archive recurring invoices error:", e);
+    } finally {
+      setIsProcessingBulk(false);
     }
   };
 
@@ -610,11 +682,62 @@ const RecurringInvoiceList: React.FC<RecurringInvoiceListProps> = ({
           </span>
         </div>
 
+        {/* Bulk Operations Toolbar */}
+        {selectedIds.length > 0 && (
+          <div className="bg-primary-50 border-y border-primary-200 px-6 py-3 flex flex-wrap items-center justify-between gap-3 shadow-sm">
+            <div className="flex items-center gap-3">
+              <span className="w-6 h-6 rounded-full bg-primary-600 text-white flex items-center justify-center text-xs font-black">
+                {selectedIds.length}
+              </span>
+              <span className="text-sm font-bold text-gray-800">
+                {selectedIds.length} recurring template{selectedIds.length > 1 ? 's' : ''} selected
+              </span>
+            </div>
+
+            <div className="flex items-center gap-2">
+              <button
+                onClick={handleBulkArchive}
+                disabled={isProcessingBulk}
+                className={`px-3.5 py-1.5 rounded-lg text-xs font-bold transition-all shadow-sm flex items-center gap-1.5 text-white ${
+                  activeTab === 'archived' ? 'bg-emerald-600 hover:bg-emerald-700' : 'bg-amber-600 hover:bg-amber-700'
+                }`}
+              >
+                {activeTab === 'archived' ? '🔄 Bulk Restore' : '📦 Bulk Archive'} ({selectedIds.length})
+              </button>
+
+              <button
+                onClick={handleBulkDelete}
+                disabled={isProcessingBulk}
+                className="px-3.5 py-1.5 rounded-lg text-xs font-bold bg-red-600 hover:bg-red-700 text-white transition-all shadow-sm flex items-center gap-1.5"
+              >
+                🗑️ Bulk Delete ({selectedIds.length})
+              </button>
+
+              <button
+                onClick={() => setSelectedIds([])}
+                className="px-3 py-1.5 rounded-lg text-xs font-semibold text-gray-600 hover:bg-gray-200 transition-colors"
+              >
+                Deselect All
+              </button>
+            </div>
+          </div>
+        )}
+
         {/* Table View */}
         <div className="overflow-x-auto">
           <table className="w-full text-xs text-left text-gray-600">
             <thead className="text-[11px] font-bold text-gray-600 uppercase bg-gray-50 border-b border-gray-200">
               <tr>
+                <th scope="col" className="p-4 w-10">
+                  <div className="flex items-center">
+                    <input
+                      type="checkbox"
+                      checked={isAllSelected && paginatedInvoices.length > 0}
+                      onChange={handleToggleSelectAll}
+                      className="w-4 h-4 text-primary-600 bg-gray-100 border-gray-300 rounded focus:ring-primary-500 cursor-pointer"
+                    />
+                  </div>
+                </th>
                 <th
                   scope="col"
                   className="px-6 py-3.5 cursor-pointer hover:bg-gray-100 transition-colors"
@@ -678,13 +801,25 @@ const RecurringInvoiceList: React.FC<RecurringInvoiceListProps> = ({
                 const isArchived = invoice.recurringStatus === 'archived';
                 const isPaused = invoice.recurringStatus === 'paused';
 
+                const isSelected = selectedIds.includes(invoice.id);
+
                 return (
                   <tr
                     key={invoice.id}
                     className={`hover:bg-gray-50/80 transition-colors group border-b border-gray-100 ${
-                      isArchived ? 'bg-gray-50/50 opacity-80' : ''
+                      isSelected ? 'bg-primary-50/50' : isArchived ? 'bg-gray-50/50 opacity-80' : ''
                     }`}
                   >
+                    <td className="p-4 w-10">
+                      <div className="flex items-center">
+                        <input
+                          type="checkbox"
+                          checked={isSelected}
+                          onChange={() => handleToggleSelect(invoice.id)}
+                          className="w-4 h-4 text-primary-600 bg-gray-100 border-gray-300 rounded focus:ring-primary-500 cursor-pointer"
+                        />
+                      </div>
+                    </td>
                     {/* Client Name */}
                     <td className="px-6 py-4 font-semibold text-gray-900 whitespace-nowrap">
                       <div className="flex items-center gap-2.5">
