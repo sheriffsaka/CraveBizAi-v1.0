@@ -16,7 +16,7 @@ import {
   DEFAULT_GLOBAL_FILTER,
   isFilterActive
 } from '../lib/globalFilter';
-import { Search, RotateCcw, Users, Briefcase, CheckCircle, FileText } from 'lucide-react';
+import { Search, RotateCcw, Users, Briefcase, CheckCircle, FileText, ChevronRight, Tag, TrendingUp } from 'lucide-react';
 
 const DashboardIcon = ({ d }: { d: string }) => (
   <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
@@ -132,6 +132,44 @@ const Dashboard: React.FC<DashboardProps> = ({
 
         return last6;
     }, [filteredInvoices]);
+
+    const top5ServiceCatalogSales = useMemo(() => {
+        const categorySalesMap = new Map<string, number>();
+        let grandTotal = 0;
+
+        filteredInvoices.forEach(inv => {
+            if (inv.status === InvoiceStatus.Draft) return;
+            if (!inv.items || inv.items.length === 0) return;
+
+            inv.items.forEach(item => {
+                const lineTotal = (item as any).amount !== undefined ? Number((item as any).amount) : ((Number(item.quantity) || 1) * (Number(item.price) || 0));
+                if (lineTotal <= 0) return;
+
+                const matchingService = services.find(s => 
+                    (item.serviceId && s.id === item.serviceId) ||
+                    (s.name && item.description && s.name.toLowerCase() === item.description.trim().toLowerCase())
+                );
+
+                const categoryName = matchingService?.category?.trim() || 'General Services';
+                categorySalesMap.set(categoryName, (categorySalesMap.get(categoryName) || 0) + lineTotal);
+                grandTotal += lineTotal;
+            });
+        });
+
+        const sorted = Array.from(categorySalesMap.entries())
+            .map(([category, sales]) => ({
+                category,
+                sales,
+                percentage: grandTotal > 0 ? Math.round((sales / grandTotal) * 100) : 0
+            }))
+            .sort((a, b) => b.sales - a.sales);
+
+        return {
+            top5: sorted.slice(0, 5),
+            totalSales: grandTotal,
+            totalCategories: sorted.length
+        };
+    }, [filteredInvoices, services]);
 
     const { totalRevenue, totalDirectCost, grossProfit, profitMarginPct, paidCount } = useMemo(() => {
         let rev = 0;
@@ -419,6 +457,89 @@ const Dashboard: React.FC<DashboardProps> = ({
                         </BarChart>
                     </ResponsiveContainer>
                 </div>
+            </div>
+
+            {/* Service Catalog Sales (₦) - Top 5 Categories Widget */}
+            <div className="bg-white p-8 rounded-xl shadow-2xl border border-gray-100 relative overflow-hidden">
+              <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center mb-6 gap-4">
+                <div>
+                  <div className="flex items-center space-x-2">
+                    <h3 className="text-xl font-black text-gray-800 uppercase tracking-tighter">Service Catalog Sales (₦)</h3>
+                    <span className="bg-emerald-50 text-emerald-700 text-[10px] font-black px-2.5 py-0.5 rounded-full uppercase tracking-wider">Top 5</span>
+                  </div>
+                  <p className="text-xs text-gray-500 font-medium mt-1">Highest sales revenue ranked by service category.</p>
+                </div>
+                <button
+                  onClick={() => setActivePage('reports')}
+                  className="bg-gray-50 hover:bg-primary-50 text-primary-600 border border-gray-200 hover:border-primary-200 px-4 py-2 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all cursor-pointer flex items-center space-x-1 shrink-0"
+                >
+                  <span>View All ({top5ServiceCatalogSales.totalCategories})</span>
+                  <ChevronRight className="w-3.5 h-3.5" />
+                </button>
+              </div>
+
+              {top5ServiceCatalogSales.top5.length > 0 ? (
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-8 items-center">
+                  {/* Top 5 Ranked List */}
+                  <div className="space-y-3">
+                    {top5ServiceCatalogSales.top5.map((item, index) => (
+                      <div key={item.category} className="space-y-1.5 p-3 rounded-xl bg-gray-50/70 hover:bg-gray-50 transition-all border border-gray-100">
+                        <div className="flex justify-between items-center">
+                          <div className="flex items-center space-x-2.5 min-w-0">
+                            <span className={`w-5 h-5 rounded-md flex items-center justify-center text-[10px] font-black text-white shrink-0 ${
+                              index === 0 ? 'bg-amber-500 shadow-sm shadow-amber-200' :
+                              index === 1 ? 'bg-slate-400' :
+                              index === 2 ? 'bg-amber-700' :
+                              'bg-primary-600'
+                            }`}>
+                              #{index + 1}
+                            </span>
+                            <span className="text-xs font-black text-gray-800 uppercase tracking-tight truncate">
+                              {item.category}
+                            </span>
+                          </div>
+                          <div className="text-right shrink-0 ml-2">
+                            <span className="text-xs font-black text-gray-900">₦{item.sales.toLocaleString()}</span>
+                            <span className="text-[10px] text-gray-400 font-bold ml-1.5">({item.percentage}%)</span>
+                          </div>
+                        </div>
+                        <div className="w-full bg-gray-200 rounded-full h-1.5 overflow-hidden">
+                          <div
+                            className={`h-full transition-all duration-500 rounded-full ${
+                              index === 0 ? 'bg-amber-500' :
+                              index === 1 ? 'bg-blue-600' :
+                              index === 2 ? 'bg-indigo-600' :
+                              index === 3 ? 'bg-teal-600' : 'bg-purple-600'
+                            }`}
+                            style={{ width: `${Math.min(100, Math.max(5, item.percentage))}%` }}
+                          />
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+
+                  {/* Top 5 Horizontal Visual Bar Chart */}
+                  <div style={{ width: '100%', height: 240 }}>
+                    <ResponsiveContainer width="100%" height="100%" minWidth={0}>
+                      <BarChart data={top5ServiceCatalogSales.top5} layout="vertical" margin={{ top: 5, right: 15, left: 10, bottom: 5 }}>
+                        <CartesianGrid strokeDasharray="3 3" horizontal={false} stroke="#f3f4f6" />
+                        <XAxis type="number" tickFormatter={(val) => `₦${(val / 1000).toFixed(0)}k`} tick={{ fill: '#9ca3af', fontSize: 9, fontWeight: 900 }} axisLine={false} tickLine={false} />
+                        <YAxis type="category" dataKey="category" tick={{ fill: '#4b5563', fontSize: 9, fontWeight: 800 }} axisLine={false} tickLine={false} width={100} />
+                        <Tooltip
+                          formatter={(val: number) => [`₦${val.toLocaleString()}`, "Sales Value"]}
+                          cursor={{ fill: 'rgba(37, 99, 235, 0.05)' }}
+                          contentStyle={{ borderRadius: '12px', border: 'none', boxShadow: '0 10px 15px -3px rgba(0,0,0,0.1)' }}
+                        />
+                        <Bar dataKey="sales" fill="#2563eb" radius={[0, 6, 6, 0]} barSize={18} />
+                      </BarChart>
+                    </ResponsiveContainer>
+                  </div>
+                </div>
+              ) : (
+                <div className="py-12 text-center text-gray-400 italic text-sm font-medium">
+                  No service catalog sales recorded for the selected period.
+                </div>
+              )}
             </div>
 
             <div className="bg-white p-8 rounded-xl shadow-2xl border border-gray-100">

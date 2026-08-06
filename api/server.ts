@@ -1617,6 +1617,19 @@ app.post("/api/signify/signatories/:id/status", async (req, res) => {
             const details = SignifyService.getDocumentDetails(result.document.id);
 
             if (result.document.status === 'completed') {
+                // Create in-app notification for owner after signed document is successfully generated
+                const ownerSig = details.signatories.find(s => s.role === 'owner');
+                if (ownerSig && ownerSig.email) {
+                    createInAppNotificationRecordAsync({
+                        title: "Document Signed & Finalized",
+                        message: `All parties have completed signing '${result.document.title}'. The finalized signed PDF is generated and ready for download.`,
+                        type: "info",
+                        category: "document",
+                        recipientEmail: ownerSig.email,
+                        actionUrl: result.document.signed_file_url || `/doc-signify/${result.document.id}`
+                    }).catch(e => console.warn('Owner completion notification failed:', e));
+                }
+
                 // Send completion emails to all signatories
                 for (const sig of details.signatories) {
                     if (sig.email) {

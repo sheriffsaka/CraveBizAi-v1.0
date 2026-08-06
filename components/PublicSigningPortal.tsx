@@ -975,14 +975,25 @@ export default function PublicSigningPortal({ docId, token, prefilledRecipient, 
                                 onClick={async () => {
                                     try {
                                         setLoading(true);
+                                        if (dbDoc?.signed_file_url) {
+                                            const a = window.document.createElement('a');
+                                            a.href = dbDoc.signed_file_url;
+                                            a.download = `${dbDoc.title || 'signed_document'}.pdf`;
+                                            a.target = '_blank';
+                                            window.document.body.appendChild(a);
+                                            a.click();
+                                            window.document.body.removeChild(a);
+                                            return;
+                                        }
                                         const fields = (dbDoc?.content_json?.fields || []).map((f: any) => {
-                                            const sig = dbSignatures.find(s => s.signatory_id === f.assigned_signer_id);
+                                            const assignedId = f.assigned_signer_id || f.assignedTo || f.assigned_to;
+                                            const sig = dbSignatures.find(s => s.signatory_id === assignedId || (s.page_number === f.page_number && Math.abs(s.x_position - f.x_position) < 5));
                                             return {
                                                 ...f,
                                                 value: f.value || sig?.signature_image_url || ''
                                             };
                                         });
-                                        const pdfSource = dbDoc?.original_file_url || dbDoc?.signed_file_url;
+                                        const pdfSource = dbDoc?.original_file_url;
                                         if (pdfSource) {
                                             const pdfBytes = await overlaySignaturesOnPdf(pdfSource, fields);
                                             downloadPdfBytes(pdfBytes, `${dbDoc?.title || 'signed_document'}.pdf`);
@@ -993,7 +1004,7 @@ export default function PublicSigningPortal({ docId, token, prefilledRecipient, 
                                         setLoading(false);
                                     }
                                 }}
-                                className="w-full py-3 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-black uppercase tracking-widest rounded-xl transition-all shadow-md flex items-center justify-center gap-2"
+                                className="w-full py-3 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-black uppercase tracking-widest rounded-xl transition-all shadow-md flex items-center justify-center gap-2 cursor-pointer"
                             >
                                 <Download className="w-4 h-4" />
                                 Download Signed PDF

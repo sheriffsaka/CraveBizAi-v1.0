@@ -301,7 +301,7 @@ export class SignifyService {
       created_at: new Date().toISOString()
     };
     
-    // Remove duplicates only if the signatory is re-positioning or updating the exact same signature field (using position matching with 1% margin)
+    // Remove duplicates only if the signatory is re-positioning or updating the exact same signature field
     store.signatures = store.signatures.filter(s => 
       !(s.document_id === signature.document_id && 
         s.signatory_id === signature.signatory_id && 
@@ -311,6 +311,18 @@ export class SignifyService {
     );
     
     store.signatures.push(signature);
+
+    // Sync signature image into document fields in content_json if present
+    const doc = store.documents[signature.document_id];
+    if (doc && doc.content_json?.fields && Array.isArray(doc.content_json.fields)) {
+      doc.content_json.fields.forEach((f: any) => {
+        const assignedId = f.assigned_signer_id || f.assignedTo || f.assigned_to;
+        if ((assignedId === signature.signatory_id || !assignedId) && (f.type === 'signature' || f.type === 'initial')) {
+          f.value = signature.signature_image_url;
+        }
+      });
+    }
+
     saveStore(store);
     return signature;
   }
@@ -344,6 +356,15 @@ export class SignifyService {
       for (const sig of signaturesInput) {
         store.signatures = store.signatures.filter(s => s.id !== sig.id);
         store.signatures.push(sig);
+
+        if (document.content_json?.fields && Array.isArray(document.content_json.fields)) {
+          document.content_json.fields.forEach((f: any) => {
+            const assignedId = f.assigned_signer_id || f.assignedTo || f.assigned_to;
+            if ((assignedId === sig.signatory_id || !assignedId) && (f.type === 'signature' || f.type === 'initial')) {
+              f.value = sig.signature_image_url;
+            }
+          });
+        }
       }
     }
     
@@ -537,7 +558,9 @@ export class SignifyService {
 
     // Retrieve fields from the document's content_json (if available)
     const fields = document.content_json?.fields || [];
-    
+    const docSignatures = signatures.filter(s => s.document_id === docId);
+    const drawnSignatureIds = new Set<string>();
+
     if (fields.length > 0) {
       // 1. ADVANCED DRAWING WITH CUSTOM FIELDS
       for (const field of fields) {
@@ -554,8 +577,32 @@ export class SignifyService {
         const x = (Number(field.x_position) / 100) * width - (fWidth / 2);
         const y = height - ((Number(field.y_position) / 100) * height) - (fHeight / 2);
         
-        const valueStr = String(field.value || "");
-        if (!field.value && field.value !== false) continue; // skip empty fields
+        const assignedId = field.assigned_signer_id || field.assignedTo || field.assigned_to;
+        const matchingSig = docSignatures.find(s => 
+          (assignedId && s.signatory_id === assignedId) ||
+          (Number(s.page_number) === Number(field.page_number) && Math.abs(Number(s.x_position) - Number(field.x_position)) < 5)
+        );
+
+        if (matchingSig) {
+          drawnSignatureIds.add(matchingSig.id);
+        }
+
+        let valueStr = field.value !== undefined && field.value !== null ? String(field.value) : "";
+
+        if (!valueStr && (field.type === 'signature' || field.type === 'initial') && matchingSig?.signature_image_url) {
+          valueStr = matchingSig.signature_image_url;
+        }
+
+        if (!valueStr && (field.type === 'name' || field.type === 'email' || field.type === 'date')) {
+          const matchingSignatory = signatories.find(s => s.id === assignedId);
+          if (matchingSignatory) {
+            if (field.type === 'name') valueStr = matchingSignatory.name;
+            if (field.type === 'email') valueStr = matchingSignatory.email;
+            if (field.type === 'date') valueStr = matchingSignatory.signed_at ? new Date(matchingSignatory.signed_at).toLocaleDateString() : new Date().toLocaleDateString();
+          }
+        }
+
+        if (!valueStr && field.value !== false) continue; // skip empty fields
         
         try {
           if (['signature', 'initial', 'attachment', 'stamp'].includes(field.type) && valueStr.startsWith("data:image/")) {
@@ -642,46 +689,48 @@ export class SignifyService {
           console.error("Failed to draw field in PDF generation:", field.id, fieldErr);
         }
       }
-    } else {
-      // 2. BACKWARD COMPATIBLE DRAWING WITH DIRECT SIGNATURE ENTRIES
-      const docSignatures = signatures.filter(s => s.document_id === docId);
-      for (const sig of docSignatures) {
-        const pageNum = Math.max(0, Number(sig.page_number) - 1);
-        const totalPages = pdfDoc.getPageCount();
-        if (pageNum >= totalPages) continue;
+    }
+
+    // 2. DRAW ANY UNMATCHED SIGNATURES FROM SIGNATURES TABLE DIRECTLY
+    for (const sig of docSignatures) {
+      if (drawnSignatureIds.has(sig.id)) continue;
+      const pageNum = Math.max(0, Number(sig.page_number) - 1);
+      const totalPages = pdfDoc.getPageCount();
+      if (pageNum >= totalPages) continue;
+      
+      const page = pdfDoc.getPage(pageNum);
+      const { width, height } = page.getSize();
+      
+      const sigWidth = sig.width || 120;
+      const sigHeight = sig.height || 50;
+      
+      const x = (Number(sig.x_position) / 100) * width - (sigWidth / 2);
+      const y = height - ((Number(sig.y_position) / 100) * height) - (sigHeight / 2);
+      
+      try {
+        let signatureImg;
+        const imgData = sig.signature_image_url;
+        if (!imgData) continue;
         
-        const page = pdfDoc.getPage(pageNum);
-        const { width, height } = page.getSize();
-        
-        const sigWidth = sig.width || 120;
-        const sigHeight = sig.height || 50;
-        
-        const x = (Number(sig.x_position) / 100) * width - (sigWidth / 2);
-        const y = height - ((Number(sig.y_position) / 100) * height) - (sigHeight / 2);
-        
-        try {
-          let signatureImg;
-          const imgData = sig.signature_image_url;
-          
-          if (imgData.startsWith("data:image/png;base64,")) {
-            const base64Data = imgData.replace(/^data:image\/png;base64,/, "");
-            signatureImg = await pdfDoc.embedPng(Buffer.from(base64Data, "base64"));
-          } else if (imgData.startsWith("data:image/jpeg;base64,") || imgData.startsWith("data:image/jpg;base64,")) {
-            const base64Data = imgData.replace(/^data:image\/jpeg;base64,/, "").replace(/^data:image\/jpg;base64,/, "");
-            signatureImg = await pdfDoc.embedJpg(Buffer.from(base64Data, "base64"));
-          }
-          
-          if (signatureImg) {
-            page.drawImage(signatureImg, {
-              x,
-              y,
-              width: sigWidth,
-              height: sigHeight
-            });
-          }
-        } catch (embedError) {
-          console.error("Failed to embed signature onto page:", pageNum, embedError);
+        if (imgData.startsWith("data:image/png;base64,")) {
+          const base64Data = imgData.replace(/^data:image\/png;base64,/, "");
+          signatureImg = await pdfDoc.embedPng(Buffer.from(base64Data, "base64"));
+        } else if (imgData.startsWith("data:image/jpeg;base64,") || imgData.startsWith("data:image/jpg;base64,")) {
+          const base64Data = imgData.replace(/^data:image\/jpeg;base64,/, "").replace(/^data:image\/jpeg;base64,/, "").replace(/^data:image\/jpg;base64,/, "");
+          signatureImg = await pdfDoc.embedJpg(Buffer.from(base64Data, "base64"));
         }
+        
+        if (signatureImg) {
+          page.drawImage(signatureImg, {
+            x,
+            y,
+            width: sigWidth,
+            height: sigHeight
+          });
+          drawnSignatureIds.add(sig.id);
+        }
+      } catch (embedError) {
+        console.error("Failed to embed direct signature onto page:", pageNum, embedError);
       }
     }
     

@@ -284,8 +284,29 @@ export default function DocSignify({ company, user, prefillProject, prefillClien
       setIsLoading(true);
       showToast("Preparing signed PDF document...");
       const doc = item.document;
-      const fields = doc.content_json?.fields || [];
-      const sourcePdf = doc.original_file_url || doc.signed_file_url;
+
+      if (doc.signed_file_url) {
+        const a = document.createElement('a');
+        a.href = doc.signed_file_url;
+        a.download = `${doc.title || 'signed_document'}.pdf`;
+        a.target = '_blank';
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        showToast("Downloaded signed PDF!");
+        return;
+      }
+
+      const fields = (doc.content_json?.fields || []).map((f: any) => {
+        const assignedId = f.assigned_signer_id || f.assignedTo || f.assigned_to;
+        const itemSigs = (item as any).signatures || [];
+        const sig = itemSigs.find((s: any) => s.signatory_id === assignedId || (s.page_number === f.page_number && Math.abs(s.x_position - f.x_position) < 5));
+        return {
+          ...f,
+          value: f.value || sig?.signature_image_url || ''
+        };
+      });
+      const sourcePdf = doc.original_file_url;
       if (!sourcePdf) {
         showToast("PDF source file not found.");
         return;
