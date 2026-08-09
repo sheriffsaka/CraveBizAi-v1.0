@@ -27,6 +27,7 @@ import PublicSigningPortal from './components/PublicSigningPortal';
 import ProjectManagement from './components/ProjectManagement';
 import NotificationsPage from './components/NotificationsPage';
 import SyncOverlay from './components/SyncOverlay';
+import OnboardingSetupPrompt from './components/OnboardingSetupPrompt';
 import { api, supabase } from './lib/api';
 import { generateRenewalInvoiceSuggestion } from './services/aiGenerationService';
 import { getSubscriptionInfo, setSubscriptionInfo, SubscriptionTier, TIER_LIMITS, syncGlobalPlanSettings, syncSubscriptionInfoFromDb, secureRefillCreditsOnDb, safeFlutterwaveCheckout, getFlutterwavePublicKey, saveSubscriptionInfoToDb, fetchAndCacheFlutterwavePublicKey, incrementInvoiceCount, incrementReceiptCount, syncGlobalRefillPacks, REFILL_PACKS } from './services/subscriptionService';
@@ -1446,7 +1447,7 @@ export default function App() {
               );
           }
 
-          return <CreateInvoice clients={clients} services={services} company={activeCompany} initialDraft={draftRenewal} onAddInvoice={async (i) => { 
+          return <CreateInvoice clients={clients} services={services} company={activeCompany} initialDraft={draftRenewal} onNavigate={(page) => navigateTo(page as Page)} onAddInvoice={async (i) => { 
               try { 
                   setIsDataSyncing(true); 
                   // First check backend quota
@@ -1518,6 +1519,8 @@ export default function App() {
           onSaveChanges={async (id, det) => { 
               try {
                   await api.updateCompany(id, det); 
+                  const freshComps = currentUser?.isAdmin ? await api.getAllCompanies() : await api.getMyCompanies();
+                  setCompanies(freshComps);
                   await forceSyncData(id); 
               } catch (e) {
                   setSyncError(stringifyError(e));
@@ -1697,6 +1700,12 @@ export default function App() {
                     </div>
                     <button onClick={() => window.location.reload()} className="bg-white px-4 py-2 rounded-xl text-xs hover:bg-gray-50 transition-colors shadow-sm">Refresh Vault</button>
                 </div>
+            )}
+            {activeCompany && (
+                <OnboardingSetupPrompt
+                    company={activeCompany}
+                    onNavigateToSettings={() => navigateTo('settings')}
+                />
             )}
             <SyncOverlay 
               isVisible={isDataSyncing} 

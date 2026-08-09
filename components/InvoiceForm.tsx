@@ -13,6 +13,7 @@ interface InvoiceFormProps {
   company: Company;
   onSave: (invoice: Invoice | Omit<Invoice, 'id' | 'invoiceNumber'>, status: InvoiceStatus) => void;
   onCancel: () => void;
+  onNavigate?: (page: any) => void;
 }
 
 export function calculateNextRecurrenceDate(currentDateStrOrObj: string | Date, frequency: InvoiceFrequency): string {
@@ -33,7 +34,7 @@ export function calculateNextRecurrenceDate(currentDateStrOrObj: string | Date, 
   return nextDate.toISOString().split('T')[0];
 }
 
-const InvoiceForm: React.FC<InvoiceFormProps> = ({ initialInvoice, clients, services, onSave, onCancel, company }) => {
+const InvoiceForm: React.FC<InvoiceFormProps> = ({ initialInvoice, clients, services, onSave, onCancel, company, onNavigate }) => {
   const [clientId, setClientId] = useState<string>('');
   const [projectId, setProjectId] = useState<string | undefined>(undefined);
   const [issueDate, setIssueDate] = useState<string>(new Date().toISOString().split('T')[0]);
@@ -248,6 +249,81 @@ const InvoiceForm: React.FC<InvoiceFormProps> = ({ initialInvoice, clients, serv
   };
 
   const selectedClient = clients.find(c => c.id === clientId);
+
+  const activeClientsList = useMemo(() => {
+    return (clients || []).filter(c => !c.is_archived && c.status !== 'Archived' && c.status !== 'Deleted');
+  }, [clients]);
+
+  const activeServicesList = useMemo(() => {
+    return services || [];
+  }, [services]);
+
+  const hasClients = activeClientsList.length > 0;
+  const hasServices = activeServicesList.length > 0;
+
+  // First Invoice Guidance: Check missing required records when creating new invoice
+  if (!initialInvoice && (!hasClients || !hasServices)) {
+    return (
+      <div className="bg-white p-8 rounded-2xl shadow-xl max-w-4xl mx-auto text-gray-900 mb-10 border border-amber-200">
+        <div className="flex items-center gap-3 border-b border-gray-100 pb-5 mb-6">
+          <div className="p-3 bg-amber-500/10 text-amber-600 rounded-2xl border border-amber-200">
+            <Icon name="alertCircle" className="w-6 h-6" />
+          </div>
+          <div>
+            <h2 className="text-2xl font-black text-gray-900 tracking-tight">First Invoice Setup Guidance</h2>
+            <p className="text-sm font-medium text-gray-600">Please set up required records before generating your first invoice.</p>
+          </div>
+        </div>
+
+        <div className="space-y-6">
+          {!hasClients && (
+            <div className="p-6 bg-amber-50/80 border border-amber-200/80 rounded-2xl flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+              <div>
+                <h3 className="text-lg font-black text-amber-900 tracking-tight">Add a Client First</h3>
+                <p className="text-sm font-medium text-amber-800 mt-1 leading-relaxed">
+                  You need at least one client before creating an invoice. Add your first client to continue.
+                </p>
+              </div>
+              <button
+                onClick={() => onNavigate ? onNavigate('clients') : null}
+                className="px-6 py-3 bg-amber-600 hover:bg-amber-700 text-white rounded-xl text-xs font-black uppercase tracking-wider shadow-md hover:shadow-lg transition-all shrink-0 flex items-center justify-center gap-2"
+              >
+                <Icon name="userPlus" className="w-4 h-4" />
+                Add Client
+              </button>
+            </div>
+          )}
+
+          {!hasServices && (
+            <div className="p-6 bg-amber-50/80 border border-amber-200/80 rounded-2xl flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+              <div>
+                <h3 className="text-lg font-black text-amber-900 tracking-tight">Add a Service First</h3>
+                <p className="text-sm font-medium text-amber-800 mt-1 leading-relaxed">
+                  You need at least one service before creating an invoice. Add your first service to continue.
+                </p>
+              </div>
+              <button
+                onClick={() => onNavigate ? onNavigate('services') : null}
+                className="px-6 py-3 bg-amber-600 hover:bg-amber-700 text-white rounded-xl text-xs font-black uppercase tracking-wider shadow-md hover:shadow-lg transition-all shrink-0 flex items-center justify-center gap-2"
+              >
+                <Icon name="plus" className="w-4 h-4" />
+                Add Service
+              </button>
+            </div>
+          )}
+        </div>
+
+        <div className="mt-8 pt-6 border-t border-gray-100 flex justify-end">
+          <button
+            onClick={onCancel}
+            className="px-6 py-2.5 bg-gray-100 hover:bg-gray-200 text-gray-700 rounded-xl text-xs font-bold transition-all"
+          >
+            Back to Invoices
+          </button>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="bg-white p-8 rounded-xl shadow-xl max-w-4xl mx-auto text-gray-900 mb-10 border border-gray-100">

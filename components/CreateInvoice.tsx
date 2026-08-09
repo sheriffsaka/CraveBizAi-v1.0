@@ -10,9 +10,10 @@ interface CreateInvoiceProps {
   company: Company;
   onCancel: () => void; // Added for consistency with InvoiceForm
   initialDraft?: Partial<Invoice> | null;
+  onNavigate?: (page: any) => void;
 }
 
-const CreateInvoice: React.FC<CreateInvoiceProps> = ({ clients, services, onAddInvoice, company, onCancel, initialDraft }) => {
+const CreateInvoice: React.FC<CreateInvoiceProps> = ({ clients, services, onAddInvoice, company, onCancel, initialDraft, onNavigate }) => {
   const handleSave = (invoiceData: Omit<Invoice, 'id' | 'invoiceNumber'>, status: InvoiceStatus) => {
     // onAddInvoice already expects Omit<Invoice, 'id' | 'invoiceNumber'>
     onAddInvoice({ ...invoiceData, status });
@@ -26,6 +27,7 @@ const CreateInvoice: React.FC<CreateInvoiceProps> = ({ clients, services, onAddI
       initialInvoice={initialDraft as Invoice}
       onSave={handleSave as (invoice: Invoice | Omit<Invoice, 'id' | 'invoiceNumber'>, status: InvoiceStatus) => void} // Cast to satisfy InvoiceFormProps
       onCancel={onCancel}
+      onNavigate={onNavigate}
     />
   );
 };

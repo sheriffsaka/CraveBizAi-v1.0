@@ -479,9 +479,19 @@ const Settings: React.FC<SettingsProps> = ({ company, onSaveChanges, onInviteUse
     setFormData(prev => ({ ...prev, [id]: value }));
   };
 
-  const handleUpdateBankAccounts = (updatedAccounts: BankAccount[]) => {
+  const handleUpdateBankAccounts = async (updatedAccounts: BankAccount[]) => {
     if (isReadOnly) return;
     setFormData(prev => ({ ...prev, bankAccounts: updatedAccounts }));
+    if (company?.id) {
+      try {
+        await api.updateCompany(company.id, { bankAccounts: updatedAccounts });
+        if (onSaveChanges) {
+          await onSaveChanges(company.id, { ...formData, bankAccounts: updatedAccounts });
+        }
+      } catch (e) {
+        console.warn("Auto save bank accounts warning:", e);
+      }
+    }
   };
 
   const handleImageUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -498,17 +508,39 @@ const Settings: React.FC<SettingsProps> = ({ company, onSaveChanges, onInviteUse
     }
   };
 
-  const handleCroppedImage = (base64Image: string) => {
+  const handleCroppedImage = async (base64Image: string) => {
     if (isReadOnly) return;
-    setFormData(prev => ({ ...prev, logoUrl: base64Image }));
+    const updated = { ...formData, logoUrl: base64Image };
+    setFormData(updated);
     setIsCropperModalOpen(false);
     setImageToCrop(null);
     if (fileInputRef.current) fileInputRef.current.value = '';
+    if (company?.id) {
+      try {
+        await api.updateCompany(company.id, { logoUrl: base64Image });
+        if (onSaveChanges) {
+          await onSaveChanges(company.id, updated);
+        }
+      } catch (e) {
+        console.warn("Auto save logo warning:", e);
+      }
+    }
   };
 
-  const handleRemoveLogo = () => {
+  const handleRemoveLogo = async () => {
     if (isReadOnly) return;
-    setFormData(prev => ({ ...prev, logoUrl: undefined }));
+    const updated = { ...formData, logoUrl: '' };
+    setFormData(updated);
+    if (company?.id) {
+      try {
+        await api.updateCompany(company.id, { logoUrl: '' });
+        if (onSaveChanges) {
+          await onSaveChanges(company.id, updated);
+        }
+      } catch (e) {
+        console.warn("Remove logo warning:", e);
+      }
+    }
   };
 
   const handleSubmit = async (e: React.FormEvent) => {

@@ -1363,16 +1363,22 @@ class CraveBizApi {
     }
 
     if (details.bankAccounts !== undefined) {
-        await supabase.from('bank_accounts').delete().eq('company_id', id);
+        const { error: delError } = await supabase.from('bank_accounts').delete().eq('company_id', id);
+        if (delError) console.warn("Delete bank_accounts warning:", delError);
+
         if (details.bankAccounts.length > 0) {
             const accounts = details.bankAccounts.map(ba => ({
-                id: generateId(),
+                id: safeRandomUUID(),
                 company_id: id,
                 bank_name: ba.bankName,
                 account_name: ba.accountName,
-                account_number: ba.accountNumber
+                account_number: String(ba.accountNumber || '').trim()
             }));
-            await supabase.from('bank_accounts').insert(accounts);
+            const { error: bankError } = await supabase.from('bank_accounts').insert(accounts);
+            if (bankError) {
+                console.error("Failed to insert bank accounts into Supabase:", bankError);
+                throw bankError;
+            }
         }
     }
   }
