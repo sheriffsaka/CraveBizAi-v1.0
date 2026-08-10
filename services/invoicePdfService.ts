@@ -44,6 +44,22 @@ export function verifyInvoiceAccessToken(token: string): { invoiceId: string; co
 }
 
 /**
+ * Cleans text for pdf-lib standard Helvetica font (WinAnsiEncoding).
+ * Replaces non-WinAnsi characters like ₦ and • to prevent encoding exceptions.
+ */
+function cleanPdfText(text: string | null | undefined): string {
+    if (!text) return "";
+    return text
+        .replace(/₦/g, "NGN ")
+        .replace(/•/g, " - ")
+        .replace(/—/g, "-")
+        .replace(/–/g, "-")
+        .replace(/[“”]/g, '"')
+        .replace(/[‘’]/g, "'")
+        .replace(/[^\x20-\x7E]/g, "");
+}
+
+/**
  * Generates a clean, professional PDF document for the invoice matching the email branding.
  */
 export async function generateInvoicePdfBuffer(data: InvoiceEmailData): Promise<Uint8Array> {
@@ -74,7 +90,7 @@ export async function generateInvoicePdfBuffer(data: InvoiceEmailData): Promise<
     });
 
     // Company Name in Header
-    const companyName = (data.company.name || "CRAVEBIZ MERCHANT").toUpperCase();
+    const companyName = cleanPdfText((data.company.name || "CRAVEBIZ MERCHANT").toUpperCase());
     page.drawText(companyName, {
         x: 50,
         y: currentY - 28,
@@ -84,7 +100,7 @@ export async function generateInvoicePdfBuffer(data: InvoiceEmailData): Promise<
     });
 
     if (data.company.address) {
-        page.drawText(data.company.address.substring(0, 65), {
+        page.drawText(cleanPdfText(data.company.address.substring(0, 65)), {
             x: 50,
             y: currentY - 45,
             size: 9,
@@ -102,7 +118,7 @@ export async function generateInvoicePdfBuffer(data: InvoiceEmailData): Promise<
         color: rgb(1, 1, 1)
     });
 
-    page.drawText(`#${data.invoiceNumber}`, {
+    page.drawText(cleanPdfText(`#${data.invoiceNumber}`), {
         x: width - 150,
         y: currentY - 42,
         size: 11,
@@ -121,7 +137,7 @@ export async function generateInvoicePdfBuffer(data: InvoiceEmailData): Promise<
         color: textMuted
     });
 
-    page.drawText(data.recipientName || "Valued Client", {
+    page.drawText(cleanPdfText(data.recipientName || "Valued Client"), {
         x: 40,
         y: currentY - 15,
         size: 12,
@@ -131,7 +147,7 @@ export async function generateInvoicePdfBuffer(data: InvoiceEmailData): Promise<
 
     let recipientYOffset = 28;
     if (data.recipientCompany) {
-        page.drawText(data.recipientCompany, {
+        page.drawText(cleanPdfText(data.recipientCompany), {
             x: 40,
             y: currentY - recipientYOffset,
             size: 9.5,
@@ -142,7 +158,7 @@ export async function generateInvoicePdfBuffer(data: InvoiceEmailData): Promise<
     }
 
     if (data.recipientEmail) {
-        page.drawText(data.recipientEmail, {
+        page.drawText(cleanPdfText(data.recipientEmail), {
             x: 40,
             y: currentY - recipientYOffset,
             size: 9,
@@ -159,7 +175,7 @@ export async function generateInvoicePdfBuffer(data: InvoiceEmailData): Promise<
         font: fontBold,
         color: textMuted
     });
-    page.drawText(data.issueDate || "N/A", {
+    page.drawText(cleanPdfText(data.issueDate || "N/A"), {
         x: width - 100,
         y: currentY,
         size: 9,
@@ -174,7 +190,7 @@ export async function generateInvoicePdfBuffer(data: InvoiceEmailData): Promise<
         font: fontBold,
         color: textMuted
     });
-    page.drawText(data.dueDate || "N/A", {
+    page.drawText(cleanPdfText(data.dueDate || "N/A"), {
         x: width - 100,
         y: currentY - 15,
         size: 9,
@@ -202,7 +218,8 @@ export async function generateInvoicePdfBuffer(data: InvoiceEmailData): Promise<
 
     currentY -= 28;
 
-    const symbol = data.currencySymbol || "₦";
+    const rawSymbol = data.currencySymbol || "₦";
+    const symbol = rawSymbol === "₦" ? "NGN " : cleanPdfText(rawSymbol);
 
     // Table Rows
     const items = data.items && data.items.length > 0 ? data.items : [{ name: "Invoice Services", quantity: 1, price: data.totalAmount || 0 }];
@@ -220,7 +237,7 @@ export async function generateInvoicePdfBuffer(data: InvoiceEmailData): Promise<
             });
         }
 
-        page.drawText((item.name || "Item").substring(0, 42), {
+        page.drawText(cleanPdfText((item.name || "Item").substring(0, 42)), {
             x: 45,
             y: currentY - 10,
             size: 9,
@@ -228,7 +245,7 @@ export async function generateInvoicePdfBuffer(data: InvoiceEmailData): Promise<
             color: textDark
         });
 
-        page.drawText(String(item.quantity || 1), {
+        page.drawText(cleanPdfText(String(item.quantity || 1)), {
             x: 335,
             y: currentY - 10,
             size: 9,
@@ -236,7 +253,7 @@ export async function generateInvoicePdfBuffer(data: InvoiceEmailData): Promise<
             color: textDark
         });
 
-        page.drawText(`${symbol}${(item.price || 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`, {
+        page.drawText(cleanPdfText(`${symbol}${(item.price || 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`), {
             x: 400,
             y: currentY - 10,
             size: 9,
@@ -244,7 +261,7 @@ export async function generateInvoicePdfBuffer(data: InvoiceEmailData): Promise<
             color: textDark
         });
 
-        page.drawText(`${symbol}${itemTotal.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`, {
+        page.drawText(cleanPdfText(`${symbol}${itemTotal.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`), {
             x: 490,
             y: currentY - 10,
             size: 9,
@@ -285,7 +302,7 @@ export async function generateInvoicePdfBuffer(data: InvoiceEmailData): Promise<
         color: rgb(0.2, 0.2, 0.6)
     });
 
-    page.drawText(formattedTotal, {
+    page.drawText(cleanPdfText(formattedTotal), {
         x: width - 245,
         y: currentY - 42,
         size: 16,
@@ -315,7 +332,7 @@ export async function generateInvoicePdfBuffer(data: InvoiceEmailData): Promise<
             color: primaryDark
         });
 
-        page.drawText(`Bank: ${data.company.bankName || 'N/A'}`, {
+        page.drawText(cleanPdfText(`Bank: ${data.company.bankName || 'N/A'}`), {
             x: 45,
             y: currentY - 28,
             size: 8.5,
@@ -323,7 +340,7 @@ export async function generateInvoicePdfBuffer(data: InvoiceEmailData): Promise<
             color: textDark
         });
 
-        page.drawText(`Account Name: ${data.company.bankAccountName || data.company.name}`, {
+        page.drawText(cleanPdfText(`Account Name: ${data.company.bankAccountName || data.company.name}`), {
             x: 45,
             y: currentY - 40,
             size: 8.5,
@@ -331,7 +348,7 @@ export async function generateInvoicePdfBuffer(data: InvoiceEmailData): Promise<
             color: textDark
         });
 
-        page.drawText(`Account Number: ${data.company.bankAccountNumber || 'N/A'}`, {
+        page.drawText(cleanPdfText(`Account Number: ${data.company.bankAccountNumber || 'N/A'}`), {
             x: 45,
             y: currentY - 52,
             size: 8.5,
@@ -351,7 +368,7 @@ export async function generateInvoicePdfBuffer(data: InvoiceEmailData): Promise<
         });
 
         const noteText = (data.notes || data.paymentTerms || "").substring(0, 140);
-        page.drawText(noteText, {
+        page.drawText(cleanPdfText(noteText), {
             x: 35,
             y: currentY - 12,
             size: 8.5,
@@ -368,7 +385,7 @@ export async function generateInvoicePdfBuffer(data: InvoiceEmailData): Promise<
         color: borderGray
     });
 
-    page.drawText(`Official Invoice Document • Issued by ${data.company.name || 'CraveBiZ Merchant'} • Powered by CraveBiZ AI Platform`, {
+    page.drawText(cleanPdfText(`Official Invoice Document - Issued by ${data.company.name || 'CraveBiZ Merchant'} - Powered by CraveBiZ AI Platform`), {
         x: 35,
         y: 25,
         size: 7.5,
