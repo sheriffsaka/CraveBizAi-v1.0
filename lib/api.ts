@@ -2615,6 +2615,8 @@ class CraveBizApi {
   }
 
   async sendInvoiceEmailDirect(payload: {
+    invoiceId?: string;
+    companyId?: string;
     recipientEmail: string;
     recipientName: string;
     recipientCompany?: string;

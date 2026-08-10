@@ -364,7 +364,10 @@ export interface InvoiceEmailData {
     };
     paymentTerms?: string;
     notes?: string;
+    downloadUrl?: string;
     viewLink?: string;
+    invoiceId?: string;
+    companyId?: string;
 }
 
 export function buildInvoiceHtmlEmail(data: InvoiceEmailData): string {
@@ -373,6 +376,7 @@ export function buildInvoiceHtmlEmail(data: InvoiceEmailData): string {
     const formattedTotal = `${symbol}${data.totalAmount.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
     const subtotal = data.items.reduce((sum, item) => sum + (item.price * item.quantity), 0);
     const tax = Math.max(0, data.totalAmount - subtotal);
+    const downloadUrl = data.downloadUrl || data.viewLink || '#';
 
     const itemsRowsHtml = data.items.map((item, index) => {
         const itemTotal = item.price * item.quantity;
@@ -414,7 +418,7 @@ export function buildInvoiceHtmlEmail(data: InvoiceEmailData): string {
                                     </td>
                                     <td align="right" valign="top">
                                         <div style="background-color: #312e81; color: #e0e7ff; font-size: 12px; font-weight: 800; text-transform: uppercase; padding: 6px 14px; border-radius: 20px; display: inline-block;">
-                                            Official Invoice
+                                            Invoice #${data.invoiceNumber}
                                         </div>
                                     </td>
                                 </tr>
@@ -430,7 +434,7 @@ export function buildInvoiceHtmlEmail(data: InvoiceEmailData): string {
                                 Please find details for invoice <strong>#${data.invoiceNumber}</strong> issued by <strong>${companyName}</strong>.
                             </p>
 
-                            <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="background-color: #eef2ff; border: 1px solid #c7d2fe; border-radius: 12px; padding: 20px; margin-bottom: 28px;">
+                            <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="background-color: #eef2ff; border: 1px solid #c7d2fe; border-radius: 12px; padding: 20px; margin-bottom: 24px;">
                                 <tr>
                                     <td>
                                         <div style="font-size: 11px; font-weight: 800; color: #3730a3; text-transform: uppercase; margin-bottom: 4px;">Total Amount Due</div>
@@ -438,6 +442,25 @@ export function buildInvoiceHtmlEmail(data: InvoiceEmailData): string {
                                     </td>
                                     <td align="right" valign="bottom">
                                         <div style="font-size: 12px; color: #4338ca; font-weight: 700;">Due Date: ${data.dueDate}</div>
+                                    </td>
+                                </tr>
+                            </table>
+
+                            <!-- Centrally Positioned Download Invoice - PDF Action Button -->
+                            <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="margin: 20px 0 28px 0;">
+                                <tr>
+                                    <td align="center">
+                                        <!--[if mso]>
+                                        <v:roundrect xmlns:v="urn:schemas-microsoft-com:vml" xmlns:w="urn:schemas-microsoft-com:office:word" href="${downloadUrl}" style="height:48px;v-text-anchor:middle;width:260px;" arcsize="20%" stroke="f" fillcolor="#4f46e5">
+                                            <w:anchorlock/>
+                                            <center style="color:#ffffff;font-family:sans-serif;font-size:15px;font-weight:bold;">Download Invoice - PDF</center>
+                                        </v:roundrect>
+                                        <![endif]-->
+                                        <!--[if !mso]><!-->
+                                        <a href="${downloadUrl}" target="_blank" style="background-color: #4f46e5; color: #ffffff; font-size: 15px; font-weight: 700; text-decoration: none; padding: 14px 32px; border-radius: 10px; display: inline-block; text-align: center; box-shadow: 0 4px 12px rgba(79, 70, 229, 0.3); border: 1px solid #4338ca; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;">
+                                            📥 Download Invoice - PDF
+                                        </a>
+                                        <!--<![endif]-->
                                     </td>
                                 </tr>
                             </table>

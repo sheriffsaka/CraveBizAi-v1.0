@@ -41,6 +41,11 @@ import {
     sendUserRegistrationEmailDirect
 } from "../services/emailService.js";
 import {
+    generateInvoiceAccessToken,
+    verifyInvoiceAccessToken,
+    generateInvoicePdfBuffer
+} from "../services/invoicePdfService.js";
+import {
     getInAppNotificationsStore,
     getInAppNotificationsStoreAsync,
     createInAppNotificationRecord,
@@ -1324,10 +1329,112 @@ app.post("/api/send-receipt-email", async (req, res) => {
     }
 });
 
+// In-memory cache for recent invoice email payloads to serve fast PDF downloads
+const invoiceDataCache = new Map<string, any>();
+
+async function fetchInvoiceDataFromSupabase(invoiceId: string, companyId?: string): Promise<any | null> {
+    try {
+        const { data: inv, error: invErr } = await supabaseClient
+            .from('invoices')
+            .select('*')
+            .eq('id', invoiceId)
+            .maybeSingle();
+
+        if (invErr || !inv) {
+            console.warn(`Supabase invoice lookup failed for ${invoiceId}:`, invErr);
+            return null;
+        }
+
+        let recipientName = "Valued Client";
+        let recipientCompany = "";
+        let recipientEmail = "";
+        if (inv.client_id) {
+            const { data: client } = await supabaseClient
+                .from('clients')
+                .select('*')
+                .eq('id', inv.client_id)
+                .maybeSingle();
+            if (client) {
+                recipientName = client.name || recipientName;
+                recipientCompany = client.company_name || "";
+                recipientEmail = client.email || "";
+            }
+        }
+
+        let companyObj: any = { name: "CraveBiZ Merchant" };
+        const targetCompanyId = companyId || inv.company_id;
+        if (targetCompanyId) {
+            const { data: comp } = await supabaseClient
+                .from('companies')
+                .select('*')
+                .eq('id', targetCompanyId)
+                .maybeSingle();
+            if (comp) {
+                companyObj.name = comp.name;
+                companyObj.email = comp.email;
+                companyObj.phone = comp.phone;
+                companyObj.address = comp.address;
+                companyObj.logoUrl = comp.logo_url;
+            }
+
+            if (inv.selected_bank_account_id) {
+                const { data: bank } = await supabaseClient
+                    .from('bank_accounts')
+                    .select('*')
+                    .eq('id', inv.selected_bank_account_id)
+                    .maybeSingle();
+                if (bank) {
+                    companyObj.bankName = bank.bank_name;
+                    companyObj.bankAccountName = bank.account_name;
+                    companyObj.bankAccountNumber = bank.account_number;
+                }
+            } else if (inv.manual_bank_name) {
+                companyObj.bankName = inv.manual_bank_name;
+                companyObj.bankAccountName = inv.manual_account_name || companyObj.name;
+                companyObj.bankAccountNumber = inv.manual_account_number;
+            }
+        }
+
+        const { data: items } = await supabaseClient
+            .from('invoice_items')
+            .select('*')
+            .eq('invoice_id', invoiceId);
+
+        const itemsList = (items || []).map((it: any) => ({
+            name: it.description || "Service Item",
+            description: it.description,
+            quantity: Number(it.quantity) || 1,
+            price: Number(it.price) || 0
+        }));
+
+        return {
+            invoiceId: inv.id,
+            companyId: inv.company_id,
+            recipientEmail,
+            recipientName,
+            recipientCompany,
+            invoiceNumber: inv.invoice_number,
+            issueDate: inv.issue_date,
+            dueDate: inv.due_date,
+            totalAmount: Number(inv.total) || 0,
+            amountPaid: Number(inv.amount_paid) || 0,
+            currencySymbol: "₦",
+            items: itemsList.length > 0 ? itemsList : [{ name: "Invoice Services", quantity: 1, price: Number(inv.total) || 0 }],
+            company: companyObj,
+            paymentTerms: inv.payment_terms
+        };
+    } catch (err) {
+        console.error("Error in fetchInvoiceDataFromSupabase:", err);
+        return null;
+    }
+}
+
 // Dispatch Rich HTML Invoice Directly to Recipient Inbox
 app.post("/api/send-invoice-email", async (req, res) => {
     try {
         const {
+            invoiceId,
+            companyId,
             recipientEmail,
             recipientName,
             recipientCompany,
@@ -1346,7 +1453,18 @@ app.post("/api/send-invoice-email", async (req, res) => {
             return res.status(400).json({ error: "recipientEmail and invoiceNumber are required" });
         }
 
-        const result = await sendInvoiceEmailDirect({
+        const host = req.headers.host || "localhost:3000";
+        const protocol = req.headers['x-forwarded-proto'] || req.protocol || 'http';
+        const baseUrl = `${protocol}://${host}`;
+
+        const invId = invoiceId || invoiceNumber;
+        const compId = companyId || (company && company.id) || 'default';
+        const token = generateInvoiceAccessToken(invId, compId);
+        const downloadUrl = `${baseUrl}/api/public/invoice-pdf?token=${token}`;
+
+        const emailPayload = {
+            invoiceId: invId,
+            companyId: compId,
             recipientEmail,
             recipientName: recipientName || "Valued Client",
             recipientCompany,
@@ -1358,8 +1476,14 @@ app.post("/api/send-invoice-email", async (req, res) => {
             currencySymbol: currencySymbol || "₦",
             items: Array.isArray(items) ? items : [],
             company: company || { name: "CraveBiZ Merchant" },
-            notes
-        });
+            notes,
+            downloadUrl
+        };
+
+        // Cache payload in memory for instant PDF download
+        invoiceDataCache.set(invId, emailPayload);
+
+        const result = await sendInvoiceEmailDirect(emailPayload);
 
         if (result.success) {
             res.json(result);
@@ -1369,6 +1493,43 @@ app.post("/api/send-invoice-email", async (req, res) => {
     } catch (err: any) {
         console.error("Error in /api/send-invoice-email:", err);
         res.status(500).json({ error: err.message || "Failed to dispatch invoice email" });
+    }
+});
+
+// Secure Public Endpoint for Downloading Verified Invoice PDF
+app.get("/api/public/invoice-pdf", async (req, res) => {
+    try {
+        const token = req.query.token as string;
+        if (!token) {
+            return res.status(400).send("Access token required.");
+        }
+
+        const verified = verifyInvoiceAccessToken(token);
+        if (!verified) {
+            return res.status(403).send("Invalid or expired invoice access token.");
+        }
+
+        const { invoiceId, companyId } = verified;
+        let invoiceData = invoiceDataCache.get(invoiceId);
+
+        if (!invoiceData) {
+            invoiceData = await fetchInvoiceDataFromSupabase(invoiceId, companyId);
+        }
+
+        if (!invoiceData) {
+            return res.status(404).send("Invoice record not found.");
+        }
+
+        const pdfBytes = await generateInvoicePdfBuffer(invoiceData);
+        const safeInvNum = (invoiceData.invoiceNumber || invoiceId || 'document').replace(/[^a-zA-Z0-9_-]/g, '_');
+
+        res.setHeader("Content-Type", "application/pdf");
+        res.setHeader("Content-Disposition", `attachment; filename="Invoice-${safeInvNum}.pdf"`);
+        res.setHeader("Content-Length", pdfBytes.length);
+        return res.send(Buffer.from(pdfBytes));
+    } catch (err: any) {
+        console.error("Error in /api/public/invoice-pdf:", err);
+        return res.status(500).send("Failed to generate PDF document.");
     }
 });
 

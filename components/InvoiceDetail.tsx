@@ -60,6 +60,8 @@ const InvoiceDetail: React.FC<InvoiceDetailProps> = ({ invoice, client, services
             }));
 
             const response = await api.sendInvoiceEmailDirect({
+                invoiceId: invoice.id,
+                companyId: company?.id || (invoice as any).companyId,
                 recipientEmail: client.email,
                 recipientName: client.name || "Valued Client",
                 recipientCompany: client.companyName,
