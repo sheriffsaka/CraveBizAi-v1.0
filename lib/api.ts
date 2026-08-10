@@ -999,17 +999,68 @@ class CraveBizApi {
 
   async createClient(client: Omit<Client, 'id'>): Promise<Client> {
     invalidateRequestCache('clients');
-    const { data, error } = await supabase.from('clients').insert({
-        id: generateId(),
-        company_id: cleanCompanyId(client.companyId),
-        name: client.name,
-        email: client.email,
-        company_name: client.companyName,
-        status: 'Active',
-        is_archived: false
-    }).select().maybeSingle();
+    const newId = generateId();
+    const cleanCompId = cleanCompanyId(client.companyId);
+
+    // Full payload including status and is_archived
+    const fullPayload = {
+      id: newId,
+      company_id: cleanCompId,
+      name: client.name,
+      email: client.email,
+      company_name: client.companyName,
+      status: 'Active',
+      is_archived: false
+    };
+
+    try {
+      const { data, error } = await supabase.from('clients').insert(fullPayload).select().maybeSingle();
+      if (!error && data) {
+        return {
+          id: data.id,
+          companyId: data.company_id,
+          name: data.name,
+          email: data.email,
+          companyName: data.company_name,
+          status: data.status || 'Active',
+          is_archived: data.is_archived || false,
+          archived_at: data.archived_at || null,
+          archived_by: data.archived_by || null,
+          deleted_at: data.deleted_at || null
+        };
+      }
+      if (error && error.code !== 'PGRST204') {
+        throw error;
+      }
+    } catch (err: any) {
+      if (err?.code !== 'PGRST204' && !err?.message?.includes('schema cache')) {
+        throw err;
+      }
+    }
+
+    // Fallback if is_archived or status columns are not in schema cache
+    const basePayload = {
+      id: newId,
+      company_id: cleanCompId,
+      name: client.name,
+      email: client.email,
+      company_name: client.companyName
+    };
+    const { data, error } = await supabase.from('clients').insert(basePayload).select().maybeSingle();
     if (error) throw error;
-    return data;
+
+    return {
+      id: data?.id || newId,
+      companyId: data?.company_id || cleanCompId,
+      name: data?.name || client.name,
+      email: data?.email || client.email,
+      companyName: data?.company_name || client.companyName,
+      status: 'Active',
+      is_archived: false,
+      archived_at: null,
+      archived_by: null,
+      deleted_at: null
+    };
   }
 
   async updateClient(client: Client): Promise<void> {
@@ -1026,7 +1077,20 @@ class CraveBizApi {
     if (client.deleted_at !== undefined) updateData.deleted_at = client.deleted_at;
 
     const { error } = await supabase.from('clients').update(updateData).eq('id', client.id);
-    if (error) console.warn("Update client warning:", error);
+    if (error) {
+      if (error.code === 'PGRST204' || error.message?.includes('schema cache')) {
+        // Fallback update without is_archived/status columns if missing from schema cache
+        const fallbackData = {
+          name: client.name,
+          email: client.email,
+          company_name: client.companyName
+        };
+        const { error: fallbackError } = await supabase.from('clients').update(fallbackData).eq('id', client.id);
+        if (fallbackError) console.warn("Update client fallback warning:", fallbackError);
+      } else {
+        console.warn("Update client warning:", error);
+      }
+    }
   }
 
   async archiveClient(client: Client, adminUser?: { id?: string; name?: string } | null): Promise<void> {

@@ -427,4 +427,13 @@ DROP POLICY IF EXISTS "Allow all operations on in_app_notifications" ON public.i
 CREATE POLICY "Allow all operations on in_app_notifications" ON public.in_app_notifications FOR ALL USING (true) WITH CHECK (true);
 GRANT ALL ON public.in_app_notifications TO anon, authenticated, service_role;
 
+-- Ensure clients table has status, is_archived, archived_at, archived_by, and deleted_at columns
+ALTER TABLE IF EXISTS public.clients ADD COLUMN IF NOT EXISTS status TEXT DEFAULT 'Active';
+ALTER TABLE IF EXISTS public.clients ADD COLUMN IF NOT EXISTS is_archived BOOLEAN NOT NULL DEFAULT FALSE;
+ALTER TABLE IF EXISTS public.clients ADD COLUMN IF NOT EXISTS archived_at TIMESTAMPTZ NULL;
+ALTER TABLE IF EXISTS public.clients ADD COLUMN IF NOT EXISTS archived_by TEXT NULL;
+ALTER TABLE IF EXISTS public.clients ADD COLUMN IF NOT EXISTS deleted_at TIMESTAMPTZ NULL;
+CREATE INDEX IF NOT EXISTS idx_clients_company_archived ON public.clients(company_id, is_archived);
+
+
 
