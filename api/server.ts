@@ -1087,9 +1087,11 @@ app.post("/api/signify/parse-document", verifyTenant, async (req, res) => {
 });
 
 // 1.5 Get all documents list for DocSignify Dashboard
-app.get("/api/signify/documents", verifyTenant, (req, res) => {
+app.get("/api/signify/documents", verifyTenant, async (req: any, res: any) => {
     try {
-        const documents = SignifyService.getAllDocuments();
+        const companyId = req.companyId || (req.query && req.query.companyId);
+        const ownerId = req.user?.id || (req.query && req.query.ownerId);
+        const documents = await SignifyService.getAllDocuments(companyId, ownerId);
         res.json({ success: true, documents });
     } catch (err: any) {
         console.error("DocSignify fetch all documents error:", err);

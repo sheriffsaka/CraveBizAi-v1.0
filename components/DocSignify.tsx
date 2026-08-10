@@ -764,11 +764,24 @@ export default function DocSignify({ company, user, prefillProject, prefillClien
 
                           <td className="py-3.5 px-4 text-right">
                             <div className="flex items-center justify-end gap-1.5">
+                              {/* View Signed PDF in New Tab */}
+                              {(doc.signed_file_url || doc.status === 'completed') && (
+                                <a
+                                  href={doc.signed_file_url || doc.original_file_url}
+                                  target="_blank"
+                                  rel="noopener noreferrer"
+                                  className="p-1.5 text-indigo-600 hover:bg-indigo-50 rounded-lg transition-colors flex items-center gap-1 font-bold text-[10px]"
+                                  title="View Final Signed Document in New Tab"
+                                >
+                                  <ExternalLink className="w-4 h-4" />
+                                </a>
+                              )}
+
                               {/* Audit & Review Modal */}
                               <button
                                 onClick={() => handleOpenReview(item)}
                                 className="p-1.5 text-slate-500 hover:text-indigo-600 hover:bg-indigo-50 rounded-lg transition-colors"
-                                title="Review Audit & Document"
+                                title="Review Audit & Document Details"
                               >
                                 <Eye className="w-4 h-4" />
                               </button>
@@ -1459,13 +1472,35 @@ export default function DocSignify({ company, user, prefillProject, prefillClien
               />
             </div>
 
-            <div className="flex justify-end gap-3 pt-2">
-              <button
-                onClick={() => setReviewDocItem(null)}
-                className="px-5 py-2.5 bg-slate-100 text-slate-700 rounded-xl text-xs font-bold hover:bg-slate-200 transition-colors"
-              >
-                Close
-              </button>
+            <div className="flex justify-between items-center gap-3 pt-2">
+              <div>
+                {(reviewDocItem.document.signed_file_url || reviewDocItem.document.status === 'completed') && (
+                  <a
+                    href={reviewDocItem.document.signed_file_url || reviewDocItem.document.original_file_url}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="px-4 py-2.5 bg-indigo-600 text-white rounded-xl text-xs font-bold hover:bg-indigo-700 transition-colors inline-flex items-center gap-2"
+                  >
+                    <ExternalLink className="w-3.5 h-3.5" />
+                    Open Signed PDF in New Tab
+                  </a>
+                )}
+              </div>
+              <div className="flex items-center gap-2">
+                <button
+                  onClick={() => handleDownloadSignedPdf(reviewDocItem)}
+                  className="px-4 py-2.5 bg-emerald-600 text-white rounded-xl text-xs font-bold hover:bg-emerald-700 transition-colors inline-flex items-center gap-2"
+                >
+                  <Download className="w-3.5 h-3.5" />
+                  Download
+                </button>
+                <button
+                  onClick={() => setReviewDocItem(null)}
+                  className="px-5 py-2.5 bg-slate-100 text-slate-700 rounded-xl text-xs font-bold hover:bg-slate-200 transition-colors"
+                >
+                  Close
+                </button>
+              </div>
             </div>
           </div>
         </div>

@@ -2239,77 +2239,60 @@ class CraveBizApi {
 
   async updateDocSignifySignatoryStatus(signatoryId: string, status: 'signed' | 'declined', signatures: DbDocumentSignature[]): Promise<{ document: DbDocument; signatory: DbDocumentSignatory }> {
     try {
-      // 1. Try Supabase
+      // 1. Invoke server endpoint first to trigger PDF merging and Supabase Storage upload
       try {
-        const { error: sigError } = await supabase.from('document_signatories')
-          .update({ status, signed_at: status === 'signed' ? new Date().toISOString() : null })
-          .eq('id', signatoryId);
-        if (sigError) {
-          throw new Error(`Supabase update signatory status failed: ${sigError.message}`);
+        const response = await fetch(`/api/signify/signatories/${signatoryId}/status`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ status, signatures })
+        });
+        if (response.ok) {
+          const data = await response.json();
+          if (data && data.document) {
+            return { document: data.document, signatory: data.signatory };
+          }
         }
-          
-        const { data: signatory, error: fetchSigError } = await supabase.from('document_signatories').select('*').eq('id', signatoryId).single();
-        if (fetchSigError || !signatory) {
-          throw new Error(`Supabase fetch signatory failed: ${fetchSigError?.message}`);
-        }
-        const docId = signatory.document_id;
-        
-        // Check other signatories to update document status if needed
-        const { data: signatories, error: fetchSigsError } = await supabase.from('document_signatories').select('*').eq('document_id', docId);
-        if (fetchSigsError) {
-          throw new Error(`Supabase fetch signatories failed: ${fetchSigsError.message}`);
-        }
-        const totalToSign = (signatories || []).filter((s: any) => s.role !== 'owner').length;
-        const signedCount = (signatories || []).filter((s: any) => s.role !== 'owner' && s.status === 'signed').length;
-        
-        let docStatus = 'pending';
-        if (status === 'declined') {
-          docStatus = 'declined';
-        } else if (signedCount === totalToSign) {
-          docStatus = 'completed';
-        } else if (signedCount > 0) {
-          docStatus = 'partially_signed';
-        }
-        
-        const { error: updateDocError } = await supabase.from('documents').update({ status: docStatus }).eq('id', docId);
-        if (updateDocError) {
-          throw new Error(`Supabase update document status failed: ${updateDocError.message}`);
-        }
-        const { data: document, error: fetchDocError } = await supabase.from('documents').select('*').eq('id', docId).single();
-        if (fetchDocError || !document) {
-          throw new Error(`Supabase fetch document failed: ${fetchDocError?.message}`);
-        }
-        
-        // Sync locally for backup access and PDF signature merging
-        try {
-          await fetch(`/api/signify/signatories/${signatoryId}/status`, {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ status, signatures })
-          });
-        } catch (err) {
-          console.warn("Local server status update backup sync failed, continuing:", err);
-        }
-        
-        return {
-          document: document as DbDocument,
-          signatory: signatory as DbDocumentSignatory
-        };
-      } catch (dbErr) {
-        console.warn("Supabase status update failed, trying local fallback:", dbErr);
+      } catch (srvErr) {
+        console.warn("Server status update endpoint error, falling back to direct Supabase update:", srvErr);
       }
 
-      // 2. Local Express fallback
-      const response = await fetch(`/api/signify/signatories/${signatoryId}/status`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ status, signatures })
-      });
-      if (!response.ok) {
-        throw new Error("Failed to update status on local server");
+      // 2. Direct Supabase update fallback
+      const { error: sigError } = await supabase.from('document_signatories')
+        .update({ status, signed_at: status === 'signed' ? new Date().toISOString() : null })
+        .eq('id', signatoryId);
+      if (sigError) {
+        throw new Error(`Supabase update signatory status failed: ${sigError.message}`);
       }
-      const data = await response.json();
-      return { document: data.document, signatory: data.signatory };
+        
+      const { data: signatory, error: fetchSigError } = await supabase.from('document_signatories').select('*').eq('id', signatoryId).single();
+      if (fetchSigError || !signatory) {
+        throw new Error(`Supabase fetch signatory failed: ${fetchSigError?.message}`);
+      }
+      const docId = signatory.document_id;
+      
+      const { data: signatories, error: fetchSigsError } = await supabase.from('document_signatories').select('*').eq('document_id', docId);
+      if (fetchSigsError) {
+        throw new Error(`Supabase fetch signatories failed: ${fetchSigsError.message}`);
+      }
+      const totalToSign = (signatories || []).filter((s: any) => s.role !== 'owner').length;
+      const signedCount = (signatories || []).filter((s: any) => s.role !== 'owner' && s.status === 'signed').length;
+      
+      let docStatus = 'pending';
+      if (status === 'declined') {
+        docStatus = 'declined';
+      } else if (signedCount === totalToSign) {
+        docStatus = 'completed';
+      } else if (signedCount > 0) {
+        docStatus = 'partially_signed';
+      }
+      
+      await supabase.from('documents').update({ status: docStatus }).eq('id', docId);
+      const { data: document } = await supabase.from('documents').select('*').eq('id', docId).single();
+      
+      return {
+        document: (document || {}) as DbDocument,
+        signatory: (signatory || {}) as DbDocumentSignatory
+      };
     } catch (err: any) {
       console.error("updateDocSignifySignatoryStatus error:", err);
       throw err;
@@ -2360,6 +2343,44 @@ class CraveBizApi {
   }
 
   async getAllDocSignifyDocuments(companyId?: string): Promise<{ document: DbDocument; signatories: DbDocumentSignatory[]; signaturesCount: number }[]> {
+    // 1. Direct Supabase fetch first
+    try {
+      let query = supabase.from('documents').select('*');
+      if (companyId) {
+        query = query.or(`company_id.eq.${companyId},owner_id.eq.${companyId}`);
+      }
+      const { data: dbDocs, error: docErr } = await query;
+      if (!docErr && dbDocs && Array.isArray(dbDocs) && dbDocs.length > 0) {
+        const results = [];
+        for (const doc of dbDocs) {
+          const { data: dbSigs } = await supabase.from('document_signatories').select('*').eq('document_id', doc.id);
+          const { data: dbSignatures } = await supabase.from('document_signatures').select('*').eq('document_id', doc.id);
+
+          results.push({
+            document: {
+              id: doc.id,
+              title: doc.title || doc.document_title || doc.document_type || "Untitled Document",
+              original_file_url: doc.original_file_url || doc.originalFileUrl || "",
+              signed_file_url: doc.signed_file_url || doc.signedFileUrl || null,
+              owner_id: doc.owner_id || doc.company_id || companyId || "",
+              company_id: doc.company_id || doc.owner_id || companyId || "",
+              status: doc.status || "pending",
+              created_at: doc.created_at || new Date().toISOString(),
+              file_type: doc.file_type || doc.fileType || "pdf",
+              file_name: doc.file_name || doc.fileName || `${doc.title}.pdf`,
+              content_json: doc.content_json || doc.content || null
+            } as DbDocument,
+            signatories: (dbSigs || []) as DbDocumentSignatory[],
+            signaturesCount: (dbSignatures || []).length
+          });
+        }
+        return results.sort((a, b) => new Date(b.document.created_at).getTime() - new Date(a.document.created_at).getTime());
+      }
+    } catch (dbFetchErr) {
+      console.warn("Direct Supabase fetch in getAllDocSignifyDocuments failed, trying server API:", dbFetchErr);
+    }
+
+    // 2. Server API fallback
     try {
       const response = await fetch('/api/signify/documents', {
         headers: await this.getAuthHeaders(companyId)

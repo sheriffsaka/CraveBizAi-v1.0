@@ -298,6 +298,7 @@ export interface DbDocument {
   original_file_url: string;
   signed_file_url: string | null;
   owner_id: string;
+  company_id?: string;
   status: 'draft' | 'pending' | 'viewed' | 'awaiting_owner' | 'awaiting_signer' | 'partially_signed' | 'completed' | 'declined' | 'expired';
   created_at: string;
   file_type?: string; // e.g. pdf, docx, png, jpg, jpeg
