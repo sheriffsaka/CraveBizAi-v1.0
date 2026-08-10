@@ -89,9 +89,11 @@ const PriceCalculatorModal: React.FC<PriceCalculatorModalProps> = ({
   );
 
   const totalCost = totalDirectCosts + totalIndirectCosts;
-  const numProfitPercent = Math.max(0, Number(profitPercent) || 0);
-  const profitAmount = totalCost * (numProfitPercent / 100);
-  const calculatedSellingPrice = Math.round(totalCost + profitAmount);
+  const numProfitPercent = Math.max(0, Math.min(99.9, Number(profitPercent) || 0));
+  const calculatedSellingPrice = numProfitPercent > 0 && numProfitPercent < 100
+    ? Math.round(totalCost / (1 - (numProfitPercent / 100)))
+    : Math.round(totalCost * (1 + numProfitPercent / 100));
+  const profitAmount = Math.max(0, calculatedSellingPrice - totalCost);
 
   const handleApply = () => {
     onApplyPrice(calculatedSellingPrice, totalDirectCosts, totalIndirectCosts);

@@ -4,6 +4,7 @@ import ServiceFormModal from './ServiceFormModal';
 import DeleteConfirmationModal from './DeleteConfirmationModal';
 import Icon from './common/Icon';
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, Cell } from 'recharts';
+import { calculateServiceMarginPct, calculateServiceTotalCost } from '../lib/margin';
 
 interface ServiceListProps {
   companyId: string;
@@ -50,10 +51,11 @@ const ServicesTable: React.FC<{
         </thead>
         <tbody>
           {services.map((service) => {
-            const dc = service.directCost || 0;
-            const ic = service.indirectCost || 0;
-            const totalCost = dc + ic;
-            const marginPct = service.price > 0 ? Math.round(((service.price - totalCost) / service.price) * 100) : 0;
+            const dc = Number(service.directCost) || 0;
+            const ic = Number(service.indirectCost) || 0;
+            const totalCost = calculateServiceTotalCost(dc, ic);
+            const marginPct = calculateServiceMarginPct(service.price, dc, ic);
+            const displayMargin = Math.round(marginPct);
             let badgeClass = "bg-rose-50 text-rose-700 border-rose-200";
             if (marginPct >= 40) badgeClass = "bg-emerald-50 text-emerald-700 border-emerald-200";
             else if (marginPct >= 20) badgeClass = "bg-amber-50 text-amber-700 border-amber-200";
@@ -80,7 +82,7 @@ const ServicesTable: React.FC<{
                   {ic > 0 && <div className="text-gray-500 text-[11px]"><span className="text-gray-400">Indirect:</span> ₦{ic.toLocaleString()}</div>}
                   {service.price > 0 && (
                     <span className={`inline-block text-[9px] font-extrabold px-1.5 py-0.5 rounded border mt-0.5 ${badgeClass}`}>
-                      {marginPct}% margin
+                      {displayMargin}% margin
                     </span>
                   )}
                 </td>

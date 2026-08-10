@@ -8,6 +8,7 @@ import { Page } from '../App';
 import { api } from '../lib/api';
 import { getSubscriptionInfo } from '../services/subscriptionService';
 import GlobalFilterBar from './GlobalFilterBar';
+import { calculateServiceTotalCost, calculateServiceMarginPct } from '../lib/margin';
 import {
   GlobalFilterState,
   loadGlobalFilterFromSession,
@@ -188,10 +189,15 @@ const Dashboard: React.FC<DashboardProps> = ({
                 inv.items.forEach(item => {
                     const qty = Number(item.quantity) || 1;
                     const matchingSrv = services.find(s => (item.serviceId && s.id === item.serviceId) || (s.name && item.description && s.name.trim().toLowerCase() === item.description.trim().toLowerCase()));
-                    const itemDc = item.directCost !== undefined && item.directCost !== null ? Number(item.directCost) : 0;
+                    const itemDc = item.directCost !== undefined && item.directCost !== null ? Number(item.directCost) : -1;
+                    const itemIc = item.indirectCost !== undefined && item.indirectCost !== null ? Number(item.indirectCost) : -1;
                     const srvDc = Number(matchingSrv?.directCost || 0);
-                    const unitDc = itemDc > 0 ? itemDc : (srvDc > 0 ? srvDc : itemDc);
-                    cost += unitDc * qty;
+                    const srvIc = Number(matchingSrv?.indirectCost || 0);
+
+                    const unitDc = itemDc >= 0 ? itemDc : srvDc;
+                    const unitIc = itemIc >= 0 ? itemIc : srvIc;
+                    const unitCost = calculateServiceTotalCost(unitDc, unitIc);
+                    cost += unitCost * qty;
                 });
             }
         });

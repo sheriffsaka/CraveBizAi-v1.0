@@ -5,6 +5,7 @@ import { generateTextResponse } from '../services/aiGenerationService';
 import { getSubscriptionInfo } from '../services/subscriptionService';
 import ReactMarkdown from 'react-markdown';
 import { TrendingUp, DollarSign, PieChart as PieIcon, ArrowUpRight, ArrowDownRight, AlertTriangle, CheckCircle2, Sparkles, Download, Printer, FileSpreadsheet, Calendar, RefreshCw, Layers, ShieldAlert } from 'lucide-react';
+import { calculateServiceTotalCost, calculateServiceMarginPct } from '../lib/margin';
 
 interface RevenueVsDirectCostReportProps {
   invoices: Invoice[];
@@ -169,18 +170,23 @@ const RevenueVsDirectCostReport: React.FC<RevenueVsDirectCostReportProps> = ({
         // Find matching service or fallback
         const matchingService = services.find(s => s.id === item.serviceId || s.name.toLowerCase() === item.description.toLowerCase());
         
-        // Unit direct cost priority: item.directCost -> matchingService.directCost -> 0
+        // Unit cost priority: item -> matchingService -> 0
         const itemDc = item.directCost !== undefined && item.directCost !== null ? Number(item.directCost) : -1;
+        const itemIc = item.indirectCost !== undefined && item.indirectCost !== null ? Number(item.indirectCost) : -1;
         const serviceDc = Number(matchingService?.directCost || 0);
+        const serviceIc = Number(matchingService?.indirectCost || 0);
+
         const unitDirectCost = itemDc >= 0 ? itemDc : serviceDc;
-        const itemDirectCost = unitDirectCost * qty;
+        const unitIndirectCost = itemIc >= 0 ? itemIc : serviceIc;
+        const unitTotalCost = calculateServiceTotalCost(unitDirectCost, unitIndirectCost);
+        const itemCost = unitTotalCost * qty;
 
         revSum += itemRevenue;
-        costSum += itemDirectCost;
+        costSum += itemCost;
 
         periodData.revenue += itemRevenue;
-        periodData.directCost += itemDirectCost;
-        periodData.profit += (itemRevenue - itemDirectCost);
+        periodData.directCost += itemCost;
+        periodData.profit += (itemRevenue - itemCost);
 
         const sKey = matchingService?.id || item.serviceId || item.description || 'General Services';
         const sName = matchingService?.name || item.description || 'Custom Service';
@@ -199,7 +205,7 @@ const RevenueVsDirectCostReport: React.FC<RevenueVsDirectCostReportProps> = ({
 
         const sData = serviceMap.get(sKey)!;
         sData.revenue += itemRevenue;
-        sData.directCost += itemDirectCost;
+        sData.directCost += itemCost;
         sData.unitsSold += qty;
       });
     });
@@ -210,7 +216,10 @@ const RevenueVsDirectCostReport: React.FC<RevenueVsDirectCostReportProps> = ({
     // Convert service map to sorted array
     const breakdown = Array.from(serviceMap.values()).map(s => {
       const profit = s.revenue - s.directCost;
-      const marginPct = s.revenue > 0 ? (profit / s.revenue) * 100 : 0;
+      const matchingSrv = services.find(srv => srv.id === s.serviceId || srv.name.toLowerCase() === s.serviceName.toLowerCase());
+      const marginPct = s.revenue > 0
+        ? (profit / s.revenue) * 100
+        : calculateServiceMarginPct(matchingSrv?.price || 0, matchingSrv?.directCost, matchingSrv?.indirectCost);
       return {
         ...s,
         profit,

@@ -235,6 +235,28 @@ Ensure the description clearly outlines the core deliverables, client benefits, 
             </div>
           </div>
 
+          {/* Live Cost & Margin Summary Indicator */}
+          {price > 0 && (
+            <div className="bg-slate-50 p-3 rounded-lg border border-slate-200 flex items-center justify-between text-xs">
+              <div>
+                <span className="text-gray-500 font-medium">Total Cost (Direct + Indirect): </span>
+                <span className="font-bold text-gray-800">₦{((directCost || 0) + (indirectCost || 0)).toLocaleString()}</span>
+              </div>
+              <div>
+                <span className="text-gray-500 font-medium">Margin: </span>
+                <span className={`font-black ${
+                  ((price - ((directCost || 0) + (indirectCost || 0))) / price * 100) >= 40
+                    ? 'text-emerald-600'
+                    : ((price - ((directCost || 0) + (indirectCost || 0))) / price * 100) >= 20
+                    ? 'text-amber-600'
+                    : 'text-rose-600'
+                }`}>
+                  {(((price - ((directCost || 0) + (indirectCost || 0))) / price) * 100).toFixed(1)}%
+                </span>
+              </div>
+            </div>
+          )}
+
           {/* Description & Generate Description AI button */}
           <div>
             <div className="flex items-center justify-between mb-1">

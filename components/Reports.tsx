@@ -16,6 +16,7 @@ import { generateTextResponse } from '../services/aiGenerationService';
 import { getSubscriptionInfo } from '../services/subscriptionService';
 import ReactMarkdown from 'react-markdown';
 import GlobalFilterBar from './GlobalFilterBar';
+import { calculateServiceTotalCost, calculateServiceMarginPct } from '../lib/margin';
 import {
   GlobalFilterState,
   loadGlobalFilterFromSession,
@@ -422,13 +423,18 @@ const Reports: React.FC<ReportsProps> = ({
         const itemRevenue = Number(item.price) * qty;
 
         const matchingService = services.find(s => (item.serviceId && s.id === item.serviceId) || (s.name && item.description && s.name.trim().toLowerCase() === item.description.trim().toLowerCase()));
-        const itemDc = item.directCost !== undefined && item.directCost !== null ? Number(item.directCost) : 0;
+        const itemDc = item.directCost !== undefined && item.directCost !== null ? Number(item.directCost) : -1;
+        const itemIc = item.indirectCost !== undefined && item.indirectCost !== null ? Number(item.indirectCost) : -1;
         const serviceDc = Number(matchingService?.directCost || 0);
-        const unitDirectCost = itemDc > 0 ? itemDc : (serviceDc > 0 ? serviceDc : itemDc);
-        const itemDirectCost = unitDirectCost * qty;
+        const serviceIc = Number(matchingService?.indirectCost || 0);
+
+        const unitDirectCost = itemDc >= 0 ? itemDc : serviceDc;
+        const unitIndirectCost = itemIc >= 0 ? itemIc : serviceIc;
+        const unitTotalCost = calculateServiceTotalCost(unitDirectCost, unitIndirectCost);
+        const itemCost = unitTotalCost * qty;
 
         revSum += itemRevenue;
-        costSum += itemDirectCost;
+        costSum += itemCost;
         totalUnits += qty;
 
         const sKey = matchingService?.id || item.serviceId || item.description || 'General Service';
@@ -448,7 +454,7 @@ const Reports: React.FC<ReportsProps> = ({
         }
         const sData = serviceMap.get(sKey)!;
         sData.revenue += itemRevenue;
-        sData.directCost += itemDirectCost;
+        sData.directCost += itemCost;
         sData.unitsSold += qty;
         sData.invoiceIds.add(inv.id);
 
@@ -456,7 +462,7 @@ const Reports: React.FC<ReportsProps> = ({
           categoryMap.set(sCategory, { category: sCategory, directCost: 0, revenue: 0 });
         }
         const cData = categoryMap.get(sCategory)!;
-        cData.directCost += itemDirectCost;
+        cData.directCost += itemCost;
         cData.revenue += itemRevenue;
       });
     });
@@ -467,7 +473,10 @@ const Reports: React.FC<ReportsProps> = ({
 
     const sBreakdown = Array.from(serviceMap.values()).map(s => {
       const profit = s.revenue - s.directCost;
-      const margin = s.revenue > 0 ? (profit / s.revenue) * 100 : 0;
+      const matchingSrv = services.find(srv => srv.id === s.serviceId || srv.name.trim().toLowerCase() === s.serviceName.trim().toLowerCase());
+      const margin = s.revenue > 0
+        ? (profit / s.revenue) * 100
+        : calculateServiceMarginPct(matchingSrv?.price || 0, matchingSrv?.directCost, matchingSrv?.indirectCost);
       return {
         ...s,
         invoiceCount: s.invoiceIds.size,
@@ -714,16 +723,21 @@ const Reports: React.FC<ReportsProps> = ({
     return services.map(s => {
       const matchingSales = serviceBreakdown.find(sb => sb.serviceId === s.id || sb.serviceName.toLowerCase() === s.name.toLowerCase());
       const rev = matchingSales ? matchingSales.revenue : 0;
-      const dc = matchingSales ? matchingSales.directCost : (s.directCost || 0);
+      const dc = Number(s.directCost) || 0;
+      const ic = Number(s.indirectCost) || 0;
+      const totalCost = calculateServiceTotalCost(dc, ic);
+      const salesCost = matchingSales ? matchingSales.directCost : totalCost;
       const units = matchingSales ? matchingSales.unitsSold : 0;
-      const profit = rev - dc;
-      const margin = rev > 0 ? (profit / rev) * 100 : (s.price > 0 ? ((s.price - (s.directCost || 0)) / s.price) * 100 : 0);
+      const profit = rev - salesCost;
+      const margin = rev > 0 ? (profit / rev) * 100 : calculateServiceMarginPct(s.price, dc, ic);
       return {
         id: s.id,
         name: s.name,
         category: s.category || 'General',
         price: s.price,
-        directCost: s.directCost || 0,
+        directCost: dc,
+        indirectCost: ic,
+        totalCost,
         unitsSold: units,
         revenue: rev,
         marginPct: margin
