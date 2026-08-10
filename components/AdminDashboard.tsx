@@ -1490,7 +1490,7 @@ Admin Query: ${activePrompt}
           {/* Transactions List */}
           {isFetchingTransactions ? (
             <div className="py-16 text-center text-xs text-gray-400 font-bold">
-              Fetching financial transaction logs from Supabase vault...
+              Fetching financial transaction logs from the system vault...
             </div>
           ) : filtered.length > 0 ? (
             <div className="overflow-x-auto border border-gray-100 rounded-2xl">

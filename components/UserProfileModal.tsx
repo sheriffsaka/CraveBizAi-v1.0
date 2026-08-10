@@ -122,11 +122,11 @@ const UserProfileModal: React.FC<UserProfileModalProps> = ({ isOpen, onClose, us
 
         {/* Database User Usage Display Section */}
         <div className="border-t border-gray-100 pt-6">
-          <h4 className="text-xs font-black text-gray-800 uppercase tracking-widest mb-4">Your Usage Summary (From Supabase)</h4>
+          <h4 className="text-xs font-black text-gray-800 uppercase tracking-widest mb-4">Your Usage Summary</h4>
           
           {isLoadingUsage ? (
             <div className="flex justify-center py-4">
-              <span className="text-xs font-black text-primary-600 uppercase tracking-widest animate-pulse">Fetching usage live from Supabase...</span>
+              <span className="text-xs font-black text-primary-600 uppercase tracking-widest animate-pulse">Fetching usage live from the system...</span>
             </div>
           ) : (
             <div className="grid grid-cols-3 gap-3">

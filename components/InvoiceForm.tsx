@@ -393,7 +393,7 @@ const InvoiceForm: React.FC<InvoiceFormProps> = ({ initialInvoice, clients, serv
                     <div className="flex items-center justify-between border-b pb-3">
                         <div>
                             <p className="text-xs font-black text-primary-900 uppercase tracking-wider">Recurring Invoice Schedule & Automation</p>
-                            <p className="text-[11px] text-gray-500 font-medium mt-0.5">Automated invoice generation will be processed and saved directly to Supabase.</p>
+                            <p className="text-[11px] text-gray-500 font-medium mt-0.5">Automated invoice generation will be processed and saved directly to the system.</p>
                         </div>
                         <span className="px-2.5 py-1 text-[10px] font-black uppercase rounded-full bg-primary-100 text-primary-800 border border-primary-200">
                           {frequency} Schedule

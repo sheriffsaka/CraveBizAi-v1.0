@@ -86,7 +86,7 @@ const SyncOverlay: React.FC<SyncOverlayProps> = ({
         </div>
 
         <p className="text-[11px] text-gray-400 font-medium">
-          Please wait while we secure and verify your records with Supabase.
+          Please wait while we secure and verify your records on the system.
         </p>
 
         {/* Timeout / Graceful Recovery if Sync Takes Longer Than Expected */}
