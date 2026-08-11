@@ -30,6 +30,7 @@ import {
     deductReceiptQuota
 } from "../services/documentUsageModule.js";
 import { SignifyService } from "../services/signifyService.js";
+import { DbDocument, DbDocumentSignatory } from "../types.js";
 import { 
     sendReceiptEmailDirect, 
     sendInvoiceEmailDirect, 
@@ -1174,19 +1175,47 @@ app.get("/api/signify/token-validation", async (req, res) => {
         if (!result) {
             // Self-healing fallback: Query Supabase directly if the local memory store is out of sync
             try {
-                const { data: signatory, error: sigError } = await supabaseClient.from('document_signatories').select('*').eq('token', token).single();
-                if (signatory) {
-                    const docId = signatory.document_id;
-                    const { data: document } = await supabaseClient.from('documents').select('*').eq('id', docId).single();
-                    const { data: signatories } = await supabaseClient.from('document_signatories').select('*').eq('document_id', docId);
-                    const { data: signatures } = await supabaseClient.from('document_signatures').select('*').eq('document_id', docId);
+                let { data: signer } = await supabaseClient.from('document_signers').select('*').eq('id', token).single();
+                if (!signer) {
+                    const { data: signersByEmail } = await supabaseClient.from('document_signers').select('*').eq('email', token).limit(1);
+                    if (signersByEmail && signersByEmail.length > 0) signer = signersByEmail[0];
+                }
+                if (signer) {
+                    const docId = signer.document_id;
+                    const { data: docData } = await supabaseClient.from('documents').select('*').eq('id', docId).single();
+                    const { data: dbSigners } = await supabaseClient.from('document_signers').select('*').eq('document_id', docId);
                     
-                    if (document) {
+                    if (docData) {
+                        const formattedDoc: DbDocument = {
+                            id: docData.id,
+                            title: docData.file_name || docData.document_type || "Untitled Document",
+                            original_file_url: docData.storage_path || "",
+                            signed_file_url: docData.status === 'completed' ? docData.storage_path : null,
+                            owner_id: docData.creator_id || docData.company_id || "",
+                            company_id: docData.company_id || docData.creator_id || "",
+                            status: docData.status || "pending",
+                            created_at: docData.created_at || new Date().toISOString(),
+                            file_type: docData.document_type || 'pdf',
+                            file_name: docData.file_name || `${docData.id}.pdf`
+                        };
+                        const signatories: DbDocumentSignatory[] = (dbSigners || []).map((s: any) => ({
+                            id: s.id,
+                            document_id: s.document_id,
+                            name: s.name || '',
+                            email: s.email || '',
+                            role: s.role || 'main_signatory',
+                            token: s.id,
+                            status: s.status || 'pending',
+                            signed_at: s.signed_at || null,
+                            signature_value: s.signature_value || null
+                        }));
+                        const activeSignatory = signatories.find(s => s.id === signer.id) || signatories[0];
+
                         result = {
-                            document: document as any,
-                            signatory: signatory as any,
-                            signatories: (signatories || []) as any,
-                            signatures: (signatures || []) as any
+                            document: formattedDoc,
+                            signatory: activeSignatory,
+                            signatories: signatories,
+                            signatures: []
                         };
                         // Sync to local memory store so next validations are near-instant
                         SignifyService.syncToMemory(result.document, result.signatory, result.signatories, result.signatures);

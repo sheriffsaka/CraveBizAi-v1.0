@@ -435,5 +435,53 @@ ALTER TABLE IF EXISTS public.clients ADD COLUMN IF NOT EXISTS archived_by TEXT N
 ALTER TABLE IF EXISTS public.clients ADD COLUMN IF NOT EXISTS deleted_at TIMESTAMPTZ NULL;
 CREATE INDEX IF NOT EXISTS idx_clients_company_archived ON public.clients(company_id, is_archived);
 
+-- ==============================================================================
+-- 9. Create documents & document_signers tables for DocSignify Workflow
+-- ==============================================================================
+CREATE TABLE IF NOT EXISTS public.documents (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    company_id TEXT NULL,
+    creator_id TEXT NULL,
+    file_name TEXT NOT NULL DEFAULT 'Document.pdf',
+    document_type TEXT NOT NULL DEFAULT 'Agreement',
+    status TEXT NOT NULL DEFAULT 'pending',
+    storage_path TEXT NULL,
+    file_size NUMERIC NULL,
+    created_at TIMESTAMPTZ DEFAULT NOW(),
+    updated_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS idx_documents_company_id ON public.documents(company_id);
+CREATE INDEX IF NOT EXISTS idx_documents_creator_id ON public.documents(creator_id);
+CREATE INDEX IF NOT EXISTS idx_documents_status ON public.documents(status);
+
+ALTER TABLE public.documents ENABLE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS "Allow all operations on documents" ON public.documents;
+CREATE POLICY "Allow all operations on documents" ON public.documents FOR ALL USING (true) WITH CHECK (true);
+GRANT ALL ON public.documents TO anon, authenticated, service_role;
+
+CREATE TABLE IF NOT EXISTS public.document_signers (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    document_id UUID NOT NULL,
+    email TEXT NOT NULL,
+    name TEXT NOT NULL,
+    role TEXT NOT NULL DEFAULT 'main_signatory',
+    status TEXT NOT NULL DEFAULT 'pending',
+    signed_at TIMESTAMPTZ NULL,
+    signature_value TEXT NULL,
+    ip_address TEXT NULL,
+    user_agent TEXT NULL,
+    created_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS idx_document_signers_document_id ON public.document_signers(document_id);
+CREATE INDEX IF NOT EXISTS idx_document_signers_email ON public.document_signers(email);
+CREATE INDEX IF NOT EXISTS idx_document_signers_status ON public.document_signers(status);
+
+ALTER TABLE public.document_signers ENABLE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS "Allow all operations on document_signers" ON public.document_signers;
+CREATE POLICY "Allow all operations on document_signers" ON public.document_signers FOR ALL USING (true) WITH CHECK (true);
+GRANT ALL ON public.document_signers TO anon, authenticated, service_role;
+
 
 

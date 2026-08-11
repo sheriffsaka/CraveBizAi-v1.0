@@ -1,0 +1,69 @@
+{
+  "documents": {
+    "test-doc-1786482309984": {
+      "id": "test-doc-1786482309984",
+      "title": "NDA Agreement",
+      "original_file_url": "https://example.com/original.pdf",
+      "signed_file_url": null,
+      "owner_id": "test-owner-1786482309984",
+      "status": "awaiting_signer",
+      "created_at": "2026-08-11T21:05:09.985Z",
+      "file_type": "pdf",
+      "file_name": "NDA_Agreement.pdf",
+      "content_json": {
+        "signing_order": "parallel"
+      }
+    },
+    "test-doc-1786482325659": {
+      "id": "test-doc-1786482325659",
+      "title": "NDA Agreement",
+      "original_file_url": "https://example.com/original.pdf",
+      "signed_file_url": null,
+      "owner_id": "test-owner-1786482325659",
+      "status": "partially_signed",
+      "created_at": "2026-08-11T21:05:25.659Z",
+      "file_type": "pdf",
+      "file_name": "NDA_Agreement.pdf",
+      "content_json": {
+        "signing_order": "parallel"
+      }
+    }
+  },
+  "signatories": {
+    "signer-1-1786482309984": {
+      "id": "signer-1-1786482309984",
+      "document_id": "test-doc-1786482309984",
+      "name": "Jane Doe",
+      "email": "jane.doe@example.com",
+      "role": "main_signatory",
+      "token": "852b725c1078adcf5eb2c483e4c081cfbe02fc8ad24dc66443e21a5c98b2ac04",
+      "status": "viewed",
+      "signed_at": null
+    },
+    "signer-1-1786482325659": {
+      "id": "signer-1-1786482325659",
+      "document_id": "test-doc-1786482325659",
+      "name": "Jane Doe",
+      "email": "jane.doe@example.com",
+      "role": "main_signatory",
+      "token": "3cea29b426a2728552d681fc9ac552721564805273651b721ef2656f9715b922",
+      "status": "signed",
+      "signed_at": "2026-08-11T21:05:25.663Z"
+    }
+  },
+  "signatures": [
+    {
+      "id": "sig-1786482325662",
+      "document_id": "test-doc-1786482325659",
+      "signatory_id": "signer-1-1786482325659",
+      "page_number": 1,
+      "x_position": 100,
+      "y_position": 200,
+      "width": 120,
+      "height": 50,
+      "signature_type": "draw",
+      "signature_image_url": "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==",
+      "created_at": "2026-08-11T21:05:25.662Z"
+    }
+  ]
+}

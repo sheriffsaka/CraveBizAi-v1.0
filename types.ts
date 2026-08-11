@@ -316,6 +316,7 @@ export interface DbDocumentSignatory {
   token: string;
   status: 'pending' | 'viewed' | 'signed' | 'declined';
   signed_at: string | null;
+  signature_value?: string | null;
 }
 
 export interface DbDocumentSignature {

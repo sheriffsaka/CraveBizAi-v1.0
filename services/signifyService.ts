@@ -209,34 +209,39 @@ export class SignifyService {
     // Sync to Supabase directly
     try {
       if (supabaseClient) {
-        supabaseClient.from('documents').upsert({
+        const docPayload: any = {
           id: document.id,
-          owner_id: document.owner_id,
-          company_id: document.company_id || document.owner_id,
-          title: document.title,
-          original_file_url: document.original_file_url,
-          signed_file_url: document.signed_file_url,
-          status: document.status,
-          created_at: document.created_at,
-          file_type: document.file_type,
-          file_name: document.file_name,
-          content_json: document.content_json
-        }).then(({ error }) => {
+          file_name: document.file_name || document.title || "document.pdf",
+          document_type: document.file_type || "Agreement",
+          status: document.status || "pending",
+          updated_at: new Date().toISOString()
+        };
+        if (document.company_id && document.company_id.length === 36 && document.company_id.includes('-')) {
+          docPayload.company_id = document.company_id;
+        }
+        if (document.owner_id && document.owner_id.length === 36 && document.owner_id.includes('-')) {
+          docPayload.creator_id = document.owner_id;
+        }
+        if (document.original_file_url || document.signed_file_url) {
+          docPayload.storage_path = document.signed_file_url || document.original_file_url;
+        }
+
+        supabaseClient.from('documents').upsert([docPayload]).then(({ error }) => {
           if (error) console.warn("Supabase document insert warning:", error.message);
         });
 
         for (const sig of createdSignatories) {
-          supabaseClient.from('document_signatories').upsert({
+          supabaseClient.from('document_signers').upsert({
             id: sig.id,
             document_id: sig.document_id,
-            name: sig.name,
-            email: sig.email,
-            role: sig.role,
-            token: sig.token,
-            status: sig.status,
-            signed_at: sig.signed_at
+            name: sig.name || '',
+            email: sig.email || '',
+            role: sig.role || 'main_signatory',
+            status: sig.status || 'pending',
+            signed_at: sig.signed_at || null,
+            signature_value: (sig as any).signature_value || null
           }).then(({ error }) => {
-            if (error) console.warn("Supabase signatory insert warning:", error.message);
+            if (error) console.warn("Supabase signer insert warning:", error.message);
           });
         }
       }
@@ -259,40 +264,34 @@ export class SignifyService {
     try {
       if (supabaseClient) {
         let query = supabaseClient.from('documents').select('*');
-        const filterOrs: string[] = [];
-        if (companyId) {
-          filterOrs.push(`company_id.eq.${companyId}`, `owner_id.eq.${companyId}`);
-        }
-        if (ownerId && ownerId !== companyId) {
-          filterOrs.push(`company_id.eq.${ownerId}`, `owner_id.eq.${ownerId}`);
-        }
-        if (filterOrs.length === 0) {
-          filterOrs.push('owner_id.eq.admin', 'owner_id.is.null');
-        }
-
-        query = query.or(filterOrs.join(','));
-
         const { data: dbDocs, error: docErr } = await query;
         if (!docErr && dbDocs && Array.isArray(dbDocs)) {
           for (const doc of dbDocs) {
-            const { data: dbSigs } = await supabaseClient.from('document_signatories').select('*').eq('document_id', doc.id);
-            const { data: dbSignatures } = await supabaseClient.from('document_signatures').select('*').eq('document_id', doc.id);
+            const { data: dbSigs } = await supabaseClient.from('document_signers').select('*').eq('document_id', doc.id);
 
-            const signatories = (dbSigs || []) as DbDocumentSignatory[];
-            const signatures = (dbSignatures || []) as DbDocumentSignature[];
+            const signatories: DbDocumentSignatory[] = (dbSigs || []).map((s: any) => ({
+              id: s.id,
+              document_id: s.document_id,
+              name: s.name || '',
+              email: s.email || '',
+              role: s.role || 'main_signatory',
+              token: s.id,
+              status: s.status || 'pending',
+              signed_at: s.signed_at || null,
+              signature_value: s.signature_value || null
+            }));
 
             const formattedDoc: DbDocument = {
               id: doc.id,
-              title: doc.title || doc.document_title || doc.document_type || "Untitled Document",
-              original_file_url: doc.original_file_url || doc.originalFileUrl || "",
-              signed_file_url: doc.signed_file_url || doc.signedFileUrl || null,
-              owner_id: doc.owner_id || doc.company_id || ownerId || "",
-              company_id: doc.company_id || doc.owner_id || companyId || "",
+              title: doc.file_name || doc.document_type || "Untitled Document",
+              original_file_url: doc.storage_path || "",
+              signed_file_url: doc.status === 'completed' ? doc.storage_path : null,
+              owner_id: doc.creator_id || doc.company_id || ownerId || "",
+              company_id: doc.company_id || doc.creator_id || companyId || "",
               status: doc.status || "pending",
               created_at: doc.created_at || new Date().toISOString(),
-              file_type: doc.file_type || doc.fileType || "pdf",
-              file_name: doc.file_name || doc.fileName || `${doc.title}.pdf`,
-              content_json: doc.content_json || doc.content || null
+              file_type: doc.document_type || 'pdf',
+              file_name: doc.file_name || `${doc.id}.pdf`
             };
 
             // Sync into memory store
@@ -304,7 +303,7 @@ export class SignifyService {
             dbResults.push({
               document: formattedDoc,
               signatories,
-              signaturesCount: signatures.length
+              signaturesCount: signatories.filter(s => s.status === 'signed').length
             });
           }
 
@@ -368,8 +367,7 @@ export class SignifyService {
       supabaseClient.from('documents').delete().eq('id', docId).then(({ error }) => {
         if (error) console.warn("Supabase document delete warning:", error.message);
       });
-      supabaseClient.from('document_signatories').delete().eq('document_id', docId).then(() => {});
-      supabaseClient.from('document_signatures').delete().eq('document_id', docId).then(() => {});
+      supabaseClient.from('document_signers').delete().eq('document_id', docId).then(() => {});
     }
     return true;
   }
@@ -379,7 +377,7 @@ export class SignifyService {
    */
   static recordViewed(token: string): boolean {
     const store = loadStore();
-    const signatory = Object.values(store.signatories).find(s => s.token === token);
+    const signatory = Object.values(store.signatories).find(s => s.token === token || s.id === token);
     if (!signatory) return false;
     if (signatory.status === 'pending') {
       signatory.status = 'viewed' as any;
@@ -390,9 +388,9 @@ export class SignifyService {
       saveStore(store);
 
       if (supabaseClient) {
-        supabaseClient.from('document_signatories').update({ status: 'viewed' }).eq('token', token).then(() => {});
+        supabaseClient.from('document_signers').update({ status: 'viewed' }).eq('id', signatory.id).then(() => {});
         if (signatory.document_id) {
-          supabaseClient.from('documents').update({ status: 'viewed' }).eq('id', signatory.document_id).then(() => {});
+          supabaseClient.from('documents').update({ status: 'viewed', updated_at: new Date().toISOString() }).eq('id', signatory.document_id).then(() => {});
         }
       }
     }
@@ -621,51 +619,46 @@ export class SignifyService {
     
     saveStore(store);
 
-    // Sync updated document, signatory, and signatures state to Supabase DB
+    // Sync updated document and signer state to Supabase DB
     try {
       if (supabaseClient) {
-        await supabaseClient.from('documents').upsert({
+        const docPayload: any = {
           id: document.id,
-          owner_id: document.owner_id,
-          company_id: document.company_id || document.owner_id,
-          title: document.title,
-          original_file_url: document.original_file_url,
-          signed_file_url: document.signed_file_url,
+          file_name: document.file_name || document.title || "document.pdf",
+          document_type: document.file_type || "Agreement",
           status: document.status,
-          created_at: document.created_at,
-          file_type: document.file_type || 'pdf',
-          file_name: document.file_name || `${document.title}.pdf`,
-          content_json: document.content_json
-        });
+          updated_at: new Date().toISOString()
+        };
+        if (document.company_id && document.company_id.length === 36 && document.company_id.includes('-')) {
+          docPayload.company_id = document.company_id;
+        }
+        if (document.owner_id && document.owner_id.length === 36 && document.owner_id.includes('-')) {
+          docPayload.creator_id = document.owner_id;
+        }
+        if (document.signed_file_url || document.original_file_url) {
+          docPayload.storage_path = document.signed_file_url || document.original_file_url;
+        }
 
-        await supabaseClient.from('document_signatories').upsert({
+        await supabaseClient.from('documents').upsert([docPayload]);
+
+        const sigValue = (signaturesInput && signaturesInput.length > 0)
+          ? signaturesInput[0].signature_image_url
+          : (signatory as any).signature_value || '';
+
+        const signerPayload: any = {
           id: signatory.id,
           document_id: signatory.document_id,
-          name: signatory.name,
-          email: signatory.email,
-          role: signatory.role,
-          token: signatory.token,
-          status: signatory.status,
-          signed_at: signatory.signed_at
-        });
-
-        if (signaturesInput && signaturesInput.length > 0) {
-          for (const sig of signaturesInput) {
-            await supabaseClient.from('document_signatures').upsert({
-              id: sig.id,
-              document_id: sig.document_id,
-              signatory_id: sig.signatory_id,
-              page_number: sig.page_number,
-              x_position: sig.x_position,
-              y_position: sig.y_position,
-              width: sig.width || 120,
-              height: sig.height || 50,
-              signature_type: sig.signature_type || 'draw',
-              signature_image_url: sig.signature_image_url,
-              created_at: sig.created_at || new Date().toISOString()
-            });
-          }
+          email: signatory.email || '',
+          name: signatory.name || '',
+          role: signatory.role || 'main_signatory',
+          status: signatory.status || 'pending',
+          signed_at: signatory.signed_at || (signatory.status === 'signed' ? new Date().toISOString() : null)
+        };
+        if (sigValue) {
+          signerPayload.signature_value = sigValue;
         }
+
+        await supabaseClient.from('document_signers').upsert([signerPayload]);
       }
     } catch (dbErr) {
       console.warn("Supabase DB persistence error in updateSignatoryStatus:", dbErr);
@@ -1118,7 +1111,7 @@ export class SignifyService {
         certPage.drawText(`${emailSafe} • IP: ${ip}`, { x: 55, y: tableY - 10, size: 7, font: fontRegular, color: rgb(0.4, 0.4, 0.4) });
         
         // Status & Auth Mode
-        certPage.drawText(sig.status === 'signed' ? "✔ SIGNED (OTP Verified)" : "Pending", {
+        certPage.drawText(sig.status === 'signed' ? "[SIGNED] (OTP Verified)" : "Pending", {
           x: 260,
           y: tableY,
           size: 7.5,

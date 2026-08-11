@@ -1493,12 +1493,10 @@ class CraveBizApi {
             document_id: docId,
             email: sig.email || '',
             name: sig.name || '',
-            title: sig.title || '',
-            is_signed: sig.isSigned,
-            signature_value: sig.value || '',
-            signatory_type: sig.signatoryType,
-            type: sig.type || 'draw',
-            date: sig.date || ''
+            role: (sig as any).role || sig.signatoryType || 'main_signatory',
+            status: sig.isSigned ? 'signed' : 'pending',
+            signed_at: sig.isSigned ? (sig.date || new Date().toISOString()) : null,
+            signature_value: sig.value || ''
           });
         } catch (e) {
           console.warn("Could not sync to document_signers alternative table:", e);
@@ -1853,12 +1851,10 @@ class CraveBizApi {
             document_id: id,
             email: sig.email || '',
             name: sig.name || '',
-            title: sig.title || '',
-            is_signed: sig.isSigned,
-            signature_value: sig.value || '',
-            signatory_type: sig.signatoryType,
-            type: sig.type || 'draw',
-            date: sig.date || ''
+            role: (sig as any).role || sig.signatoryType || 'main_signatory',
+            status: sig.isSigned ? 'signed' : 'pending',
+            signed_at: sig.isSigned ? (sig.date || new Date().toISOString()) : null,
+            signature_value: sig.value || ''
           });
         } catch (sigErr) {
           console.warn("Could not sync signature to alternative document_signers table:", sigErr);
@@ -2008,58 +2004,68 @@ class CraveBizApi {
 
       // 1. Try insert into Supabase tables if they exist
       try {
-        const documentData = {
+        const docPayload: any = {
+          id: docId,
+          file_name: fileName || title || 'Document.pdf',
+          document_type: fileType || 'Agreement',
+          status: initialStatus,
+          updated_at: new Date().toISOString()
+        };
+        if (effectiveCompanyId && effectiveCompanyId.length === 36 && effectiveCompanyId.includes('-')) {
+          docPayload.company_id = effectiveCompanyId;
+        }
+        if (effectiveOwnerId && effectiveOwnerId.length === 36 && effectiveOwnerId.includes('-')) {
+          docPayload.creator_id = effectiveOwnerId;
+        }
+        if (originalFileUrl) {
+          docPayload.storage_path = originalFileUrl;
+        }
+
+        const { error: docError } = await supabase.from('documents').upsert([docPayload]);
+        if (docError) {
+          console.warn(`Supabase documents table insert warning: ${docError.message}`);
+        }
+        
+        const signatoriesData: DbDocumentSignatory[] = signatories.map(sig => ({
+          id: sig.id || safeRandomUUID(),
+          document_id: docId,
+          name: sig.name,
+          email: sig.email,
+          role: sig.role,
+          token: sig.id || safeRandomUUID(),
+          status: (sig as any).status || 'pending',
+          signed_at: (sig as any).signed_at || null
+        }));
+        
+        const signersPayload = signatoriesData.map(sig => ({
+          id: sig.id,
+          document_id: docId,
+          email: sig.email || '',
+          name: sig.name || '',
+          role: sig.role || 'main_signatory',
+          status: sig.status || 'pending',
+          signed_at: sig.signed_at || null,
+          signature_value: (sig as any).signature_value || null
+        }));
+
+        const { error: sigError } = await supabase.from('document_signers').upsert(signersPayload);
+        if (sigError) {
+          console.warn(`Supabase document_signers table insert warning: ${sigError.message}`);
+        }
+
+        const createdDoc: DbDocument = {
           id: docId,
           title,
           original_file_url: originalFileUrl,
           signed_file_url: null,
           owner_id: effectiveOwnerId,
           company_id: effectiveCompanyId,
-          status: initialStatus,
+          status: initialStatus as any,
           created_at: new Date().toISOString(),
           file_type: fileType,
           file_name: fileName,
           content_json: contentJson
         };
-        const { error: docError } = await supabase.from('documents').upsert([documentData]);
-        if (docError) {
-          throw new Error(`Supabase documents table insert error: ${docError.message}`);
-        }
-        
-        const signatoriesData = signatories.map(sig => ({
-          id: sig.id || safeRandomUUID(),
-          document_id: docId,
-          name: sig.name,
-          email: sig.email,
-          role: sig.role,
-          token: (sig as any).token || safeRandomUUID().replace(/-/g, ''),
-          status: (sig as any).status || 'pending',
-          signed_at: (sig as any).signed_at || null
-        }));
-        
-        const { error: sigError } = await supabase.from('document_signatories').upsert(signatoriesData);
-        if (sigError) {
-          throw new Error(`Supabase document_signatories table insert error: ${sigError.message}`);
-        }
-
-        // Also proactively populate the alternative document_signers table for absolute compatibility
-        try {
-          const alternativeSigners = signatoriesData.map(sig => ({
-            id: sig.id,
-            document_id: docId,
-            email: sig.email || '',
-            name: sig.name || '',
-            title: sig.role === 'main_signatory' ? 'Main Signatory' : 'Witness',
-            is_signed: false,
-            signature_value: '',
-            signatory_type: sig.role === 'main_signatory' ? 'Main' : 'Witness',
-            type: 'draw',
-            date: ''
-          }));
-          await supabase.from('document_signers').upsert(alternativeSigners);
-        } catch (signerSyncErr) {
-          console.warn("Could not sync to alternative document_signers table:", signerSyncErr);
-        }
         
         // Backup locally to allow guest/public unauthenticated users to access via local server APIs if Supabase is secured by RLS
         try {
@@ -2080,7 +2086,7 @@ class CraveBizApi {
         } catch (err) {
           console.warn("Local server backup synchronisation failed, continuing:", err);
         }
-        return { document: documentData as DbDocument, signatories: signatoriesData as DbDocumentSignatory[] };
+        return { document: createdDoc, signatories: signatoriesData };
       } catch (dbErr) {
         console.warn("Supabase tables not configured or failed, using local server fallback:", dbErr);
       }
@@ -2128,18 +2134,40 @@ class CraveBizApi {
           throw new Error(`Supabase documents fetch failed: ${docError.message}`);
         }
         if (document) {
-          const { data: signatories, error: sigsError } = await supabase.from('document_signatories').select('*').eq('document_id', docId);
+          const { data: dbSigs, error: sigsError } = await supabase.from('document_signers').select('*').eq('document_id', docId);
           if (sigsError) {
-            throw new Error(`Supabase signatories fetch failed: ${sigsError.message}`);
+            throw new Error(`Supabase signers fetch failed: ${sigsError.message}`);
           }
-          const { data: signatures, error: sigsErr2 } = await supabase.from('document_signatures').select('*').eq('document_id', docId);
-          if (sigsErr2) {
-            throw new Error(`Supabase signatures fetch failed: ${sigsErr2.message}`);
-          }
+          
+          const signatories: DbDocumentSignatory[] = (dbSigs || []).map((s: any) => ({
+            id: s.id,
+            document_id: s.document_id,
+            name: s.name || '',
+            email: s.email || '',
+            role: s.role || 'main_signatory',
+            token: s.id,
+            status: s.status || 'pending',
+            signed_at: s.signed_at || null,
+            signature_value: s.signature_value || null
+          }));
+
+          const formattedDoc: DbDocument = {
+            id: document.id,
+            title: document.file_name || document.document_type || "Untitled Document",
+            original_file_url: document.storage_path || "",
+            signed_file_url: document.status === 'completed' ? document.storage_path : null,
+            owner_id: document.creator_id || document.company_id || "",
+            company_id: document.company_id || document.creator_id || companyId || "",
+            status: document.status || "pending",
+            created_at: document.created_at || new Date().toISOString(),
+            file_type: document.document_type || "pdf",
+            file_name: document.file_name || `${document.id}.pdf`
+          };
+
           return {
-            document: document as DbDocument,
-            signatories: (signatories || []) as DbDocumentSignatory[],
-            signatures: (signatures || []) as DbDocumentSignature[]
+            document: formattedDoc,
+            signatories,
+            signatures: []
           };
         }
       } catch (dbErr) {
@@ -2164,29 +2192,54 @@ class CraveBizApi {
     try {
       // 1. Try Supabase
       try {
-        const { data: signatory, error: sigError } = await supabase.from('document_signatories').select('*').eq('token', token).single();
-        if (sigError) {
-          throw new Error(`Supabase signatory fetch by token failed: ${sigError.message}`);
+        let { data: signer, error: sigError } = await supabase.from('document_signers').select('*').eq('id', token).single();
+        if (!signer) {
+          const { data: signersByEmail } = await supabase.from('document_signers').select('*').eq('email', token).limit(1);
+          if (signersByEmail && signersByEmail.length > 0) signer = signersByEmail[0];
         }
-        if (signatory) {
-          const docId = signatory.document_id;
+        if (signer) {
+          const docId = signer.document_id;
           const { data: document, error: docError } = await supabase.from('documents').select('*').eq('id', docId).single();
           if (docError) {
             throw new Error(`Supabase documents fetch failed: ${docError.message}`);
           }
-          const { data: signatories, error: sigsError } = await supabase.from('document_signatories').select('*').eq('document_id', docId);
+          const { data: dbSigs, error: sigsError } = await supabase.from('document_signers').select('*').eq('document_id', docId);
           if (sigsError) {
             throw new Error(`Supabase signatories fetch failed: ${sigsError.message}`);
           }
-          const { data: signatures, error: sigsErr2 } = await supabase.from('document_signatures').select('*').eq('document_id', docId);
-          if (sigsErr2) {
-            throw new Error(`Supabase signatures fetch failed: ${sigsErr2.message}`);
-          }
+
+          const signatories: DbDocumentSignatory[] = (dbSigs || []).map((s: any) => ({
+            id: s.id,
+            document_id: s.document_id,
+            name: s.name || '',
+            email: s.email || '',
+            role: s.role || 'main_signatory',
+            token: s.id,
+            status: s.status || 'pending',
+            signed_at: s.signed_at || null,
+            signature_value: s.signature_value || null
+          }));
+
+          const activeSignatory = signatories.find(s => s.id === signer.id) || signatories[0];
+
+          const formattedDoc: DbDocument = {
+            id: document.id,
+            title: document.file_name || document.document_type || "Untitled Document",
+            original_file_url: document.storage_path || "",
+            signed_file_url: document.status === 'completed' ? document.storage_path : null,
+            owner_id: document.creator_id || document.company_id || "",
+            company_id: document.company_id || document.creator_id || "",
+            status: document.status || "pending",
+            created_at: document.created_at || new Date().toISOString(),
+            file_type: document.document_type || "pdf",
+            file_name: document.file_name || `${document.id}.pdf`
+          };
+
           return {
-            document: document as DbDocument,
-            signatory: signatory as DbDocumentSignatory,
-            signatories: (signatories || []) as DbDocumentSignatory[],
-            signatures: (signatures || []) as DbDocumentSignature[]
+            document: formattedDoc,
+            signatory: activeSignatory,
+            signatories,
+            signatures: []
           };
         }
       } catch (dbErr) {
@@ -2207,51 +2260,41 @@ class CraveBizApi {
 
   async addDocSignifySignature(signature: Omit<DbDocumentSignature, 'id' | 'created_at'>): Promise<DbDocumentSignature> {
     try {
-      // 1. Try Supabase
+      const signatureData = {
+        id: safeRandomUUID(),
+        document_id: signature.document_id,
+        signatory_id: signature.signatory_id,
+        page_number: signature.page_number,
+        x_position: signature.x_position,
+        y_position: signature.y_position,
+        width: signature.width,
+        height: signature.height,
+        signature_type: signature.signature_type,
+        signature_image_url: signature.signature_image_url,
+        created_at: new Date().toISOString()
+      };
+
+      // Backup / update via local server API or Supabase document_signers
       try {
-        const signatureData = {
-          id: safeRandomUUID(),
-          document_id: signature.document_id,
-          signatory_id: signature.signatory_id,
-          page_number: signature.page_number,
-          x_position: signature.x_position,
-          y_position: signature.y_position,
-          width: signature.width,
-          height: signature.height,
-          signature_type: signature.signature_type,
-          signature_image_url: signature.signature_image_url,
-          created_at: new Date().toISOString()
-        };
-        const { error } = await supabase.from('document_signatures').insert([signatureData]);
-        if (error) {
-          throw new Error(`Supabase signature insert failed: ${error.message}`);
+        if (signature.signatory_id && signature.signature_image_url) {
+          await supabase.from('document_signers').update({
+            signature_value: signature.signature_image_url
+          }).eq('id', signature.signatory_id);
         }
-        // Backup locally for public unauthenticated guest access support
-        try {
-          await fetch("/api/signify/signatures", {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify(signatureData)
-          });
-        } catch (err) {
-          console.warn("Local server signature backup sync failed, continuing:", err);
-        }
-        return signatureData as DbDocumentSignature;
-      } catch (dbErr) {
-        console.warn("Supabase signature insert failed, trying local fallback:", dbErr);
+      } catch (e) {
+        console.warn("Direct update on document_signers failed, falling back to server route:", e);
       }
 
-      // 2. Local Express fallback
-      const response = await fetch("/api/signify/signatures", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(signature)
-      });
-      if (!response.ok) {
-        throw new Error("Failed to add signature on local server");
+      try {
+        await fetch("/api/signify/signatures", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(signatureData)
+        });
+      } catch (err) {
+        console.warn("Local server signature backup sync failed, continuing:", err);
       }
-      const data = await response.json();
-      return data.signature;
+      return signatureData as DbDocumentSignature;
     } catch (err: any) {
       console.error("addDocSignifySignature error:", err);
       throw err;
@@ -2278,42 +2321,74 @@ class CraveBizApi {
       }
 
       // 2. Direct Supabase update fallback
-      const { error: sigError } = await supabase.from('document_signatories')
-        .update({ status, signed_at: status === 'signed' ? new Date().toISOString() : null })
+      const sigValue = (signatures && signatures.length > 0) ? signatures[0].signature_image_url : null;
+      const updatePayload: any = {
+        status,
+        signed_at: status === 'signed' ? new Date().toISOString() : null
+      };
+      if (sigValue) {
+        updatePayload.signature_value = sigValue;
+      }
+
+      const { error: sigError } = await supabase.from('document_signers')
+        .update(updatePayload)
         .eq('id', signatoryId);
       if (sigError) {
-        throw new Error(`Supabase update signatory status failed: ${sigError.message}`);
+        console.warn(`Supabase update signatory status warning: ${sigError.message}`);
       }
         
-      const { data: signatory, error: fetchSigError } = await supabase.from('document_signatories').select('*').eq('id', signatoryId).single();
-      if (fetchSigError || !signatory) {
-        throw new Error(`Supabase fetch signatory failed: ${fetchSigError?.message}`);
+      const { data: signer } = await supabase.from('document_signers').select('*').eq('id', signatoryId).single();
+      const docId = signer?.document_id;
+      
+      if (docId) {
+        const { data: signers } = await supabase.from('document_signers').select('*').eq('document_id', docId);
+        const totalToSign = (signers || []).filter((s: any) => s.role !== 'owner').length;
+        const signedCount = (signers || []).filter((s: any) => s.role !== 'owner' && s.status === 'signed').length;
+        
+        let docStatus = 'pending';
+        if (status === 'declined') {
+          docStatus = 'declined';
+        } else if (signedCount === totalToSign) {
+          docStatus = 'completed';
+        } else if (signedCount > 0) {
+          docStatus = 'partially_signed';
+        }
+        
+        await supabase.from('documents').update({ status: docStatus, updated_at: new Date().toISOString() }).eq('id', docId);
+        const { data: docData } = await supabase.from('documents').select('*').eq('id', docId).single();
+
+        const formattedDoc: DbDocument = {
+          id: docData?.id || docId,
+          title: docData?.file_name || docData?.document_type || "Untitled Document",
+          original_file_url: docData?.storage_path || "",
+          signed_file_url: docStatus === 'completed' ? docData?.storage_path : null,
+          owner_id: docData?.creator_id || docData?.company_id || "",
+          company_id: docData?.company_id || docData?.creator_id || "",
+          status: docStatus as any,
+          created_at: docData?.created_at || new Date().toISOString(),
+          file_type: docData?.document_type || "pdf",
+          file_name: docData?.file_name || `${docId}.pdf`
+        };
+
+        const formattedSignatory: DbDocumentSignatory = {
+          id: signer?.id || signatoryId,
+          document_id: docId,
+          name: signer?.name || '',
+          email: signer?.email || '',
+          role: signer?.role || 'main_signatory',
+          token: signer?.id || signatoryId,
+          status: status as any,
+          signed_at: updatePayload.signed_at,
+          signature_value: signer?.signature_value || sigValue
+        };
+
+        return {
+          document: formattedDoc,
+          signatory: formattedSignatory
+        };
       }
-      const docId = signatory.document_id;
-      
-      const { data: signatories, error: fetchSigsError } = await supabase.from('document_signatories').select('*').eq('document_id', docId);
-      if (fetchSigsError) {
-        throw new Error(`Supabase fetch signatories failed: ${fetchSigsError.message}`);
-      }
-      const totalToSign = (signatories || []).filter((s: any) => s.role !== 'owner').length;
-      const signedCount = (signatories || []).filter((s: any) => s.role !== 'owner' && s.status === 'signed').length;
-      
-      let docStatus = 'pending';
-      if (status === 'declined') {
-        docStatus = 'declined';
-      } else if (signedCount === totalToSign) {
-        docStatus = 'completed';
-      } else if (signedCount > 0) {
-        docStatus = 'partially_signed';
-      }
-      
-      await supabase.from('documents').update({ status: docStatus }).eq('id', docId);
-      const { data: document } = await supabase.from('documents').select('*').eq('id', docId).single();
-      
-      return {
-        document: (document || {}) as DbDocument,
-        signatory: (signatory || {}) as DbDocumentSignatory
-      };
+
+      throw new Error("Could not update signatory status");
     } catch (err: any) {
       console.error("updateDocSignifySignatoryStatus error:", err);
       throw err;
@@ -2372,41 +2447,38 @@ class CraveBizApi {
     // 1. Direct Supabase fetch
     try {
       let query = supabase.from('documents').select('*');
-      const filterOrs: string[] = [];
-      if (companyId) {
-        filterOrs.push(`company_id.eq.${companyId}`, `owner_id.eq.${companyId}`);
-      }
-      if (userId && userId !== companyId) {
-        filterOrs.push(`company_id.eq.${userId}`, `owner_id.eq.${userId}`);
-      }
-      if (filterOrs.length === 0) {
-        filterOrs.push('owner_id.eq.admin', 'owner_id.is.null');
-      }
-
-      query = query.or(filterOrs.join(','));
-
       const { data: dbDocs, error: docErr } = await query;
       if (!docErr && dbDocs && Array.isArray(dbDocs)) {
         for (const doc of dbDocs) {
-          const { data: dbSigs } = await supabase.from('document_signatories').select('*').eq('document_id', doc.id);
-          const { data: dbSignatures } = await supabase.from('document_signatures').select('*').eq('document_id', doc.id);
+          const { data: dbSigs } = await supabase.from('document_signers').select('*').eq('document_id', doc.id);
+
+          const signatories: DbDocumentSignatory[] = (dbSigs || []).map((s: any) => ({
+            id: s.id,
+            document_id: s.document_id,
+            name: s.name || '',
+            email: s.email || '',
+            role: s.role || 'main_signatory',
+            token: s.id,
+            status: s.status || 'pending',
+            signed_at: s.signed_at || null,
+            signature_value: s.signature_value || null
+          }));
 
           dbResults.push({
             document: {
               id: doc.id,
-              title: doc.title || doc.document_title || doc.document_type || "Untitled Document",
-              original_file_url: doc.original_file_url || doc.originalFileUrl || "",
-              signed_file_url: doc.signed_file_url || doc.signedFileUrl || null,
-              owner_id: doc.owner_id || doc.company_id || userId || "",
-              company_id: doc.company_id || doc.owner_id || companyId || "",
+              title: doc.file_name || doc.document_type || "Untitled Document",
+              original_file_url: doc.storage_path || "",
+              signed_file_url: doc.status === 'completed' ? doc.storage_path : null,
+              owner_id: doc.creator_id || doc.company_id || userId || "",
+              company_id: doc.company_id || doc.creator_id || companyId || "",
               status: doc.status || "pending",
               created_at: doc.created_at || new Date().toISOString(),
-              file_type: doc.file_type || doc.fileType || "pdf",
-              file_name: doc.file_name || doc.fileName || `${doc.title}.pdf`,
-              content_json: doc.content_json || doc.content || null
+              file_type: doc.document_type || "pdf",
+              file_name: doc.file_name || `${doc.id}.pdf`
             } as DbDocument,
-            signatories: (dbSigs || []) as DbDocumentSignatory[],
-            signaturesCount: (dbSignatures || []).length
+            signatories,
+            signaturesCount: signatories.filter(s => s.status === 'signed').length
           });
         }
       }
