@@ -385,7 +385,7 @@ export default function DocSignify({ company, user, prefillProject, prefillClien
       const response = await api.createDocSignifyDocument(
         docId,
         documentFile?.documentType || "Secured Agreement",
-        fileUrl || "/uploads/placeholder_document.pdf",
+        documentFile?.originalFileUrl || (fileUrl?.startsWith('data:') ? '' : fileUrl) || "/uploads/placeholder_document.pdf",
         user?.id || 'admin',
         resolvedFileType,
         resolvedFileName,
@@ -482,6 +482,9 @@ export default function DocSignify({ company, user, prefillProject, prefillClien
 
     if (!matchesSearch) return false;
     if (dashboardFilter === 'all') return true;
+    if (dashboardFilter === 'pending') {
+      return ['pending', 'partially_signed', 'awaiting_signer', 'awaiting_owner', 'viewed'].includes(doc.status);
+    }
     return doc.status === dashboardFilter;
   });
 

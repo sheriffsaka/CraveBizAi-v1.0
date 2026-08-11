@@ -85,6 +85,33 @@ export class SignifyService {
   }
 
   /**
+   * Upload a buffer to Supabase Storage bucket 'documents' if available.
+   */
+  static async uploadBufferToSupabase(fileName: string, buffer: Buffer, fileType?: string): Promise<string | null> {
+    try {
+      if (!supabaseClient) return null;
+      const safeName = fileName.replace(/[^a-zA-Z0-9.\-_]/g, "_");
+      const storagePath = `original_docs/${crypto.randomUUID()}_${safeName}`;
+      const mime = fileType?.includes('pdf') ? 'application/pdf' : (fileType?.includes('image') ? `image/${fileType}` : 'application/octet-stream');
+
+      const { data, error } = await supabaseClient.storage.from('documents').upload(storagePath, buffer, {
+        contentType: mime,
+        upsert: true
+      });
+
+      if (!error && data) {
+        const { data: urlData } = supabaseClient.storage.from('documents').getPublicUrl(storagePath);
+        return urlData?.publicUrl || null;
+      } else if (error) {
+        console.warn("Supabase Storage upload warning:", error.message);
+      }
+    } catch (err) {
+      console.warn("uploadBufferToSupabase error:", err);
+    }
+    return null;
+  }
+
+  /**
    * Save an uploaded file locally and return its accessible URL.
    */
   static saveUploadedFile(fileName: string, base64Data: string, fileType: string): { fileUrl: string, filePath: string } {
@@ -100,6 +127,9 @@ export class SignifyService {
     
     fs.writeFileSync(filePath, buffer);
     
+    // Trigger async upload to Supabase Storage in background
+    this.uploadBufferToSupabase(fileName, buffer, fileType).catch(e => console.warn("Background upload error:", e));
+
     // Use standard local URL path
     const fileUrl = `/uploads/${storedName}`;
     return { fileUrl, filePath };
@@ -223,17 +253,27 @@ export class SignifyService {
   static async getAllDocuments(companyId?: string, ownerId?: string): Promise<{ document: DbDocument; signatories: DbDocumentSignatory[]; signaturesCount: number }[]> {
     const store = loadStore();
 
+    let dbResults: { document: DbDocument; signatories: DbDocumentSignatory[]; signaturesCount: number }[] = [];
+
     // 1. Primary Source of Truth: Supabase Database
     try {
       if (supabaseClient) {
         let query = supabaseClient.from('documents').select('*');
-        if (companyId || ownerId) {
-          const filterId = companyId || ownerId;
-          query = query.or(`company_id.eq.${filterId},owner_id.eq.${filterId}`);
+        const filterOrs: string[] = [];
+        if (companyId) {
+          filterOrs.push(`company_id.eq.${companyId}`, `owner_id.eq.${companyId}`);
         }
+        if (ownerId && ownerId !== companyId) {
+          filterOrs.push(`company_id.eq.${ownerId}`, `owner_id.eq.${ownerId}`);
+        }
+        if (filterOrs.length === 0) {
+          filterOrs.push('owner_id.eq.admin', 'owner_id.is.null');
+        }
+
+        query = query.or(filterOrs.join(','));
+
         const { data: dbDocs, error: docErr } = await query;
-        if (!docErr && dbDocs && Array.isArray(dbDocs) && dbDocs.length > 0) {
-          const results = [];
+        if (!docErr && dbDocs && Array.isArray(dbDocs)) {
           for (const doc of dbDocs) {
             const { data: dbSigs } = await supabaseClient.from('document_signatories').select('*').eq('document_id', doc.id);
             const { data: dbSignatures } = await supabaseClient.from('document_signatures').select('*').eq('document_id', doc.id);
@@ -261,7 +301,7 @@ export class SignifyService {
               store.signatories[s.id] = s;
             }
 
-            results.push({
+            dbResults.push({
               document: formattedDoc,
               signatories,
               signaturesCount: signatures.length
@@ -269,25 +309,43 @@ export class SignifyService {
           }
 
           saveStore(store);
-          return results.sort((a, b) => new Date(b.document.created_at).getTime() - new Date(a.document.created_at).getTime());
         }
       }
     } catch (supaErr) {
       console.warn("Supabase documents query in getAllDocuments failed, falling back to local store:", supaErr);
     }
 
-    // 2. Local memory store fallback
+    // 2. Local memory store fallback and merge
     const docs = Object.values(store.documents);
-    let filteredDocs = docs;
-    if (companyId || ownerId) {
-      const filterId = companyId || ownerId;
-      filteredDocs = docs.filter(d => d.owner_id === filterId || d.company_id === filterId || !d.owner_id);
+    const map = new Map<string, { document: DbDocument; signatories: DbDocumentSignatory[]; signaturesCount: number }>();
+
+    for (const doc of docs) {
+      if (companyId || ownerId) {
+        const matchesCompany = companyId && (doc.company_id === companyId || doc.owner_id === companyId);
+        const matchesOwner = ownerId && (doc.owner_id === ownerId || doc.company_id === ownerId);
+        const matchesAdmin = doc.owner_id === 'admin' || !doc.owner_id;
+        if (!matchesCompany && !matchesOwner && !matchesAdmin) {
+          continue;
+        }
+      }
+
+      const sigs = Object.values(store.signatories).filter(s => s.document_id === doc.id);
+      const sigsCount = store.signatures.filter(s => s.document_id === doc.id).length;
+
+      map.set(doc.id, {
+        document: doc,
+        signatories: sigs,
+        signaturesCount: sigsCount
+      });
     }
-    return filteredDocs.map(document => {
-      const signatories = Object.values(store.signatories).filter(s => s.document_id === document.id);
-      const signaturesCount = store.signatures.filter(s => s.document_id === document.id).length;
-      return { document, signatories, signaturesCount };
-    }).sort((a, b) => new Date(b.document.created_at).getTime() - new Date(a.document.created_at).getTime());
+
+    // Overwrite map with dbResults (Supabase DB taking precedence)
+    for (const dbItem of dbResults) {
+      map.set(dbItem.document.id, dbItem);
+    }
+
+    const combined = Array.from(map.values());
+    return combined.sort((a, b) => new Date(b.document.created_at).getTime() - new Date(a.document.created_at).getTime());
   }
 
   /**
@@ -498,9 +556,8 @@ export class SignifyService {
     if (status === 'declined') {
       document.status = 'declined';
     } else if (signedCount === totalToSign) {
-      document.status = 'completed';
-      
-      // Perform PDF merge immediately!
+      // Step 1: All required signers completed.
+      // Step 2 & 3: Generate final signed PDF document with embedded signatures.
       try {
         const mergedBase64 = await this.mergeSignatures(document.id, docSignatories, store.signatures);
         const fileNameParts = document.file_name?.split('.') || ['signed', 'pdf'];
@@ -511,7 +568,7 @@ export class SignifyService {
         const { fileUrl } = this.saveUploadedFile(signedFileName, mergedBase64, "application/pdf");
         document.signed_file_url = fileUrl;
 
-        // Upload finalized document PDF to Supabase Storage
+        // Step 4 & 5: Upload final signed PDF to Supabase Storage & verify storage path
         try {
           if (supabaseClient) {
             const pdfBuffer = Buffer.from(mergedBase64, "base64");
@@ -523,6 +580,7 @@ export class SignifyService {
             if (!uploadErr && uploadData) {
               const { data: urlData } = supabaseClient.storage.from('documents').getPublicUrl(storagePath);
               if (urlData?.publicUrl) {
+                // Step 6: Save final storage path in document
                 document.signed_file_url = urlData.publicUrl;
               }
             } else if (uploadErr) {
@@ -530,10 +588,15 @@ export class SignifyService {
             }
           }
         } catch (storageErr) {
-          console.warn("Supabase Storage upload failed, keeping local URL:", storageErr);
+          console.warn("Supabase Storage upload failed, keeping local file URL:", storageErr);
         }
+
+        // Step 7: Mark document status as completed ONLY after PDF generation/upload
+        document.status = 'completed';
       } catch (err) {
-        console.error("PDF signature merging failed:", err);
+        console.error("PDF signature merging failed during document completion:", err);
+        // Do not falsely report as completed if PDF generation failed
+        document.status = 'partially_signed';
       }
     } else {
       const ownerSig = docSignatories.find(s => s.role === 'owner');

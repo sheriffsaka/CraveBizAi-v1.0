@@ -1914,13 +1914,21 @@ class CraveBizApi {
     try {
       // 1. Try uploading to Supabase Storage first if configured
       try {
-        // Native, high-performance base64 to Blob translation to prevent UI thread freezing on large files
-        const res = await fetch(base64Data);
-        const blob = await res.blob();
-        const filePath = `${safeRandomUUID()}_${fileName}`;
+        const cleanBase64 = base64Data.replace(/^data:[^;]+;base64,/, "");
+        const byteCharacters = atob(cleanBase64);
+        const byteNumbers = new Array(byteCharacters.length);
+        for (let i = 0; i < byteCharacters.length; i++) {
+          byteNumbers[i] = byteCharacters.charCodeAt(i);
+        }
+        const byteArray = new Uint8Array(byteNumbers);
+        const mime = fileType.includes('pdf') ? 'application/pdf' : (fileType.includes('image') ? `image/${fileType}` : 'application/octet-stream');
+        const blob = new Blob([byteArray], { type: mime });
+        
+        const safeName = fileName.replace(/[^a-zA-Z0-9.\-_]/g, "_");
+        const filePath = `original_docs/${safeRandomUUID()}_${safeName}`;
         
         const { data, error } = await supabase.storage.from('documents').upload(filePath, blob, {
-          contentType: fileType,
+          contentType: mime,
           upsert: true
         });
         
@@ -1929,6 +1937,8 @@ class CraveBizApi {
           if (urlData?.publicUrl) {
             return urlData.publicUrl;
           }
+        } else if (error) {
+          console.warn("Supabase Storage bucket upload warning:", error.message);
         }
       } catch (storageErr) {
         console.warn("Supabase Storage upload failed, falling back to local server:", storageErr);
@@ -1988,19 +1998,30 @@ class CraveBizApi {
     companyId?: string
   ): Promise<{ document: DbDocument; signatories: DbDocumentSignatory[] }> {
     try {
+      // Resolve effective owner and company ID
+      const activeUser = await safeGetUser();
+      const effectiveOwnerId = (ownerId && ownerId !== 'admin' && ownerId !== 'owner_id') ? ownerId : (activeUser?.id || ownerId || 'admin');
+      const effectiveCompanyId = companyId || effectiveOwnerId;
+
+      const signingOrder = contentJson?.signing_order || contentJson?.signingOrder || 'owner_first';
+      const initialStatus = signingOrder === 'owner_first' ? 'awaiting_owner' : 'pending';
+
       // 1. Try insert into Supabase tables if they exist
       try {
-         const documentData = {
+        const documentData = {
           id: docId,
           title,
           original_file_url: originalFileUrl,
           signed_file_url: null,
-          owner_id: ownerId,
-          status: 'pending',
+          owner_id: effectiveOwnerId,
+          company_id: effectiveCompanyId,
+          status: initialStatus,
           created_at: new Date().toISOString(),
+          file_type: fileType,
+          file_name: fileName,
           content_json: contentJson
         };
-        const { error: docError } = await supabase.from('documents').insert([documentData]);
+        const { error: docError } = await supabase.from('documents').upsert([documentData]);
         if (docError) {
           throw new Error(`Supabase documents table insert error: ${docError.message}`);
         }
@@ -2011,12 +2032,12 @@ class CraveBizApi {
           name: sig.name,
           email: sig.email,
           role: sig.role,
-          token: safeRandomUUID().replace(/-/g, ''),
-          status: 'pending',
-          signed_at: null
+          token: (sig as any).token || safeRandomUUID().replace(/-/g, ''),
+          status: (sig as any).status || 'pending',
+          signed_at: (sig as any).signed_at || null
         }));
         
-        const { error: sigError } = await supabase.from('document_signatories').insert(signatoriesData);
+        const { error: sigError } = await supabase.from('document_signatories').upsert(signatoriesData);
         if (sigError) {
           throw new Error(`Supabase document_signatories table insert error: ${sigError.message}`);
         }
@@ -2035,7 +2056,7 @@ class CraveBizApi {
             type: 'draw',
             date: ''
           }));
-          await supabase.from('document_signers').insert(alternativeSigners);
+          await supabase.from('document_signers').upsert(alternativeSigners);
         } catch (signerSyncErr) {
           console.warn("Could not sync to alternative document_signers table:", signerSyncErr);
         }
@@ -2049,7 +2070,7 @@ class CraveBizApi {
               id: docId, 
               title, 
               originalFileUrl, 
-              ownerId, 
+              ownerId: effectiveOwnerId, 
               fileType, 
               fileName, 
               signatories: signatoriesData, 
@@ -2068,7 +2089,7 @@ class CraveBizApi {
       const response = await fetch("/api/signify/documents", {
         method: "POST",
         headers: await this.getAuthHeaders(companyId),
-        body: JSON.stringify({ id: docId, title, originalFileUrl, ownerId, fileType, fileName, signatories, contentJson })
+        body: JSON.stringify({ id: docId, title, originalFileUrl, ownerId: effectiveOwnerId, fileType, fileName, signatories, contentJson })
       });
       if (!response.ok) {
         let serverErr = `Failed to register document on local server (HTTP ${response.status})`;
@@ -2343,26 +2364,40 @@ class CraveBizApi {
   }
 
   async getAllDocSignifyDocuments(companyId?: string): Promise<{ document: DbDocument; signatories: DbDocumentSignatory[]; signaturesCount: number }[]> {
-    // 1. Direct Supabase fetch first
+    const activeUser = await safeGetUser();
+    const userId = activeUser?.id;
+
+    let dbResults: { document: DbDocument; signatories: DbDocumentSignatory[]; signaturesCount: number }[] = [];
+
+    // 1. Direct Supabase fetch
     try {
       let query = supabase.from('documents').select('*');
+      const filterOrs: string[] = [];
       if (companyId) {
-        query = query.or(`company_id.eq.${companyId},owner_id.eq.${companyId}`);
+        filterOrs.push(`company_id.eq.${companyId}`, `owner_id.eq.${companyId}`);
       }
+      if (userId && userId !== companyId) {
+        filterOrs.push(`company_id.eq.${userId}`, `owner_id.eq.${userId}`);
+      }
+      if (filterOrs.length === 0) {
+        filterOrs.push('owner_id.eq.admin', 'owner_id.is.null');
+      }
+
+      query = query.or(filterOrs.join(','));
+
       const { data: dbDocs, error: docErr } = await query;
-      if (!docErr && dbDocs && Array.isArray(dbDocs) && dbDocs.length > 0) {
-        const results = [];
+      if (!docErr && dbDocs && Array.isArray(dbDocs)) {
         for (const doc of dbDocs) {
           const { data: dbSigs } = await supabase.from('document_signatories').select('*').eq('document_id', doc.id);
           const { data: dbSignatures } = await supabase.from('document_signatures').select('*').eq('document_id', doc.id);
 
-          results.push({
+          dbResults.push({
             document: {
               id: doc.id,
               title: doc.title || doc.document_title || doc.document_type || "Untitled Document",
               original_file_url: doc.original_file_url || doc.originalFileUrl || "",
               signed_file_url: doc.signed_file_url || doc.signedFileUrl || null,
-              owner_id: doc.owner_id || doc.company_id || companyId || "",
+              owner_id: doc.owner_id || doc.company_id || userId || "",
               company_id: doc.company_id || doc.owner_id || companyId || "",
               status: doc.status || "pending",
               created_at: doc.created_at || new Date().toISOString(),
@@ -2374,26 +2409,40 @@ class CraveBizApi {
             signaturesCount: (dbSignatures || []).length
           });
         }
-        return results.sort((a, b) => new Date(b.document.created_at).getTime() - new Date(a.document.created_at).getTime());
       }
     } catch (dbFetchErr) {
-      console.warn("Direct Supabase fetch in getAllDocSignifyDocuments failed, trying server API:", dbFetchErr);
+      console.warn("Direct Supabase fetch in getAllDocSignifyDocuments warning:", dbFetchErr);
     }
 
-    // 2. Server API fallback
+    // 2. Server API query
+    let serverResults: { document: DbDocument; signatories: DbDocumentSignatory[]; signaturesCount: number }[] = [];
     try {
       const response = await fetch('/api/signify/documents', {
         headers: await this.getAuthHeaders(companyId)
       });
-      if (!response.ok) {
-        return [];
+      if (response.ok) {
+        const data = await response.json();
+        serverResults = data.documents || [];
       }
-      const data = await response.json();
-      return data.documents || [];
     } catch (err) {
-      console.error("getAllDocSignifyDocuments error:", err);
-      return [];
+      console.warn("getAllDocSignifyDocuments server fetch warning:", err);
     }
+
+    // 3. Merge server and Supabase DB results (Supabase taking precedence)
+    const map = new Map<string, { document: DbDocument; signatories: DbDocumentSignatory[]; signaturesCount: number }>();
+    for (const item of serverResults) {
+      if (item?.document?.id) {
+        map.set(item.document.id, item);
+      }
+    }
+    for (const item of dbResults) {
+      if (item?.document?.id) {
+        map.set(item.document.id, item);
+      }
+    }
+
+    const combined = Array.from(map.values());
+    return combined.sort((a, b) => new Date(b.document.created_at).getTime() - new Date(a.document.created_at).getTime());
   }
 
   async deleteDocSignifyDocument(docId: string, companyId?: string): Promise<boolean> {
