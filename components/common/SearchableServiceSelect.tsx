@@ -35,8 +35,8 @@ export const SearchableServiceSelect: React.FC<SearchableServiceSelectProps> = (
 
   // Find currently selected service object
   const selectedService = useMemo(() => {
-    if (!selectedServiceId) return null;
-    return services.find(s => s.id === selectedServiceId) || null;
+    if (!selectedServiceId || !Array.isArray(services)) return null;
+    return services.find(s => s && s.id === selectedServiceId) || null;
   }, [services, selectedServiceId]);
 
   // Click outside listener to close dropdown
@@ -56,26 +56,27 @@ export const SearchableServiceSelect: React.FC<SearchableServiceSelectProps> = (
 
   // Filter and score services based on search query
   const filteredServices = useMemo(() => {
+    const safeServices = Array.isArray(services) ? services.filter(Boolean) : [];
     if (!searchTerm.trim()) {
-      return services.slice(0, 50); // Fast top results when query is empty
+      return safeServices.slice(0, 50); // Fast top results when query is empty
     }
 
     const term = searchTerm.toLowerCase().trim();
 
-    const matches = services.filter(s => {
-      const nameMatch = s.name.toLowerCase().includes(term);
-      const pkgMatch = s.packageName ? s.packageName.toLowerCase().includes(term) : false;
-      const categoryMatch = s.category ? s.category.toLowerCase().includes(term) : false;
-      const descMatch = s.description ? s.description.toLowerCase().includes(term) : false;
-      const priceMatch = s.price ? s.price.toString().includes(term) || `₦${s.price.toLocaleString()}`.includes(term) : false;
+    const matches = safeServices.filter(s => {
+      const nameMatch = s.name ? String(s.name).toLowerCase().includes(term) : false;
+      const pkgMatch = s.packageName ? String(s.packageName).toLowerCase().includes(term) : false;
+      const categoryMatch = s.category ? String(s.category).toLowerCase().includes(term) : false;
+      const descMatch = s.description ? String(s.description).toLowerCase().includes(term) : false;
+      const priceMatch = (s.price !== undefined && s.price !== null) ? String(s.price).includes(term) || `₦${Number(s.price).toLocaleString()}`.includes(term) : false;
 
       return nameMatch || pkgMatch || categoryMatch || descMatch || priceMatch;
     });
 
     // Relevance sorting: Exact match -> Starts with match -> Includes match
     matches.sort((a, b) => {
-      const aName = a.name.toLowerCase();
-      const bName = b.name.toLowerCase();
+      const aName = (a.name || '').toLowerCase();
+      const bName = (b.name || '').toLowerCase();
 
       if (aName === term && bName !== term) return -1;
       if (bName === term && aName !== term) return 1;
@@ -232,12 +233,12 @@ export const SearchableServiceSelect: React.FC<SearchableServiceSelectProps> = (
         >
           <div className="flex items-start gap-2.5 min-w-0 pr-2">
             <div className="w-8 h-8 rounded-md bg-primary-100 text-primary-700 flex items-center justify-center shrink-0 font-extrabold text-xs mt-0.5">
-              {selectedService.name.charAt(0).toUpperCase()}
+              {(selectedService.name || 'S').charAt(0).toUpperCase()}
             </div>
             <div className="min-w-0 text-left space-y-1">
               <div className="flex items-center gap-1.5 flex-wrap">
                 <span className="font-extrabold text-gray-900 text-sm leading-snug break-words whitespace-normal">
-                  {selectedService.name}
+                  {selectedService.name || 'Unnamed Service'}
                 </span>
                 {selectedService.packageName && (
                   <span className="inline-flex items-center gap-1 text-[10px] font-bold px-2 py-0.5 rounded bg-indigo-50 text-indigo-700 border border-indigo-100 shrink-0">
@@ -253,7 +254,7 @@ export const SearchableServiceSelect: React.FC<SearchableServiceSelectProps> = (
                 )}
               </div>
               <p className="text-xs text-gray-500 font-medium break-words leading-relaxed">
-                ₦{selectedService.price.toLocaleString()} {selectedService.description ? `• ${selectedService.description}` : ''}
+                ₦{(selectedService.price || 0).toLocaleString()} {selectedService.description ? `• ${selectedService.description}` : ''}
               </p>
             </div>
           </div>
@@ -347,7 +348,7 @@ export const SearchableServiceSelect: React.FC<SearchableServiceSelectProps> = (
                   <div className="flex-1 min-w-0 space-y-1">
                     <div className="flex items-start gap-1.5 flex-wrap">
                       <span className="font-extrabold text-sm text-gray-900 leading-snug break-words whitespace-normal">
-                        {renderHighlightedText(service.name, searchTerm)}
+                        {renderHighlightedText(service.name || 'Unnamed Service', searchTerm)}
                       </span>
 
                       {service.packageName && (
@@ -374,7 +375,7 @@ export const SearchableServiceSelect: React.FC<SearchableServiceSelectProps> = (
 
                   <div className="text-left sm:text-right shrink-0 flex items-center sm:flex-col sm:items-end gap-1.5 self-start sm:self-start pt-0.5">
                     <span className="font-black text-xs sm:text-sm text-primary-700 bg-primary-50 px-2.5 py-1 rounded-md border border-primary-100/50">
-                      ₦{service.price.toLocaleString()}
+                      ₦{(service.price || 0).toLocaleString()}
                     </span>
                     {isSelected && (
                       <span className="inline-flex items-center gap-1 text-[10px] font-extrabold text-emerald-600">

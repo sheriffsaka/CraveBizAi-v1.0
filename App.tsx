@@ -1427,13 +1427,19 @@ export default function App() {
         />;
       }
       case 'create-invoice': {
-          if (!activeCompany) return <div className="text-center py-20 italic">Awaiting synchronization...</div>;
+          const targetCompany = activeCompany || displayCompanies[0] || {
+              id: activeTenantId || 'default-tenant',
+              name: 'My Business Workspace',
+              email: currentUser?.email || '',
+              phone: '',
+              address: ''
+          };
           
           const sub = getSubscriptionInfo(activeTenantId || '');
           const currentCount = invoices.length;
-          const maxAllowed = sub.maxInvoices;
+          const maxAllowed = sub?.maxInvoices ?? 999;
           if (currentCount >= maxAllowed) {
-              const msg = `You have reached the monthly invoice limit of your ${sub.tier} Plan (${currentCount}/${maxAllowed} invoices generated). Please upgrade your subscription tier in Workspace Settings.`;
+              const msg = `You have reached the monthly invoice limit of your ${sub?.tier || 'Current'} Plan (${currentCount}/${maxAllowed} invoices generated). Please upgrade your subscription tier in Workspace Settings.`;
               window.dispatchEvent(new CustomEvent('cravebiz_subscription_error', { detail: { message: msg } }));
               return (
                   <div className="flex flex-col items-center justify-center p-12 text-center bg-white rounded-xl border border-gray-100 shadow-2xl max-w-lg mx-auto my-12 animate-in fade-in">
@@ -1447,11 +1453,11 @@ export default function App() {
               );
           }
 
-          return <CreateInvoice clients={clients} services={services} company={activeCompany} initialDraft={draftRenewal} onNavigate={(page) => navigateTo(page as Page)} onAddInvoice={async (i) => { 
+          return <CreateInvoice clients={clients} services={services} company={targetCompany} initialDraft={draftRenewal} onNavigate={(page) => navigateTo(page as Page)} onAddInvoice={async (i) => { 
               try { 
                   setIsDataSyncing(true); 
                   // First check backend quota
-                  const check = await api.getInvoiceUsage(activeTenantId, sub.tier);
+                  const check = await api.getInvoiceUsage(activeTenantId, sub?.tier || 'Free');
                   if (check && check.remainingCount <= 0) {
                       throw new Error(`Invoice creation quota exhausted (${check.createdCount}/${check.totalQuota} generated). Please upgrade your plan.`);
                   }

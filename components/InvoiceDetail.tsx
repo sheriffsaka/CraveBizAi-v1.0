@@ -29,9 +29,12 @@ const InvoiceDetail: React.FC<InvoiceDetailProps> = ({ invoice, client, services
     const [isPaymentModalOpen, setIsPaymentModalOpen] = useState(false);
 
     const getServiceName = (serviceId: string) => services.find(s => s.id === serviceId)?.name || 'Service Item';
-    const subtotal = invoice.items.reduce((sum, item) => sum + item.price * item.quantity, 0);
-    const discount = invoice.discount || 0;
-    const tax = (subtotal - discount) * 0.075;
+    const grossSubtotal = (invoice.items || []).reduce((sum, item) => sum + ((item.price || 0) * (item.quantity || 0)), 0);
+    const lineItemDiscounts = (invoice.items || []).reduce((sum, item) => sum + (item.discount || 0), 0);
+    const overallDiscount = invoice.discount || 0;
+    const totalDiscount = lineItemDiscounts + overallDiscount;
+    const netSubtotal = Math.max(0, grossSubtotal - totalDiscount);
+    const tax = Math.round(netSubtotal * 0.075 * 100) / 100;
     
     // Payment breakdown logic
     const isPaid = invoice.status === InvoiceStatus.Paid || (invoice.amountPaid || 0) >= invoice.total - 0.001;
@@ -249,7 +252,12 @@ const InvoiceDetail: React.FC<InvoiceDetailProps> = ({ invoice, client, services
                   </td>
                   <td className="py-5 text-center font-bold text-gray-700">{item.quantity}</td>
                   <td className="py-5 text-right font-medium text-gray-600">₦{item.price.toLocaleString()}</td>
-                  <td className="py-5 text-right font-black text-gray-900">₦{(item.price * item.quantity).toLocaleString()}</td>
+                  <td className="py-5 text-right font-black text-gray-900">
+                    ₦{((item.price * item.quantity) - (item.discount || 0)).toLocaleString()}
+                    {item.discount && item.discount > 0 ? (
+                      <span className="block text-[10px] text-red-500 font-bold">(Disc: -₦{item.discount.toLocaleString()})</span>
+                    ) : null}
+                  </td>
                 </tr>
               ))}
             </tbody>
@@ -257,9 +265,9 @@ const InvoiceDetail: React.FC<InvoiceDetailProps> = ({ invoice, client, services
 
         <div className="flex justify-end mb-10">
           <div className="w-80 space-y-3 p-6 bg-gray-50 rounded-2xl border border-gray-100 shadow-sm">
-            <div className="flex justify-between text-gray-500 font-bold text-xs uppercase tracking-widest"><span>Gross Value</span><span className="text-gray-900">₦{subtotal.toLocaleString()}</span></div>
-            {discount > 0 && (
-                <div className="flex justify-between text-red-500 font-bold text-xs uppercase tracking-widest"><span>Discount</span><span>- ₦{discount.toLocaleString()}</span></div>
+            <div className="flex justify-between text-gray-500 font-bold text-xs uppercase tracking-widest"><span>Gross Value</span><span className="text-gray-900">₦{grossSubtotal.toLocaleString()}</span></div>
+            {totalDiscount > 0 && (
+                <div className="flex justify-between text-red-500 font-bold text-xs uppercase tracking-widest"><span>Discount</span><span>- ₦{totalDiscount.toLocaleString()}</span></div>
             )}
             <div className="flex justify-between text-gray-500 font-bold text-xs uppercase tracking-widest"><span>VAT (7.5%)</span><span className="text-gray-900">₦{tax.toLocaleString()}</span></div>
             

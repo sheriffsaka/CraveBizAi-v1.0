@@ -73,13 +73,13 @@ const InvoiceForm: React.FC<InvoiceFormProps> = ({ initialInvoice, clients, serv
           if (draft.projectId) setProjectId(draft.projectId);
           if (draft.issueDate) setIssueDate(draft.issueDate);
           if (draft.dueDate) setDueDate(draft.dueDate);
-          if (draft.items) setItems(draft.items);
+          if (Array.isArray(draft.items) && draft.items.length > 0) setItems(draft.items);
           if (draft.selectedBankAccountId) setSelectedBankAccountId(draft.selectedBankAccountId);
           if (draft.manualBankName) setManualBankName(draft.manualBankName);
           if (draft.manualAccountName) setManualAccountName(draft.manualAccountName);
           if (draft.manualAccountNumber) setManualAccountNumber(draft.manualAccountNumber);
           if (draft.paymentTerms) setPaymentTerms(draft.paymentTerms);
-          if (draft.discount) setDiscount(draft.discount);
+          if (draft.discount !== undefined && draft.discount !== null) setDiscount(Number(draft.discount) || 0);
           if (draft.frequency) setFrequency(draft.frequency);
           if (draft.nextRecurrenceDate) setNextRecurrenceDate(draft.nextRecurrenceDate);
         } catch (e) {
@@ -194,9 +194,20 @@ const InvoiceForm: React.FC<InvoiceFormProps> = ({ initialInvoice, clients, serv
       onCancel();
   };
 
-  const subtotal = useMemo(() => items.reduce((s, i) => s + (i.quantity * i.price) - (i.discount || 0), 0), [items]);
-  const tax = (subtotal - discount) * 0.075;
-  const total = (subtotal - discount) + tax;
+  const subtotal = useMemo(() => {
+    return (items || []).reduce((s, i) => {
+      if (!i) return s;
+      const q = Math.max(0, Number(i.quantity) || 0);
+      const p = Math.max(0, Number(i.price) || 0);
+      const d = Math.max(0, Number(i.discount) || 0);
+      return s + Math.max(0, (q * p) - d);
+    }, 0);
+  }, [items]);
+
+  const overallDiscount = Math.max(0, Number(discount) || 0);
+  const netAmount = Math.max(0, subtotal - overallDiscount);
+  const tax = Math.round(netAmount * 0.075 * 100) / 100;
+  const total = netAmount + tax;
 
   const getPreviewData = (status: InvoiceStatus): Invoice => ({
     id: initialInvoice?.id || 'preview',
@@ -205,7 +216,7 @@ const InvoiceForm: React.FC<InvoiceFormProps> = ({ initialInvoice, clients, serv
     clientId, 
     projectId,
     issueDate, dueDate, items, total, 
-    discount,
+    discount: overallDiscount,
     amountPaid: initialInvoice?.amountPaid || 0, 
     status,
     selectedBankAccountId: selectedBankAccountId === 'manual' ? undefined : selectedBankAccountId,
@@ -248,86 +259,59 @@ const InvoiceForm: React.FC<InvoiceFormProps> = ({ initialInvoice, clients, serv
       }
   };
 
-  const selectedClient = clients.find(c => c.id === clientId);
+  const selectedClient = (clients || []).find(c => c.id === clientId);
 
   const activeClientsList = useMemo(() => {
-    return (clients || []).filter(c => !c.is_archived && c.status !== 'Archived' && c.status !== 'Deleted');
+    return (clients || []).filter(c => c && !c.is_archived && c.status !== 'Archived' && c.status !== 'Deleted');
   }, [clients]);
 
   const activeServicesList = useMemo(() => {
-    return services || [];
+    return (services || []).filter(Boolean);
   }, [services]);
 
   const hasClients = activeClientsList.length > 0;
   const hasServices = activeServicesList.length > 0;
 
-  // First Invoice Guidance: Check missing required records when creating new invoice
-  if (!initialInvoice && (!hasClients || !hasServices)) {
-    return (
-      <div className="bg-white p-8 rounded-2xl shadow-xl max-w-4xl mx-auto text-gray-900 mb-10 border border-amber-200">
-        <div className="flex items-center gap-3 border-b border-gray-100 pb-5 mb-6">
-          <div className="p-3 bg-amber-500/10 text-amber-600 rounded-2xl border border-amber-200">
-            <Icon name="alertCircle" className="w-6 h-6" />
-          </div>
-          <div>
-            <h2 className="text-2xl font-black text-gray-900 tracking-tight">First Invoice Setup Guidance</h2>
-            <p className="text-sm font-medium text-gray-600">Please set up required records before generating your first invoice.</p>
-          </div>
-        </div>
-
-        <div className="space-y-6">
-          {!hasClients && (
-            <div className="p-6 bg-amber-50/80 border border-amber-200/80 rounded-2xl flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-              <div>
-                <h3 className="text-lg font-black text-amber-900 tracking-tight">Add a Client First</h3>
-                <p className="text-sm font-medium text-amber-800 mt-1 leading-relaxed">
-                  You need at least one client before creating an invoice. Add your first client to continue.
-                </p>
-              </div>
-              <button
-                onClick={() => onNavigate ? onNavigate('clients') : null}
-                className="px-6 py-3 bg-amber-600 hover:bg-amber-700 text-white rounded-xl text-xs font-black uppercase tracking-wider shadow-md hover:shadow-lg transition-all shrink-0 flex items-center justify-center gap-2"
-              >
-                <Icon name="userPlus" className="w-4 h-4" />
-                Add Client
-              </button>
-            </div>
-          )}
-
-          {!hasServices && (
-            <div className="p-6 bg-amber-50/80 border border-amber-200/80 rounded-2xl flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-              <div>
-                <h3 className="text-lg font-black text-amber-900 tracking-tight">Add a Service First</h3>
-                <p className="text-sm font-medium text-amber-800 mt-1 leading-relaxed">
-                  You need at least one service before creating an invoice. Add your first service to continue.
-                </p>
-              </div>
-              <button
-                onClick={() => onNavigate ? onNavigate('services') : null}
-                className="px-6 py-3 bg-amber-600 hover:bg-amber-700 text-white rounded-xl text-xs font-black uppercase tracking-wider shadow-md hover:shadow-lg transition-all shrink-0 flex items-center justify-center gap-2"
-              >
-                <Icon name="plus" className="w-4 h-4" />
-                Add Service
-              </button>
-            </div>
-          )}
-        </div>
-
-        <div className="mt-8 pt-6 border-t border-gray-100 flex justify-end">
-          <button
-            onClick={onCancel}
-            className="px-6 py-2.5 bg-gray-100 hover:bg-gray-200 text-gray-700 rounded-xl text-xs font-bold transition-all"
-          >
-            Back to Invoices
-          </button>
-        </div>
-      </div>
-    );
-  }
-
   return (
     <div className="bg-white p-8 rounded-xl shadow-xl max-w-4xl mx-auto text-gray-900 mb-10 border border-gray-100">
         <h2 className="text-3xl font-black text-gray-800 mb-8 uppercase tracking-tighter border-b pb-4">{initialInvoice ? 'Modify Record' : 'Generate Invoice'}</h2>
+        
+        {/* First Invoice Guidance Banner if clients or services are empty */}
+        {!initialInvoice && (!hasClients || !hasServices) && (
+          <div className="mb-8 p-6 bg-amber-50 border border-amber-200 rounded-2xl space-y-4">
+            <div className="flex items-center gap-3">
+              <div className="p-2 bg-amber-500/10 text-amber-600 rounded-xl">
+                <Icon name="alertCircle" className="w-5 h-5" />
+              </div>
+              <div>
+                <h3 className="text-sm font-black text-amber-900 tracking-tight">Record Setup Guidance</h3>
+                <p className="text-xs text-amber-800 font-medium">Quickly add clients or services to populate dropdown suggestions.</p>
+              </div>
+            </div>
+            <div className="flex flex-wrap gap-3">
+              {!hasClients && (
+                <button
+                  type="button"
+                  onClick={() => onNavigate ? onNavigate('clients') : null}
+                  className="px-4 py-2 bg-amber-600 hover:bg-amber-700 text-white rounded-lg text-xs font-bold uppercase tracking-wider transition-all flex items-center gap-1.5"
+                >
+                  <Icon name="userPlus" className="w-3.5 h-3.5" />
+                  + Add Client
+                </button>
+              )}
+              {!hasServices && (
+                <button
+                  type="button"
+                  onClick={() => onNavigate ? onNavigate('services') : null}
+                  className="px-4 py-2 bg-amber-600 hover:bg-amber-700 text-white rounded-lg text-xs font-bold uppercase tracking-wider transition-all flex items-center gap-1.5"
+                >
+                  <Icon name="plus" className="w-3.5 h-3.5" />
+                  + Add Service
+                </button>
+              )}
+            </div>
+          </div>
+        )}
         
         <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
             <div>
