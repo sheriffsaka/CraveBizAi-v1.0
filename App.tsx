@@ -33,6 +33,10 @@ import { generateRenewalInvoiceSuggestion } from './services/aiGenerationService
 import { getSubscriptionInfo, setSubscriptionInfo, SubscriptionTier, TIER_LIMITS, syncGlobalPlanSettings, syncSubscriptionInfoFromDb, secureRefillCreditsOnDb, safeFlutterwaveCheckout, getFlutterwavePublicKey, saveSubscriptionInfoToDb, fetchAndCacheFlutterwavePublicKey, incrementInvoiceCount, incrementReceiptCount, syncGlobalRefillPacks, REFILL_PACKS } from './services/subscriptionService';
 import { Invoice, Client, Service, Company, User, TenantData, InvoiceStatus, AllTenantsData, GeneratedDocument, DbDocumentSignatory, Project, WorkspaceRole, AuditLog } from './types';
 import Icon from './components/common/Icon';
+import { ResourceLimitModal } from './components/common/ResourceLimitModal';
+import { ResourceLimitView } from './components/common/ResourceLimitView';
+import { checkResourceAvailability, triggerResourceLimitModal, ResourceLimitDetails } from './services/resourceLimitService';
+import { CreateInvoiceRouteWrapper } from './components/CreateInvoiceRouteWrapper';
 import {
   GlobalFilterState,
   loadGlobalFilterFromSession,
@@ -121,6 +125,7 @@ export default function App() {
   const [selectedProvisionTier, setSelectedProvisionTier] = useState<SubscriptionTier>('Growth');
   const [subTrigger, setSubTrigger] = useState(0);
   const [subErrorMsg, setSubErrorMsg] = useState<string | null>(null);
+  const [activeResourceLimitModal, setActiveResourceLimitModal] = useState<ResourceLimitDetails | null>(null);
 
   // Global Filter State across Dashboard, Invoices and Reports
   const [globalFilter, setGlobalFilterState] = useState<GlobalFilterState>(() => loadGlobalFilterFromSession());
@@ -129,6 +134,17 @@ export default function App() {
     setGlobalFilterState(newFilter);
     saveGlobalFilterToSession(newFilter);
   };
+
+  useEffect(() => {
+    const handleLimitReached = (e: Event) => {
+      const customEvent = e as CustomEvent<ResourceLimitDetails>;
+      if (customEvent.detail) {
+        setActiveResourceLimitModal(customEvent.detail);
+      }
+    };
+    window.addEventListener('cravebiz_resource_limit_reached', handleLimitReached);
+    return () => window.removeEventListener('cravebiz_resource_limit_reached', handleLimitReached);
+  }, []);
 
   useEffect(() => {
     const handleSubChange = () => setSubTrigger(prev => prev + 1);
@@ -179,12 +195,21 @@ export default function App() {
     const handleSubError = (e: Event) => {
       const customEvent = e as CustomEvent;
       if (customEvent.detail && customEvent.detail.message) {
-        setSubErrorMsg(customEvent.detail.message);
+        const msg: string = customEvent.detail.message;
+        const isAi = /ai|credit|token|unit/i.test(msg);
+        const isReceipt = /receipt/i.test(msg);
+        const isInvoice = /invoice/i.test(msg);
+
+        const tenant = activeTenantId || '';
+        const resourceType = isReceipt ? 'receipt' : isAi ? 'ai_credit' : 'invoice';
+        checkResourceAvailability(tenant, resourceType).then(details => {
+          setActiveResourceLimitModal(details);
+        });
       }
     };
     window.addEventListener('cravebiz_subscription_error', handleSubError);
     return () => window.removeEventListener('cravebiz_subscription_error', handleSubError);
-  }, []);
+  }, [activeTenantId]);
 
   useEffect(() => {
     if (currentUser) {
@@ -1434,42 +1459,44 @@ export default function App() {
               phone: '',
               address: ''
           };
-          
-          const sub = getSubscriptionInfo(activeTenantId || '');
-          const currentCount = invoices.length;
-          const maxAllowed = sub?.maxInvoices ?? 999;
-          if (currentCount >= maxAllowed) {
-              const msg = `You have reached the monthly invoice limit of your ${sub?.tier || 'Current'} Plan (${currentCount}/${maxAllowed} invoices generated). Please upgrade your subscription tier in Workspace Settings.`;
-              window.dispatchEvent(new CustomEvent('cravebiz_subscription_error', { detail: { message: msg } }));
-              return (
-                  <div className="flex flex-col items-center justify-center p-12 text-center bg-white rounded-xl border border-gray-100 shadow-2xl max-w-lg mx-auto my-12 animate-in fade-in">
-                      <div className="bg-red-50 w-16 h-16 rounded-xl flex items-center justify-center mb-4 text-red-600 border border-red-100">
-                          <Icon name="reports" className="w-8 h-8" />
-                      </div>
-                      <h3 className="text-lg font-black text-gray-800 uppercase tracking-tighter mb-2">Invoice Limit Reached</h3>
-                      <p className="text-sm text-gray-500 mb-6 leading-relaxed">{msg}</p>
-                      <button onClick={() => navigateTo('settings')} className="px-6 py-3 bg-primary-600 text-white rounded-xl font-black uppercase tracking-widest text-[10px] shadow-lg shadow-primary-200 hover:bg-primary-700 transition">Upgrade Subscription</button>
-                  </div>
-              );
-          }
 
-          return <CreateInvoice clients={clients} services={services} company={targetCompany} initialDraft={draftRenewal} onNavigate={(page) => navigateTo(page as Page)} onAddInvoice={async (i) => { 
-              try { 
-                  setIsDataSyncing(true); 
-                  // First check backend quota
-                  const check = await api.getInvoiceUsage(activeTenantId, sub?.tier || 'Free');
-                  if (check && check.remainingCount <= 0) {
-                      throw new Error(`Invoice creation quota exhausted (${check.createdCount}/${check.totalQuota} generated). Please upgrade your plan.`);
+          return (
+            <CreateInvoiceRouteWrapper
+              activeTenantId={activeTenantId || ''}
+              clients={clients}
+              services={services}
+              targetCompany={targetCompany}
+              initialDraft={draftRenewal}
+              onNavigate={(page) => navigateTo(page as Page)}
+              onAddInvoice={async (i) => {
+                try {
+                  setIsDataSyncing(true);
+                  const check = await checkResourceAvailability(activeTenantId || '', 'invoice');
+                  if (!check.allowed) {
+                    triggerResourceLimitModal(check);
+                    return;
                   }
-                  const newInvoice = await api.createInvoice(activeTenantId!, i); 
+                  const newInvoice = await api.createInvoice(activeTenantId!, i);
                   setTenantData(prev => ({ ...prev, invoices: [newInvoice, ...prev.invoices] }));
                   await incrementInvoiceCount(activeTenantId!);
                   setDraftRenewal(null);
                   navigateTo('invoices');
-                  await forceSyncData(activeTenantId!); 
-              } catch (err: any) { alert(stringifyError(err)); } 
-              finally { if (isMounted.current) setIsDataSyncing(false); } 
-          }} onCancel={() => { setDraftRenewal(null); navigateTo('invoices'); }} />;
+                  await forceSyncData(activeTenantId!);
+                } catch (err: any) {
+                  const msg = stringifyError(err);
+                  if (msg.toLowerCase().includes('quota') || msg.toLowerCase().includes('limit') || msg.toLowerCase().includes('exhausted')) {
+                    const check = await checkResourceAvailability(activeTenantId || '', 'invoice');
+                    triggerResourceLimitModal(check);
+                  } else {
+                    alert(msg);
+                  }
+                } finally {
+                  if (isMounted.current) setIsDataSyncing(false);
+                }
+              }}
+              onCancel={() => { setDraftRenewal(null); navigateTo('invoices'); }}
+            />
+          );
       }
       case 'edit-invoice': {
         const inv = invoices.find(i => i.id === selectedInvoiceId);
@@ -1685,7 +1712,14 @@ export default function App() {
       <div className="flex-1 flex flex-col overflow-hidden">
         <Header 
             pageTitle={pageTitles[activePage]} 
-            onCreateInvoice={() => navigateTo('create-invoice')} 
+            onCreateInvoice={async () => {
+              const check = await checkResourceAvailability(activeTenantId || '', 'invoice');
+              if (!check.allowed) {
+                setActiveResourceLimitModal(check);
+                return;
+              }
+              navigateTo('create-invoice');
+            }} 
             companies={displayCompanies} 
             activeTenantId={activeTenantId || ''} 
             onSwitchTenant={(id) => { setActiveTenantId(id); localStorage.setItem('cravebiz_tenant', id); forceSyncData(id); }} 
@@ -1868,6 +1902,20 @@ export default function App() {
             )}
           </div>
         </div>
+      )}
+      {activeResourceLimitModal && (
+        <ResourceLimitModal
+          details={activeResourceLimitModal}
+          onClose={() => setActiveResourceLimitModal(null)}
+          onUpgrade={() => {
+            setActiveResourceLimitModal(null);
+            navigateTo('settings');
+          }}
+          onViewPlan={() => {
+            setActiveResourceLimitModal(null);
+            navigateTo('settings');
+          }}
+        />
       )}
     </div>
   );

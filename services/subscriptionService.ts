@@ -663,28 +663,32 @@ export function canCreateInvoice(companyId: string, currentInvoiceCount: number)
  * Deducts 1 AI Unit from the tenant subscription unit if AI Mode is enabled.
  * Throws an error if AI Mode is enabled but there are no remaining units.
  */
+import { triggerResourceLimitModal } from './resourceLimitService';
+
 export function deductAiUnit(companyId: string): void {
   if (!companyId) return;
   const state = getOrCreateMemoryState(companyId);
   const sub = getSubscriptionInfo(companyId);
   
-  // Free plan has no AI unless they have remaining units
-  if (sub.tier === 'Free' && sub.aiUnits <= 0) {
-    const msg = "AI features are not available on the Free Subscription Plan. Please upgrade your subscription tier or purchase an AI Credit Refill.";
-    window.dispatchEvent(new CustomEvent('cravebiz_subscription_error', { detail: { message: msg } }));
-    throw new Error(msg);
-  }
-
-  if (sub.aiUnits <= 0) {
-    const msg = `Your subscription AI units are depleted (0/${TIER_LIMITS[sub.tier].maxAiUnits} remaining). Please upgrade your subscription tier or contact support to recharge.`;
-    window.dispatchEvent(new CustomEvent('cravebiz_subscription_error', { detail: { message: msg } }));
-    throw new Error(msg);
-  }
-
-  if (!sub.aiModeEnabled) {
-    const msg = "AI Mode is currently turned OFF. Please turn ON AI Mode in the top header or Workspace Settings to use AI features.";
-    window.dispatchEvent(new CustomEvent('cravebiz_subscription_error', { detail: { message: msg } }));
-    throw new Error(msg);
+  if (sub.aiUnits <= 0 || !sub.aiModeEnabled) {
+    const defaultReset = new Date(Date.now() + 30 * 86400000).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+    triggerResourceLimitModal({
+      allowed: false,
+      resourceType: 'ai_credit',
+      title: 'AI Credits Exhausted',
+      description: !sub.aiModeEnabled
+        ? 'AI Assistant mode is currently turned OFF in your Workspace Settings.'
+        : 'You have used all of your available AI credits. Please upgrade your plan or wait until your credits are renewed before using this feature.',
+      currentUsage: Math.max(0, (TIER_LIMITS[sub.tier]?.maxAiUnits || 5) - sub.aiUnits),
+      maxLimit: TIER_LIMITS[sub.tier]?.maxAiUnits || 5,
+      remaining: Math.max(0, sub.aiUnits),
+      unitName: 'AI credits',
+      resetDate: defaultReset,
+      tier: sub.tier,
+      canUpgrade: sub.tier !== 'Enterprise',
+      reason: !sub.aiModeEnabled ? 'AI Mode is disabled' : '0 AI credits remaining'
+    });
+    throw new Error(!sub.aiModeEnabled ? 'AI Mode is turned off' : 'AI credits exhausted');
   }
 
   state.aiUnits = sub.aiUnits - 1;
@@ -928,22 +932,25 @@ export function ensureAiCreditsOrThrow(companyId: string): void {
   if (!companyId) return;
   const sub = getSubscriptionInfo(companyId);
 
-  if (!sub.aiModeEnabled) {
-    try {
-      toggleAiMode(companyId, true);
-    } catch (e) {
-      const msg = "AI Mode is currently turned OFF. Please turn ON AI Mode in the top header or Workspace Settings to use AI features.";
-      window.dispatchEvent(new CustomEvent('cravebiz_subscription_error', { detail: { message: msg } }));
-      throw new Error(msg);
-    }
-  }
-
-  if (sub.aiUnits <= 0) {
-    const msg = sub.tier === 'Free'
-      ? "You have used all your free monthly AI credits. Please upgrade your plan or purchase additional credits to continue."
-      : `Your subscription AI units are depleted. Please upgrade your plan or purchase additional credits to continue.`;
-    window.dispatchEvent(new CustomEvent('cravebiz_subscription_error', { detail: { message: msg } }));
-    throw new Error(msg);
+  if (!sub.aiModeEnabled || sub.aiUnits <= 0) {
+    const defaultReset = new Date(Date.now() + 30 * 86400000).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+    triggerResourceLimitModal({
+      allowed: false,
+      resourceType: 'ai_credit',
+      title: 'AI Credits Exhausted',
+      description: !sub.aiModeEnabled
+        ? 'AI Assistant mode is currently turned OFF in your Workspace Settings.'
+        : 'You have used all of your available AI credits. Please upgrade your plan or wait until your credits are renewed before using this feature.',
+      currentUsage: Math.max(0, (TIER_LIMITS[sub.tier]?.maxAiUnits || 5) - sub.aiUnits),
+      maxLimit: TIER_LIMITS[sub.tier]?.maxAiUnits || 5,
+      remaining: Math.max(0, sub.aiUnits),
+      unitName: 'AI credits',
+      resetDate: defaultReset,
+      tier: sub.tier,
+      canUpgrade: sub.tier !== 'Enterprise',
+      reason: !sub.aiModeEnabled ? 'AI Mode is disabled' : '0 AI credits remaining'
+    });
+    throw new Error(!sub.aiModeEnabled ? 'AI Mode is turned off' : 'AI credits exhausted');
   }
 }
 

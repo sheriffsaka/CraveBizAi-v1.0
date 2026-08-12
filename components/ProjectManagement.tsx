@@ -3,6 +3,7 @@ import { Project, ProjectStatus, Client, StoredGeneratedDoc, Invoice, AuditLog, 
 import { motion, AnimatePresence } from 'motion/react';
 import Icon from './common/Icon';
 import PaymentModal from './PaymentModal';
+import { checkResourceAvailability, triggerResourceLimitModal } from '../services/resourceLimitService';
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, Cell } from 'recharts';
 
 interface ProjectManagementProps {
@@ -276,7 +277,12 @@ locked.
     }, 1500);
   };
 
-  const openAddModal = () => {
+  const openAddModal = async () => {
+    const check = await checkResourceAvailability(companyId, 'project', { projectsCount: projects.length });
+    if (!check.allowed) {
+      triggerResourceLimitModal(check);
+      return;
+    }
     setFormName('');
     setFormClientId(clients[0]?.id || '');
     setFormDescription('');
@@ -815,7 +821,12 @@ locked.
                           <div className="text-[11px] text-gray-500 bg-gray-50 p-3 rounded-lg border border-dashed border-gray-200 leading-relaxed space-y-2">
                             <p>No billing record is currently linked to this project.</p>
                             <button
-                              onClick={() => {
+                              onClick={async () => {
+                                const check = await checkResourceAvailability(companyId, 'invoice');
+                                if (!check.allowed) {
+                                  triggerResourceLimitModal(check);
+                                  return;
+                                }
                                 onNavigateTo('create-invoice', {
                                   prefillProject: selectedProject,
                                   prefillClient: clients.find(c => c.id === selectedProject.clientId)

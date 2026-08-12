@@ -3,6 +3,7 @@ import { Service, Invoice, WorkspaceRole } from '../types';
 import ServiceFormModal from './ServiceFormModal';
 import DeleteConfirmationModal from './DeleteConfirmationModal';
 import Icon from './common/Icon';
+import { checkResourceAvailability, triggerResourceLimitModal } from '../services/resourceLimitService';
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, Cell } from 'recharts';
 import { calculateServiceMarginPct, calculateServiceTotalCost } from '../lib/margin';
 
@@ -335,7 +336,17 @@ const ServiceList: React.FC<ServiceListProps> = ({ companyId, services, invoices
                         className="block w-full pl-10 pr-3 py-2 border border-gray-300 rounded-md leading-5 bg-white placeholder-gray-500 focus:outline-none focus:ring-primary-500 focus:border-primary-500 sm:text-sm"
                     />
                 </div>
-                <button onClick={() => setIsAddModalOpen(true)} className="px-4 py-2 bg-primary-600 text-white rounded-lg hover:bg-primary-700 font-semibold shadow text-sm w-full md:w-auto">
+                <button
+                  onClick={async () => {
+                    const check = await checkResourceAvailability(companyId, 'service', { servicesCount: services.length });
+                    if (!check.allowed) {
+                      triggerResourceLimitModal(check);
+                      return;
+                    }
+                    setIsAddModalOpen(true);
+                  }}
+                  className="px-4 py-2 bg-primary-600 text-white rounded-lg hover:bg-primary-700 font-semibold shadow text-sm w-full md:w-auto"
+                >
                     + Add Service
                 </button>
             </div>

@@ -4,6 +4,7 @@ import ClientFormModal from './ClientFormModal';
 import DeleteConfirmationModal from './DeleteConfirmationModal';
 import Icon from './common/Icon';
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, Cell } from 'recharts';
+import { checkResourceAvailability, triggerResourceLimitModal } from '../services/resourceLimitService';
 
 interface ClientListProps {
   companyId: string;
@@ -441,7 +442,14 @@ const ClientList: React.FC<ClientListProps> = ({
             </div>
 
             <button
-              onClick={() => setIsAddModalOpen(true)}
+              onClick={async () => {
+                const check = await checkResourceAvailability(companyId, 'client', { clientsCount: clients.length });
+                if (!check.allowed) {
+                  triggerResourceLimitModal(check);
+                  return;
+                }
+                setIsAddModalOpen(true);
+              }}
               className="px-4 py-2 bg-primary-600 hover:bg-primary-700 text-white rounded-xl font-bold shadow-sm text-xs transition-colors flex items-center space-x-1"
             >
               <span>+ Add Client</span>

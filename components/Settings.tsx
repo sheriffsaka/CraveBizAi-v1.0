@@ -5,6 +5,7 @@ import ImageCropperModal from './ImageCropperModal';
 import Icon from './common/Icon';
 import { AiCreditDashboard } from './AiCreditDashboard.tsx';
 import { getSubscriptionInfo, setSubscriptionInfo, SubscriptionTier, TIER_LIMITS, saveSubscriptionInfoToDb, secureUpgradeSubscriptionOnDb, secureRefillCreditsOnDb, safeFlutterwaveCheckout, getFlutterwavePublicKey, REFILL_PACKS, syncGlobalRefillPacks, getMemberAiPermission, setMemberAiPermission, getInvitedMemberInfo, getAllInvitedMembers, setInvitedMemberInfo, removeInvitedMemberInfo } from '../services/subscriptionService';
+import { checkResourceAvailability, triggerResourceLimitModal } from '../services/resourceLimitService';
 
 const getPlanActionLabel = (targetTier: string, currentTier: string): string => {
   const TIER_RANKS: Record<string, number> = {
@@ -996,7 +997,19 @@ const Settings: React.FC<SettingsProps> = ({ company, onSaveChanges, onInviteUse
         <h3 className="text-xl font-black text-gray-800 border-b pb-4 mb-6 uppercase tracking-tighter">Permissions Registry</h3>
         {!isReadOnly && (
           <div className="flex justify-end mb-6">
-              <button onClick={() => setIsInviteOpen(true)} className="px-6 py-2.5 bg-primary-600 text-white rounded-xl font-black uppercase tracking-widest text-[10px] shadow-xl hover:bg-primary-700">Grant Access</button>
+              <button
+                onClick={async () => {
+                  const check = await checkResourceAvailability(activeTenantId, 'user', { usersCount: teamMembers.length });
+                  if (!check.allowed) {
+                    triggerResourceLimitModal(check);
+                    return;
+                  }
+                  setIsInviteOpen(true);
+                }}
+                className="px-6 py-2.5 bg-primary-600 text-white rounded-xl font-black uppercase tracking-widest text-[10px] shadow-xl hover:bg-primary-700"
+              >
+                Grant Access
+              </button>
           </div>
         )}
         
