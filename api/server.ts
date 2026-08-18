@@ -1024,15 +1024,15 @@ app.get("/api/audit-logs", verifyTenant, async (req: any, res) => {
 // DOCSIGNIFY CONTROLLER ENDPOINTS
 // ============================================================================
 
-// 1. Save base64-encoded files exactly as uploaded to disk (PDF, DOCX, Images)
-app.post("/api/signify/upload-file", verifyTenant, (req, res) => {
+// 1. Save base64-encoded files exactly as uploaded (PDF, DOCX, Images)
+app.post("/api/signify/upload-file", verifyTenant, async (req, res) => {
     try {
         const { fileName, fileType, base64Data } = req.body;
         if (!fileName || !base64Data) {
             return res.status(400).json({ error: "fileName and base64Data are required" });
         }
         
-        const fileInfo = SignifyService.saveUploadedFile(fileName, base64Data, fileType || "pdf");
+        const fileInfo = await SignifyService.saveUploadedFile(fileName, base64Data, fileType || "pdf");
         res.json({
             success: true,
             fileUrl: fileInfo.fileUrl
@@ -1110,14 +1110,14 @@ app.get("/api/signify/documents", verifyTenant, async (req: any, res: any) => {
 });
 
 // 2. Create/register a document for signing
-app.post("/api/signify/documents", verifyTenant, (req, res) => {
+app.post("/api/signify/documents", verifyTenant, async (req, res) => {
     try {
-        const { id, title, originalFileUrl, ownerId, fileType, fileName, signatories, contentJson, content_json } = req.body;
+        const { id, title, originalFileUrl, ownerId, fileType, fileName, signatories, contentJson, content_json, companyId } = req.body;
         if (!id || !title || !ownerId || !signatories) {
             return res.status(400).json({ error: "Missing required fields for document creation: id, title, ownerId, or signatories" });
         }
         
-        const result = SignifyService.createDocument(id, title, originalFileUrl || "", ownerId, fileType || "pdf", fileName || "document.pdf", signatories, contentJson || content_json);
+        const result = await SignifyService.createDocument(id, title, originalFileUrl || "", ownerId, fileType || "pdf", fileName || "document.pdf", signatories, contentJson || content_json, companyId);
         res.json({
             success: true,
             document: result.document,
@@ -1130,9 +1130,9 @@ app.post("/api/signify/documents", verifyTenant, (req, res) => {
 });
 
 // 3. Retrieve document, signatories, and signatures for an ID
-app.get("/api/signify/documents/:id", verifyTenant, (req, res) => {
+app.get("/api/signify/documents/:id", verifyTenant, async (req, res) => {
     try {
-        const result = SignifyService.getDocumentDetails(req.params.id);
+        const result = await SignifyService.getDocumentDetails(req.params.id);
         if (!result.document) {
             return res.status(404).json({ error: "Document not found" });
         }
@@ -1144,9 +1144,9 @@ app.get("/api/signify/documents/:id", verifyTenant, (req, res) => {
 });
 
 // 3.5 Delete document
-app.delete("/api/signify/documents/:id", verifyTenant, (req, res) => {
+app.delete("/api/signify/documents/:id", verifyTenant, async (req, res) => {
     try {
-        const success = SignifyService.deleteDocument(req.params.id);
+        const success = await SignifyService.deleteDocument(req.params.id);
         res.json({ success });
     } catch (err: any) {
         console.error("DocSignify delete document error:", err);
@@ -1155,11 +1155,11 @@ app.delete("/api/signify/documents/:id", verifyTenant, (req, res) => {
 });
 
 // 3.6 Record viewed status for signatory token
-app.post("/api/signify/mark-viewed", (req, res) => {
+app.post("/api/signify/mark-viewed", async (req, res) => {
     try {
         const { token } = req.body;
         if (token) {
-            SignifyService.recordViewed(token);
+            await SignifyService.recordViewed(token);
         }
         res.json({ success: true });
     } catch (err: any) {
@@ -1175,59 +1175,9 @@ app.get("/api/signify/token-validation", async (req, res) => {
             return res.status(400).json({ error: "Secure token is required for validation" });
         }
         
-        let result = SignifyService.getDocumentByToken(token);
+        let result = await SignifyService.getDocumentByToken(token);
         if (!result) {
-            // Self-healing fallback: Query Supabase directly if the local memory store is out of sync
-            try {
-                let { data: signer } = await supabaseClient.from('document_signers').select('*').eq('id', token).single();
-                if (!signer) {
-                    const { data: signersByEmail } = await supabaseClient.from('document_signers').select('*').eq('email', token).limit(1);
-                    if (signersByEmail && signersByEmail.length > 0) signer = signersByEmail[0];
-                }
-                if (signer) {
-                    const docId = signer.document_id;
-                    const { data: docData } = await supabaseClient.from('documents').select('*').eq('id', docId).single();
-                    const { data: dbSigners } = await supabaseClient.from('document_signers').select('*').eq('document_id', docId);
-                    
-                    if (docData) {
-                        const formattedDoc: DbDocument = {
-                            id: docData.id,
-                            title: docData.file_name || docData.document_type || "Untitled Document",
-                            original_file_url: docData.storage_path || "",
-                            signed_file_url: docData.status === 'completed' ? docData.storage_path : null,
-                            owner_id: docData.creator_id || docData.company_id || "",
-                            company_id: docData.company_id || docData.creator_id || "",
-                            status: docData.status || "pending",
-                            created_at: docData.created_at || new Date().toISOString(),
-                            file_type: docData.document_type || 'pdf',
-                            file_name: docData.file_name || `${docData.id}.pdf`
-                        };
-                        const signatories: DbDocumentSignatory[] = (dbSigners || []).map((s: any) => ({
-                            id: s.id,
-                            document_id: s.document_id,
-                            name: s.name || '',
-                            email: s.email || '',
-                            role: s.role || 'main_signatory',
-                            token: s.id,
-                            status: s.status || 'pending',
-                            signed_at: s.signed_at || null,
-                            signature_value: s.signature_value || null
-                        }));
-                        const activeSignatory = signatories.find(s => s.id === signer.id) || signatories[0];
-
-                        result = {
-                            document: formattedDoc,
-                            signatory: activeSignatory,
-                            signatories: signatories,
-                            signatures: []
-                        };
-                        // Sync to local memory store so next validations are near-instant
-                        SignifyService.syncToMemory(result.document, result.signatory, result.signatories, result.signatures);
-                    }
-                }
-            } catch (supabaseErr) {
-                console.warn("Self-healing Supabase token validation query failed/not configured:", supabaseErr);
-            }
+            return res.status(403).json({ error: "Invalid or expired secure signing token" });
         }
 
         if (!result) {
@@ -1832,14 +1782,14 @@ app.post("/api/notifications/announcement", async (req: any, res) => {
 });
 
 // 5. Add/place a signatory's signature details on screen
-app.post("/api/signify/signatures", (req, res) => {
+app.post("/api/signify/signatures", async (req, res) => {
     try {
         const { document_id, signatory_id, page_number, x_position, y_position, width, height, signature_type, signature_image_url } = req.body;
         if (!document_id || !signatory_id || page_number === undefined || x_position === undefined || y_position === undefined || !signature_image_url) {
             return res.status(400).json({ error: "Missing placement attributes for signature" });
         }
         
-        const signature = SignifyService.addSignature({
+        const signature = await SignifyService.addSignature({
             document_id,
             signatory_id,
             page_number,
@@ -1876,7 +1826,7 @@ app.post("/api/signify/signatories/:id/status", async (req, res) => {
             const protocol = req.headers['x-forwarded-proto'] || req.protocol || 'http';
             const host = req.get('host');
             const baseUrl = `${protocol}://${host}`;
-            const details = SignifyService.getDocumentDetails(result.document.id);
+            const details = await SignifyService.getDocumentDetails(result.document.id);
 
             if (result.document.status === 'completed') {
                 // Create in-app notification for owner after signed document is successfully generated
@@ -1996,28 +1946,30 @@ ${textContent.substring(0, 8000)}`;
 });
 
 // 8. Public Verification Portal - verify by doc ID or SHA-256 hash
-app.get("/api/signify/verify/:hashOrId", (req, res) => {
+app.get("/api/signify/verify/:hashOrId", async (req, res) => {
     try {
         const hashOrId = req.params.hashOrId.trim();
-        const store = SignifyService.loadStore() as any;
+        const details = await SignifyService.getDocumentDetails(hashOrId);
+        let document = details.document;
+        let signatories = details.signatories;
+        let signatures = details.signatures;
         
-        // Find document by ID
-        let document: any = store.documents[hashOrId];
-        
-        // If not found, look up by file hash
+        // If not found directly, query all documents
         if (!document) {
-            document = Object.values(store.documents).find((d: any) => {
-                const docIdPart = d.id?.toUpperCase();
-                return hashOrId.toUpperCase() === `SHA256-${docIdPart}` || hashOrId === d.id;
-            });
+            const allDocs = await SignifyService.getAllDocuments();
+            const found = allDocs.find(item => 
+                item.document.id === hashOrId || 
+                `SHA256-${item.document.id.toUpperCase()}` === hashOrId.toUpperCase()
+            );
+            if (found) {
+                document = found.document;
+                signatories = found.signatories;
+            }
         }
         
         if (!document) {
             return res.status(404).json({ error: "No matching authentic document registered on DocSignify." });
         }
-        
-        const signatories: any[] = Object.values(store.signatories).filter((s: any) => s.document_id === document.id);
-        const signatures: any[] = (store.signatures || []).filter((s: any) => s.document_id === document.id);
         
         res.json({
             success: true,

@@ -295,6 +295,23 @@ export interface DocumentReviewResult {
   keyClauses: { name: string; content: string }[];
 }
 
+export interface SignedDocument {
+  id: string;
+  user_id: string;
+  company_id?: string;
+  document_name: string;
+  document_type?: string;
+  original_file_url?: string | null;
+  signed_file_url?: string | null;
+  storage_path?: string | null;
+  signature_data?: any;
+  signatories?: any[];
+  content_json?: any;
+  status: string;
+  created_at: string;
+  updated_at?: string;
+}
+
 export interface DbDocument {
   id: string;
   title: string;

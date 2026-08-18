@@ -2450,8 +2450,50 @@ class CraveBizApi {
 
     let dbResults: { document: DbDocument; signatories: DbDocumentSignatory[]; signaturesCount: number }[] = [];
 
-    // 1. Direct Supabase fetch
+    // 1. Direct Supabase fetch (from signed_documents and documents tables)
     try {
+      // 1a. Query signed_documents table
+      const { data: signedDocs, error: signedDocsErr } = await supabase
+        .from('signed_documents')
+        .select('*')
+        .order('created_at', { ascending: false });
+
+      if (!signedDocsErr && signedDocs && Array.isArray(signedDocs)) {
+        for (const doc of signedDocs) {
+          const rawSigs = Array.isArray(doc.signatories) ? doc.signatories : [];
+          const signatories: DbDocumentSignatory[] = rawSigs.map((s: any) => ({
+            id: s.id || safeRandomUUID(),
+            document_id: doc.id,
+            name: s.name || '',
+            email: s.email || '',
+            role: s.role || 'main_signatory',
+            token: s.token || s.id || safeRandomUUID(),
+            status: s.status || (doc.status === 'completed' ? 'signed' : 'pending'),
+            signed_at: s.signed_at || (doc.status === 'completed' ? doc.updated_at || doc.created_at : null),
+            signature_value: s.signature_value || null
+          }));
+
+          dbResults.push({
+            document: {
+              id: doc.id,
+              title: doc.document_name || "Untitled Document",
+              original_file_url: doc.original_file_url || doc.storage_path || "",
+              signed_file_url: doc.signed_file_url || (doc.status === 'completed' ? doc.storage_path : null),
+              owner_id: doc.user_id || userId || "",
+              company_id: doc.company_id || companyId || "",
+              status: (doc.status || "completed") as any,
+              created_at: doc.created_at || new Date().toISOString(),
+              file_type: doc.document_type || "pdf",
+              file_name: doc.document_name || `${doc.id}.pdf`,
+              content_json: doc.content_json || {}
+            } as DbDocument,
+            signatories,
+            signaturesCount: signatories.filter(s => s.status === 'signed').length
+          });
+        }
+      }
+
+      // 1b. Query documents table
       let query = supabase.from('documents').select('*');
       const { data: dbDocs, error: docErr } = await query;
       if (!docErr && dbDocs && Array.isArray(dbDocs)) {
