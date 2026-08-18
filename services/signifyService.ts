@@ -3,10 +3,14 @@ import { PDFDocument, StandardFonts, rgb } from "pdf-lib";
 import { createClient } from "@supabase/supabase-js";
 import { DbDocument, DbDocumentSignatory, DbDocumentSignature, SignedDocument } from "../types.ts";
 
-const SUPABASE_URL = process.env.VITE_SUPABASE_URL || "https://dfqvgezjhudmnlyeycju.supabase.co";
-const SUPABASE_ANON_KEY = process.env.VITE_SUPABASE_ANON_KEY || "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImRmcXZnZXpqaHVkbW5seWV5Y2p1Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjYyNDAyOTMsImV4cCI6MjA4MTgxNjI5M30.8VsHsDpychdSMJmrfnmkxi5ed8CygwErX3-RkVPXkUI";
+const SUPABASE_URL = process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL || "https://dfqvgezjhudmnlyeycju.supabase.co";
+const SUPABASE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_SERVICE_KEY || process.env.SUPABASE_ANON_KEY || process.env.VITE_SUPABASE_ANON_KEY || "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImRmcXZnZXpqaHVkbW5seWV5Y2p1Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjYyNDAyOTMsImV4cCI6MjA4MTgxNjI5M30.8VsHsDpychdSMJmrfnmkxi5ed8CygwErX3-RkVPXkUI";
 
-export const supabaseClient = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+export const supabaseClient = createClient(SUPABASE_URL, SUPABASE_KEY, {
+  auth: { persistSession: false }
+});
+
+console.log(`[SignifyService] Initialized Supabase client with URL: ${SUPABASE_URL}`);
 
 interface SignifyStore {
   documents: Record<string, DbDocument>;
@@ -192,7 +196,13 @@ export class SignifyService {
           .upsert([signedDocPayload]);
 
         if (signedDocErr) {
-          console.warn("Supabase signed_documents insert warning:", signedDocErr.message);
+          console.error(`[SignifyService] Supabase write error on 'signed_documents': ${signedDocErr.message} (Code: ${signedDocErr.code}) Details: ${signedDocErr.details || 'none'}`);
+          // If table doesn't exist, log clear instructions
+          if (signedDocErr.code === '42P01') {
+            console.error(`[SignifyService] CRITICAL: The 'signed_documents' table does not exist in Supabase. Please run the provided SQL migration in Supabase SQL editor.`);
+          }
+        } else {
+          console.log(`[SignifyService] Successfully persisted document ${docId} to 'signed_documents' table.`);
         }
 
         // 2. documents table
@@ -207,13 +217,16 @@ export class SignifyService {
           updated_at: new Date().toISOString()
         };
 
-        await supabaseClient.from('documents').upsert([docPayload]).then(({ error }) => {
-          if (error) console.warn("Supabase documents table upsert warning:", error.message);
-        });
+        const { error: docErr } = await supabaseClient.from('documents').upsert([docPayload]);
+        if (docErr) {
+          console.error(`[SignifyService] Supabase write error on 'documents': ${docErr.message} (Code: ${docErr.code})`);
+        } else {
+          console.log(`[SignifyService] Successfully persisted document ${docId} to 'documents' table.`);
+        }
 
         // 3. document_signers table
         for (const sig of createdSignatories) {
-          await supabaseClient.from('document_signers').upsert({
+          const { error: signerErr } = await supabaseClient.from('document_signers').upsert({
             id: sig.id,
             document_id: sig.document_id,
             name: sig.name || '',
@@ -222,13 +235,17 @@ export class SignifyService {
             status: sig.status || 'pending',
             signed_at: sig.signed_at || null,
             signature_value: (sig as any).signature_value || null
-          }).then(({ error }) => {
-            if (error) console.warn("Supabase document_signers upsert warning:", error.message);
           });
+          if (signerErr) {
+            console.error(`[SignifyService] Supabase write error on 'document_signers' for signer ${sig.id}: ${signerErr.message} (Code: ${signerErr.code})`);
+          } else {
+            console.log(`[SignifyService] Successfully persisted signatory ${sig.id} (${sig.email}) to 'document_signers' table.`);
+          }
         }
       }
-    } catch (supaErr) {
-      console.warn("Supabase persistence error in createDocument:", supaErr);
+    } catch (supaErr: any) {
+      console.error("[SignifyService] Supabase persistence exception in createDocument:", supaErr);
+      throw new Error(`Supabase persistence failed in createDocument: ${supaErr.message || supaErr}`);
     }
 
     return { document, signatories: createdSignatories };
@@ -731,11 +748,16 @@ export class SignifyService {
           .upsert([signedDocPayload]);
 
         if (signedErr) {
-          console.warn("Supabase signed_documents update warning in updateSignatoryStatus:", signedErr.message);
+          console.error(`[SignifyService] CRITICAL Supabase write error on 'signed_documents' during status update: ${signedErr.message} (Code: ${signedErr.code}) Details: ${signedErr.details || 'none'}`);
+          if (signedErr.code === '42P01') {
+            throw new Error(`The 'signed_documents' table is missing from your Supabase database. Please execute the SQL migration script in Supabase SQL editor.`);
+          }
+        } else {
+          console.log(`[SignifyService] Successfully updated document ${document.id} status '${document.status}' in 'signed_documents' table.`);
         }
 
         // 2. documents table
-        await supabaseClient.from('documents').upsert([{
+        const { error: docErr } = await supabaseClient.from('documents').upsert([{
           id: document.id,
           file_name: document.file_name || document.title || "Document.pdf",
           document_type: document.file_type || "Agreement",
@@ -746,12 +768,16 @@ export class SignifyService {
           updated_at: new Date().toISOString()
         }]);
 
+        if (docErr) {
+          console.error(`[SignifyService] Supabase write error on 'documents' table during status update: ${docErr.message} (Code: ${docErr.code})`);
+        }
+
         // 3. document_signers table
         const sigValue = (signaturesInput && signaturesInput.length > 0)
           ? signaturesInput[0].signature_image_url
           : (signatory as any).signature_value || null;
 
-        await supabaseClient.from('document_signers').upsert([{
+        const { error: signerErr } = await supabaseClient.from('document_signers').upsert([{
           id: signatory.id,
           document_id: signatory.document_id,
           email: signatory.email || '',
@@ -761,9 +787,16 @@ export class SignifyService {
           signed_at: signatory.signed_at || new Date().toISOString(),
           signature_value: sigValue
         }]);
+
+        if (signerErr) {
+          console.error(`[SignifyService] Supabase write error on 'document_signers' table for signer ${signatory.id}: ${signerErr.message} (Code: ${signerErr.code})`);
+        } else {
+          console.log(`[SignifyService] Successfully updated signatory ${signatory.id} in 'document_signers' table.`);
+        }
       }
-    } catch (supaErr) {
-      console.warn("Supabase persistence error in updateSignatoryStatus:", supaErr);
+    } catch (supaErr: any) {
+      console.error("[SignifyService] Supabase persistence error in updateSignatoryStatus:", supaErr);
+      throw new Error(`Failed to save signed document to Supabase database: ${supaErr.message || supaErr}`);
     }
 
     return { document, signatory };

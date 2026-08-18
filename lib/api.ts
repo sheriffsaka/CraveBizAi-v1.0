@@ -2309,92 +2309,24 @@ class CraveBizApi {
 
   async updateDocSignifySignatoryStatus(signatoryId: string, status: 'signed' | 'declined', signatures: DbDocumentSignature[]): Promise<{ document: DbDocument; signatory: DbDocumentSignatory }> {
     try {
-      // 1. Invoke server endpoint first to trigger PDF merging and Supabase Storage upload
-      try {
-        const response = await fetch(`/api/signify/signatories/${signatoryId}/status`, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ status, signatures })
-        });
-        if (response.ok) {
-          const data = await response.json();
-          if (data && data.document) {
-            return { document: data.document, signatory: data.signatory };
-          }
-        }
-      } catch (srvErr) {
-        console.warn("Server status update endpoint error, falling back to direct Supabase update:", srvErr);
+      // 1. Invoke server endpoint to trigger PDF merging, signature persistence, and Supabase Storage upload
+      const response = await fetch(`/api/signify/signatories/${signatoryId}/status`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ status, signatures })
+      });
+
+      if (!response.ok) {
+        const errData = await response.json().catch(() => ({}));
+        throw new Error(errData.error || `Server failed to update signature status (Status code: ${response.status})`);
       }
 
-      // 2. Direct Supabase update fallback
-      const sigValue = (signatures && signatures.length > 0) ? signatures[0].signature_image_url : null;
-      const updatePayload: any = {
-        status,
-        signed_at: status === 'signed' ? new Date().toISOString() : null
-      };
-      if (sigValue) {
-        updatePayload.signature_value = sigValue;
+      const data = await response.json();
+      if (data && data.document) {
+        return { document: data.document, signatory: data.signatory };
       }
 
-      const { error: sigError } = await supabase.from('document_signers')
-        .update(updatePayload)
-        .eq('id', signatoryId);
-      if (sigError) {
-        console.warn(`Supabase update signatory status warning: ${sigError.message}`);
-      }
-        
-      const { data: signer } = await supabase.from('document_signers').select('*').eq('id', signatoryId).single();
-      const docId = signer?.document_id;
-      
-      if (docId) {
-        const { data: signers } = await supabase.from('document_signers').select('*').eq('document_id', docId);
-        const totalToSign = (signers || []).filter((s: any) => s.role !== 'owner').length;
-        const signedCount = (signers || []).filter((s: any) => s.role !== 'owner' && s.status === 'signed').length;
-        
-        let docStatus = 'pending';
-        if (status === 'declined') {
-          docStatus = 'declined';
-        } else if (signedCount === totalToSign) {
-          docStatus = 'completed';
-        } else if (signedCount > 0) {
-          docStatus = 'partially_signed';
-        }
-        
-        await supabase.from('documents').update({ status: docStatus, updated_at: new Date().toISOString() }).eq('id', docId);
-        const { data: docData } = await supabase.from('documents').select('*').eq('id', docId).single();
-
-        const formattedDoc: DbDocument = {
-          id: docData?.id || docId,
-          title: docData?.file_name || docData?.document_type || "Untitled Document",
-          original_file_url: docData?.storage_path || "",
-          signed_file_url: docStatus === 'completed' ? docData?.storage_path : null,
-          owner_id: docData?.creator_id || docData?.company_id || "",
-          company_id: docData?.company_id || docData?.creator_id || "",
-          status: docStatus as any,
-          created_at: docData?.created_at || new Date().toISOString(),
-          file_type: docData?.document_type || "pdf",
-          file_name: docData?.file_name || `${docId}.pdf`
-        };
-
-        const formattedSignatory: DbDocumentSignatory = {
-          id: signer?.id || signatoryId,
-          document_id: docId,
-          name: signer?.name || '',
-          email: signer?.email || '',
-          role: signer?.role || 'main_signatory',
-          token: signer?.id || signatoryId,
-          status: status as any,
-          signed_at: updatePayload.signed_at,
-          signature_value: signer?.signature_value || sigValue
-        };
-
-        return {
-          document: formattedDoc,
-          signatory: formattedSignatory
-        };
-      }
-
-      throw new Error("Could not update signatory status");
+      throw new Error("Invalid response received from signature server");
     } catch (err: any) {
       console.error("updateDocSignifySignatoryStatus error:", err);
       throw err;
