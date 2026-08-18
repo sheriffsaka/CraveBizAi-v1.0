@@ -1619,6 +1619,19 @@ app.get("/api/public/invoice-pdf", async (req, res) => {
     }
 });
 
+// Endpoint to invalidate invoice PDF cache on modification or status changes
+app.post("/api/invoices/:id/invalidate-pdf", async (req, res) => {
+    try {
+        const { id } = req.params;
+        if (id) {
+            invalidateInvoicePdfCache(id);
+        }
+        res.json({ success: true, message: `PDF cache invalidated for invoice ${id}` });
+    } catch (e: any) {
+        res.status(500).json({ error: e.message || "Failed to invalidate cache" });
+    }
+});
+
 // Dispatch User Registration Welcome Email via AWS SES
 app.post("/api/auth/send-registration-welcome", async (req, res) => {
     try {

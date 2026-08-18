@@ -954,11 +954,15 @@ class CraveBizApi {
     }
 
     this.syncWorkspaceCounts(invoice.companyId || localStorage.getItem('cravebiz_tenant') || '').catch(err => console.warn("Deferred count sync failed:", err));
+
+    // Invalidate official PDF cache so subsequent downloads reflect edits immediately
+    fetch(`/api/invoices/${invoice.id}/invalidate-pdf`, { method: 'POST' }).catch(() => {});
   }
 
   async updateInvoiceStatus(id: string, status: InvoiceStatus): Promise<void> {
     const { error } = await supabase.from('invoices').update({ status }).eq('id', id);
     if (error) throw error;
+    fetch(`/api/invoices/${id}/invalidate-pdf`, { method: 'POST' }).catch(() => {});
   }
 
   async deleteInvoice(id: string): Promise<void> {
@@ -967,6 +971,8 @@ class CraveBizApi {
     
     const { error } = await supabase.from('invoices').delete().eq('id', id);
     if (error) throw error;
+
+    fetch(`/api/invoices/${id}/invalidate-pdf`, { method: 'POST' }).catch(() => {});
 
     const companyId = localStorage.getItem('cravebiz_tenant') || '';
     if (companyId) {
