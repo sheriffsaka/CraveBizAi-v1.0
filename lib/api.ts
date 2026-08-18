@@ -2741,16 +2741,26 @@ class CraveBizApi {
     recipientEmail: string;
     recipientName: string;
     recipientCompany?: string;
+    recipientPhone?: string;
+    recipientAddress?: string;
     invoiceNumber: string;
     issueDate?: string;
     dueDate?: string;
     totalAmount: number;
     amountPaid?: number;
+    discount?: number;
+    tax?: number;
+    status?: string;
     currencySymbol?: string;
-    items: Array<{ name: string; description?: string; quantity: number; price: number }>;
-    company: { name: string; email?: string; phone?: string; address?: string; logoUrl?: string; bankAccounts?: any[] };
+    items: Array<{ name: string; description?: string; quantity: number; price: number; discount?: number }>;
+    company: { id?: string; name: string; email?: string; phone?: string; address?: string; logoUrl?: string; bankName?: string; bankAccountName?: string; bankAccountNumber?: string; bankAccounts?: any[] };
+    selectedBankAccountId?: string;
+    manualBankName?: string;
+    manualAccountName?: string;
+    manualAccountNumber?: string;
+    paymentTerms?: string;
     notes?: string;
-  }): Promise<{ success: boolean; message: string }> {
+  }): Promise<{ success: boolean; message: string; downloadUrl?: string }> {
     try {
       const response = await fetch('/api/send-invoice-email', {
         method: 'POST',

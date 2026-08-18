@@ -338,20 +338,27 @@ export interface InvoiceEmailData {
     recipientEmail: string;
     recipientName: string;
     recipientCompany?: string;
+    recipientPhone?: string;
+    recipientAddress?: string;
     invoiceNumber: string;
     issueDate: string;
     dueDate: string;
     totalAmount: number;
     amountPaid?: number;
+    discount?: number;
+    subtotal?: number;
+    tax?: number;
     currencySymbol?: string;
-    status?: 'draft' | 'pending' | 'paid' | 'overdue' | 'cancelled';
+    status?: string;
     items: Array<{
         name: string;
         description?: string;
         quantity: number;
         price: number;
+        discount?: number;
     }>;
     company: {
+        id?: string;
         name: string;
         email?: string;
         phone?: string;
@@ -361,7 +368,12 @@ export interface InvoiceEmailData {
         bankName?: string;
         bankAccountName?: string;
         bankAccountNumber?: string;
+        bankAccounts?: any[];
     };
+    selectedBankAccountId?: string;
+    manualBankName?: string;
+    manualAccountName?: string;
+    manualAccountNumber?: string;
     paymentTerms?: string;
     notes?: string;
     downloadUrl?: string;
@@ -370,29 +382,16 @@ export interface InvoiceEmailData {
     companyId?: string;
 }
 
+/**
+ * Builds a clean, professional CraveBiZ notification email alerting the recipient of a new invoice
+ * with a secure direct download link to the exact original invoice PDF.
+ * Does NOT embed or recreate the invoice table inside the email.
+ */
 export function buildInvoiceHtmlEmail(data: InvoiceEmailData): string {
     const symbol = data.currencySymbol || '₦';
-    const companyName = data.company.name || 'CraveBiZ Merchant';
+    const companyName = data.company?.name || 'CraveBiZ Merchant';
     const formattedTotal = `${symbol}${data.totalAmount.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
-    const subtotal = data.items.reduce((sum, item) => sum + (item.price * item.quantity), 0);
-    const tax = Math.max(0, data.totalAmount - subtotal);
     const downloadUrl = data.downloadUrl || data.viewLink || '#';
-
-    const itemsRowsHtml = data.items.map((item, index) => {
-        const itemTotal = item.price * item.quantity;
-        const bg = index % 2 === 0 ? '#ffffff' : '#f9fafb';
-        return `
-            <tr style="background-color: ${bg}; border-bottom: 1px solid #e5e7eb;">
-                <td style="padding: 12px 16px; font-size: 14px; color: #1f2937; font-weight: 600;">
-                    ${item.name}
-                    ${item.description ? `<div style="font-size: 12px; color: #6b7280; margin-top: 2px; font-weight: normal;">${item.description}</div>` : ''}
-                </td>
-                <td style="padding: 12px 16px; font-size: 14px; color: #4b5563; text-align: center;">${item.quantity}</td>
-                <td style="padding: 12px 16px; font-size: 14px; color: #4b5563; text-align: right;">${symbol}${item.price.toLocaleString('en-US', { minimumFractionDigits: 2 })}</td>
-                <td style="padding: 12px 16px; font-size: 14px; color: #111827; font-weight: 700; text-align: right;">${symbol}${itemTotal.toLocaleString('en-US', { minimumFractionDigits: 2 })}</td>
-            </tr>
-        `;
-    }).join('');
 
     return `
 <!DOCTYPE html>
@@ -400,100 +399,111 @@ export function buildInvoiceHtmlEmail(data: InvoiceEmailData): string {
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Invoice #${data.invoiceNumber} from ${companyName}</title>
+    <title>New Invoice Available - #${data.invoiceNumber}</title>
 </head>
-<body style="margin: 0; padding: 0; background-color: #f3f4f6; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; color: #1f2937;">
-    <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="background-color: #f3f4f6; padding: 24px 12px;">
+<body style="margin: 0; padding: 0; background-color: #f3f4f6; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; color: #1f2937; -webkit-font-smoothing: antialiased;">
+    <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="background-color: #f3f4f6; padding: 32px 12px;">
         <tr>
             <td align="center">
-                <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="max-width: 640px; background-color: #ffffff; border-radius: 16px; overflow: hidden; box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.05); border: 1px solid #e5e7eb;">
+                <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="max-width: 580px; background-color: #ffffff; border-radius: 16px; overflow: hidden; box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.06); border: 1px solid #e5e7eb;">
+                    <!-- Brand Navy Header -->
                     <tr>
-                        <td style="background-color: #1e1b4b; padding: 32px; color: #ffffff;">
+                        <td style="background-color: #1e1b4b; padding: 28px 32px; color: #ffffff;">
                             <table role="presentation" width="100%" cellspacing="0" cellpadding="0">
                                 <tr>
                                     <td>
-                                        ${data.company.logoUrl ? `<img src="${data.company.logoUrl}" alt="${companyName}" style="max-height: 48px; margin-bottom: 12px; border-radius: 6px;">` : ''}
-                                        <h1 style="margin: 0; font-size: 24px; font-weight: 800; color: #ffffff;">${companyName}</h1>
-                                        ${data.company.address ? `<p style="margin: 4px 0 0 0; font-size: 12px; color: #c7d2fe;">${data.company.address}</p>` : ''}
+                                        ${data.company?.logoUrl ? `<img src="${data.company.logoUrl}" alt="${companyName}" style="max-height: 42px; margin-bottom: 8px; border-radius: 6px; display: block;">` : ''}
+                                        <h1 style="margin: 0; font-size: 20px; font-weight: 800; color: #ffffff; letter-spacing: -0.02em;">${companyName}</h1>
+                                        ${data.company?.address ? `<p style="margin: 4px 0 0 0; font-size: 11.5px; color: #c7d2fe;">${data.company.address}</p>` : ''}
                                     </td>
-                                    <td align="right" valign="top">
-                                        <div style="background-color: #312e81; color: #e0e7ff; font-size: 12px; font-weight: 800; text-transform: uppercase; padding: 6px 14px; border-radius: 20px; display: inline-block;">
+                                    <td align="right" valign="middle">
+                                        <span style="background-color: rgba(255, 255, 255, 0.12); color: #e0e7ff; font-size: 11px; font-weight: 800; text-transform: uppercase; padding: 6px 12px; border-radius: 20px; border: 1px solid rgba(255, 255, 255, 0.2); letter-spacing: 0.05em; display: inline-block;">
                                             Invoice #${data.invoiceNumber}
-                                        </div>
+                                        </span>
                                     </td>
                                 </tr>
                             </table>
                         </td>
                     </tr>
+
+                    <!-- Notification Body -->
                     <tr>
-                        <td style="padding: 32px;">
-                            <p style="margin: 0 0 16px 0; font-size: 16px; font-weight: 600; color: #111827;">
+                        <td style="padding: 36px 32px;">
+                            <!-- Headline -->
+                            <h2 style="margin: 0 0 20px 0; font-size: 20px; font-weight: 800; color: #111827; letter-spacing: -0.02em;">
+                                New Invoice Available
+                            </h2>
+
+                            <!-- Greeting -->
+                            <p style="margin: 0 0 16px 0; font-size: 15px; font-weight: 600; color: #1f2937;">
                                 Dear ${data.recipientName}${data.recipientCompany ? ` (${data.recipientCompany})` : ''},
                             </p>
-                            <p style="margin: 0 0 24px 0; font-size: 14px; color: #4b5563; line-height: 1.6;">
-                                Please find details for invoice <strong>#${data.invoiceNumber}</strong> issued by <strong>${companyName}</strong>.
+
+                            <!-- Notification Message -->
+                            <p style="margin: 0 0 24px 0; font-size: 14.5px; color: #4b5563; line-height: 1.6;">
+                                A new invoice has been issued to you by <strong>${companyName}</strong>.
                             </p>
 
-                            <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="background-color: #eef2ff; border: 1px solid #c7d2fe; border-radius: 12px; padding: 20px; margin-bottom: 24px;">
+                            <!-- Reference Details Card -->
+                            <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="background-color: #f8fafc; border: 1px solid #e2e8f0; border-radius: 12px; padding: 18px 20px; margin-bottom: 24px;">
                                 <tr>
-                                    <td>
-                                        <div style="font-size: 11px; font-weight: 800; color: #3730a3; text-transform: uppercase; margin-bottom: 4px;">Total Amount Due</div>
-                                        <div style="font-size: 32px; font-weight: 900; color: #312e81;">${formattedTotal}</div>
+                                    <td style="vertical-align: top;">
+                                        <div style="font-size: 11px; font-weight: 800; color: #64748b; text-transform: uppercase; letter-spacing: 0.05em; margin-bottom: 4px;">Invoice Number</div>
+                                        <div style="font-size: 15px; font-weight: 800; color: #1e293b;">#${data.invoiceNumber}</div>
                                     </td>
-                                    <td align="right" valign="bottom">
-                                        <div style="font-size: 12px; color: #4338ca; font-weight: 700;">Due Date: ${data.dueDate}</div>
+                                    <td style="vertical-align: top; text-align: center;">
+                                        <div style="font-size: 11px; font-weight: 800; color: #64748b; text-transform: uppercase; letter-spacing: 0.05em; margin-bottom: 4px;">Due Date</div>
+                                        <div style="font-size: 14px; font-weight: 700; color: #1e293b;">${data.dueDate}</div>
+                                    </td>
+                                    <td style="vertical-align: top; text-align: right;">
+                                        <div style="font-size: 11px; font-weight: 800; color: #4338ca; text-transform: uppercase; letter-spacing: 0.05em; margin-bottom: 4px;">Total Amount</div>
+                                        <div style="font-size: 18px; font-weight: 900; color: #312e81;">${formattedTotal}</div>
                                     </td>
                                 </tr>
                             </table>
 
-                            <!-- Centrally Positioned Download Invoice - PDF Action Button -->
-                            <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="margin: 20px 0 28px 0;">
+                            <!-- Download Directive -->
+                            <p style="margin: 0 0 20px 0; font-size: 14px; color: #4b5563; line-height: 1.5;">
+                                Please use the link below to view and download your official invoice document:
+                            </p>
+
+                            <!-- Secure Download Button -->
+                            <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="margin: 0 0 32px 0;">
                                 <tr>
                                     <td align="center">
                                         <!--[if mso]>
-                                        <v:roundrect xmlns:v="urn:schemas-microsoft-com:vml" xmlns:w="urn:schemas-microsoft-com:office:word" href="${downloadUrl}" style="height:48px;v-text-anchor:middle;width:260px;" arcsize="20%" stroke="f" fillcolor="#4f46e5">
+                                        <v:roundrect xmlns:v="urn:schemas-microsoft-com:vml" xmlns:w="urn:schemas-microsoft-com:office:word" href="${downloadUrl}" style="height:46px;v-text-anchor:middle;width:250px;" arcsize="20%" stroke="f" fillcolor="#4f46e5">
                                             <w:anchorlock/>
                                             <center style="color:#ffffff;font-family:sans-serif;font-size:15px;font-weight:bold;">Download Invoice - PDF</center>
                                         </v:roundrect>
                                         <![endif]-->
                                         <!--[if !mso]><!-->
-                                        <a href="${downloadUrl}" target="_blank" style="background-color: #4f46e5; color: #ffffff; font-size: 15px; font-weight: 700; text-decoration: none; padding: 14px 32px; border-radius: 10px; display: inline-block; text-align: center; box-shadow: 0 4px 12px rgba(79, 70, 229, 0.3); border: 1px solid #4338ca; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;">
-                                            📥 Download Invoice - PDF
+                                        <a href="${downloadUrl}" target="_blank" style="background-color: #4f46e5; color: #ffffff; font-size: 15px; font-weight: 700; text-decoration: none; padding: 14px 32px; border-radius: 10px; display: inline-block; text-align: center; box-shadow: 0 4px 12px rgba(79, 70, 229, 0.25); font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; letter-spacing: -0.01em;">
+                                            Download Invoice - PDF
                                         </a>
                                         <!--<![endif]-->
                                     </td>
                                 </tr>
                             </table>
 
-                            <h3 style="margin: 0 0 12px 0; font-size: 14px; font-weight: 800; color: #374151; text-transform: uppercase;">Invoice Items</h3>
-                            <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="border-collapse: collapse; margin-bottom: 24px; border: 1px solid #e5e7eb; border-radius: 8px; overflow: hidden;">
-                                <thead>
-                                    <tr style="background-color: #f3f4f6; text-align: left;">
-                                        <th style="padding: 12px 16px; font-size: 12px; font-weight: 800; color: #4b5563; text-transform: uppercase;">Item</th>
-                                        <th style="padding: 12px 16px; font-size: 12px; font-weight: 800; color: #4b5563; text-transform: uppercase; text-align: center;">Qty</th>
-                                        <th style="padding: 12px 16px; font-size: 12px; font-weight: 800; color: #4b5563; text-transform: uppercase; text-align: right;">Rate</th>
-                                        <th style="padding: 12px 16px; font-size: 12px; font-weight: 800; color: #4b5563; text-transform: uppercase; text-align: right;">Amount</th>
-                                    </tr>
-                                </thead>
-                                <tbody>
-                                    ${itemsRowsHtml}
-                                </tbody>
-                            </table>
-
-                            ${data.company.bankAccountNumber ? `
-                            <div style="background-color: #f8fafc; border: 1px solid #e2e8f0; border-radius: 8px; padding: 16px; margin-bottom: 24px;">
-                                <div style="font-size: 12px; font-weight: 800; color: #1e293b; text-transform: uppercase; margin-bottom: 8px;">Bank Payment Details</div>
-                                <div style="font-size: 13px; color: #334155;">Bank: <strong>${data.company.bankName || 'N/A'}</strong></div>
-                                <div style="font-size: 13px; color: #334155;">Account Name: <strong>${data.company.bankAccountName || companyName}</strong></div>
-                                <div style="font-size: 13px; color: #334155;">Account Number: <strong>${data.company.bankAccountNumber}</strong></div>
+                            <!-- Thank you & Sign-off -->
+                            <div style="border-top: 1px solid #f1f5f9; padding-top: 24px; color: #334155; font-size: 14px; line-height: 1.6;">
+                                <p style="margin: 0 0 4px 0;">Thank you.</p>
+                                <p style="margin: 0; font-weight: 700; color: #0f172a;">${companyName}</p>
+                                ${data.company?.email ? `<p style="margin: 2px 0 0 0; font-size: 13px; color: #64748b;">${data.company.email}</p>` : ''}
+                                ${data.company?.phone ? `<p style="margin: 2px 0 0 0; font-size: 13px; color: #64748b;">${data.company.phone}</p>` : ''}
                             </div>
-                            ` : ''}
                         </td>
                     </tr>
+
+                    <!-- Authenticity & Security Footer -->
                     <tr>
-                        <td style="background-color: #f9fafb; padding: 24px 32px; border-top: 1px solid #e5e7eb; text-align: center;">
-                            <p style="margin: 0; font-size: 12px; color: #6b7280;">
-                                Powered by <strong style="color: #111827;">CraveBiZ AI Platform</strong>
+                        <td style="background-color: #f8fafc; padding: 20px 32px; border-top: 1px solid #e5e7eb; text-align: center;">
+                            <p style="margin: 0 0 6px 0; font-size: 11.5px; color: #94a3b8;">
+                                This email contains a secure link to the official invoice document generated by CraveBiZ AI.
+                            </p>
+                            <p style="margin: 0; font-size: 12px; color: #64748b;">
+                                Powered by <strong style="color: #1e1b4b;">CraveBiZ AI Platform</strong>
                             </p>
                         </td>
                     </tr>
@@ -508,15 +518,18 @@ export function buildInvoiceHtmlEmail(data: InvoiceEmailData): string {
 
 export async function sendInvoiceEmailDirect(data: InvoiceEmailData): Promise<{ success: boolean; message: string; messageId?: string }> {
     const html = buildInvoiceHtmlEmail(data);
-    const subject = `Invoice #${data.invoiceNumber} from ${data.company.name || 'CraveBiZ'}`;
-    const fromAddress = `${data.company.name || 'CraveBiZ'} <${process.env.SMTP_FROM || 'noreply@cloudcraves.com'}>`;
-    const textContent = `Invoice #${data.invoiceNumber}\nTotal Amount Due: ${data.currencySymbol || '₦'}${data.totalAmount}\nDue Date: ${data.dueDate}\n\nDear ${data.recipientName},\nPlease view full invoice details in your HTML email view.`;
+    const companyName = data.company?.name || 'CraveBiZ Merchant';
+    const subject = `New Invoice Available - #${data.invoiceNumber} from ${companyName}`;
+    const fromAddress = `${companyName} <${process.env.SMTP_FROM || 'noreply@cloudcraves.com'}>`;
+    const downloadUrl = data.downloadUrl || data.viewLink || '';
+
+    const textContent = `New Invoice Available\n\nDear ${data.recipientName},\n\nA new invoice (Invoice #${data.invoiceNumber}) has been issued to you by ${companyName}.\nTotal Amount: ${data.currencySymbol || '₦'}${data.totalAmount}\nDue Date: ${data.dueDate}\n\nPlease use the link below to view and download your invoice:\n${downloadUrl}\n\nThank you.\n\n${companyName}`;
 
     try {
         await createInAppNotificationRecordAsync({
             recipientEmail: data.recipientEmail,
             title: `Invoice #${data.invoiceNumber} Issued`,
-            message: `New invoice #${data.invoiceNumber} for ${data.currencySymbol || '₦'}${data.totalAmount} from ${data.company.name || 'CraveBiZ'} is ready for review.`,
+            message: `New invoice #${data.invoiceNumber} for ${data.currencySymbol || '₦'}${data.totalAmount} from ${companyName} is available for download.`,
             category: 'invoice',
             type: 'info'
         });
@@ -530,7 +543,7 @@ export async function sendInvoiceEmailDirect(data: InvoiceEmailData): Promise<{ 
         subject,
         html,
         text: textContent,
-        replyTo: data.company.email
+        replyTo: data.company?.email
     });
 }
 

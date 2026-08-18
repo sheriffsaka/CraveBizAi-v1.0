@@ -44,7 +44,11 @@ import {
 import {
     generateInvoiceAccessToken,
     verifyInvoiceAccessToken,
-    generateInvoicePdfBuffer
+    generateInvoicePdfBuffer,
+    storeInvoicePdf,
+    getStoredInvoicePdf,
+    invalidateInvoicePdfCache,
+    invoiceDataCache
 } from "../services/invoicePdfService.js";
 import {
     getInAppNotificationsStore,
@@ -1358,9 +1362,6 @@ app.post("/api/send-receipt-email", async (req, res) => {
     }
 });
 
-// In-memory cache for recent invoice email payloads to serve fast PDF downloads
-const invoiceDataCache = new Map<string, any>();
-
 async function fetchInvoiceDataFromSupabase(invoiceId: string, companyId?: string): Promise<any | null> {
     try {
         const { data: inv, error: invErr } = await supabaseClient
@@ -1377,6 +1378,8 @@ async function fetchInvoiceDataFromSupabase(invoiceId: string, companyId?: strin
         let recipientName = "Valued Client";
         let recipientCompany = "";
         let recipientEmail = "";
+        let recipientPhone = "";
+        let recipientAddress = "";
         if (inv.client_id) {
             const { data: client } = await supabaseClient
                 .from('clients')
@@ -1387,6 +1390,8 @@ async function fetchInvoiceDataFromSupabase(invoiceId: string, companyId?: strin
                 recipientName = client.name || recipientName;
                 recipientCompany = client.company_name || "";
                 recipientEmail = client.email || "";
+                recipientPhone = client.phone || "";
+                recipientAddress = client.address || "";
             }
         }
 
@@ -1399,11 +1404,13 @@ async function fetchInvoiceDataFromSupabase(invoiceId: string, companyId?: strin
                 .eq('id', targetCompanyId)
                 .maybeSingle();
             if (comp) {
+                companyObj.id = comp.id;
                 companyObj.name = comp.name;
                 companyObj.email = comp.email;
                 companyObj.phone = comp.phone;
                 companyObj.address = comp.address;
                 companyObj.logoUrl = comp.logo_url;
+                companyObj.taxId = comp.tax_id || comp.vat_id;
             }
 
             if (inv.selected_bank_account_id) {
@@ -1430,10 +1437,11 @@ async function fetchInvoiceDataFromSupabase(invoiceId: string, companyId?: strin
             .eq('invoice_id', invoiceId);
 
         const itemsList = (items || []).map((it: any) => ({
-            name: it.description || "Service Item",
-            description: it.description,
+            name: it.name || it.description || "Service Item",
+            description: it.description || it.notes,
             quantity: Number(it.quantity) || 1,
-            price: Number(it.price) || 0
+            price: Number(it.price || it.rate || it.unit_price) || 0,
+            discount: Number(it.discount) || 0
         }));
 
         return {
@@ -1442,15 +1450,25 @@ async function fetchInvoiceDataFromSupabase(invoiceId: string, companyId?: strin
             recipientEmail,
             recipientName,
             recipientCompany,
+            recipientPhone,
+            recipientAddress,
             invoiceNumber: inv.invoice_number,
             issueDate: inv.issue_date,
             dueDate: inv.due_date,
             totalAmount: Number(inv.total) || 0,
             amountPaid: Number(inv.amount_paid) || 0,
+            discount: Number(inv.discount) || 0,
+            tax: Number(inv.tax) || 0,
+            status: inv.status,
             currencySymbol: "₦",
             items: itemsList.length > 0 ? itemsList : [{ name: "Invoice Services", quantity: 1, price: Number(inv.total) || 0 }],
             company: companyObj,
-            paymentTerms: inv.payment_terms
+            selectedBankAccountId: inv.selected_bank_account_id,
+            manualBankName: inv.manual_bank_name,
+            manualAccountName: inv.manual_account_name,
+            manualAccountNumber: inv.manual_account_number,
+            paymentTerms: inv.payment_terms,
+            notes: inv.notes || inv.payment_terms
         };
     } catch (err) {
         console.error("Error in fetchInvoiceDataFromSupabase:", err);
@@ -1458,7 +1476,7 @@ async function fetchInvoiceDataFromSupabase(invoiceId: string, companyId?: strin
     }
 }
 
-// Dispatch Rich HTML Invoice Directly to Recipient Inbox
+// Dispatch Rich HTML Invoice Direct Notification & Prepare Secure PDF
 app.post("/api/send-invoice-email", async (req, res) => {
     try {
         const {
@@ -1467,14 +1485,24 @@ app.post("/api/send-invoice-email", async (req, res) => {
             recipientEmail,
             recipientName,
             recipientCompany,
+            recipientPhone,
+            recipientAddress,
             invoiceNumber,
             issueDate,
             dueDate,
             totalAmount,
             amountPaid,
+            discount,
+            tax,
+            status,
             currencySymbol,
             items,
             company,
+            selectedBankAccountId,
+            manualBankName,
+            manualAccountName,
+            manualAccountNumber,
+            paymentTerms,
             notes
         } = req.body;
 
@@ -1497,14 +1525,24 @@ app.post("/api/send-invoice-email", async (req, res) => {
             recipientEmail,
             recipientName: recipientName || "Valued Client",
             recipientCompany,
+            recipientPhone,
+            recipientAddress,
             invoiceNumber,
             issueDate: issueDate || new Date().toLocaleDateString(),
             dueDate: dueDate || new Date().toLocaleDateString(),
             totalAmount: Number(totalAmount || 0),
             amountPaid: Number(amountPaid || 0),
+            discount: Number(discount || 0),
+            tax: tax !== undefined ? Number(tax) : undefined,
+            status: status || 'Pending',
             currencySymbol: currencySymbol || "₦",
             items: Array.isArray(items) ? items : [],
             company: company || { name: "CraveBiZ Merchant" },
+            selectedBankAccountId,
+            manualBankName,
+            manualAccountName,
+            manualAccountNumber,
+            paymentTerms,
             notes,
             downloadUrl
         };
@@ -1512,12 +1550,21 @@ app.post("/api/send-invoice-email", async (req, res) => {
         // Cache payload in memory for instant PDF download
         invoiceDataCache.set(invId, emailPayload);
 
+        // Pre-generate & persist official PDF buffer
+        try {
+            const pdfBytes = await generateInvoicePdfBuffer(emailPayload);
+            await storeInvoicePdf(invId, compId, pdfBytes, invoiceNumber);
+        } catch (pdfErr) {
+            console.warn("[/api/send-invoice-email] PDF pre-generation warning:", pdfErr);
+        }
+
+        // Send email notification with download link
         const result = await sendInvoiceEmailDirect(emailPayload);
 
         if (result.success) {
-            res.json(result);
+            res.json({ ...result, downloadUrl });
         } else {
-            res.status(500).json({ error: result.message || "Failed to dispatch invoice email directly." });
+            res.status(500).json({ error: result.message || "Failed to dispatch invoice email directly.", downloadUrl });
         }
     } catch (err: any) {
         console.error("Error in /api/send-invoice-email:", err);
@@ -1525,7 +1572,7 @@ app.post("/api/send-invoice-email", async (req, res) => {
     }
 });
 
-// Secure Public Endpoint for Downloading Verified Invoice PDF
+// Secure Public Endpoint for Downloading Verified Original Invoice PDF
 app.get("/api/public/invoice-pdf", async (req, res) => {
     try {
         const token = req.query.token as string;
@@ -1539,18 +1586,28 @@ app.get("/api/public/invoice-pdf", async (req, res) => {
         }
 
         const { invoiceId, companyId } = verified;
-        let invoiceData = invoiceDataCache.get(invoiceId);
 
-        if (!invoiceData) {
-            invoiceData = await fetchInvoiceDataFromSupabase(invoiceId, companyId);
+        // 1. Try retrieving pre-stored/cached official PDF
+        let pdfBytes = await getStoredInvoicePdf(invoiceId, companyId);
+
+        if (!pdfBytes) {
+            // 2. Look up invoice data
+            let invoiceData = invoiceDataCache.get(invoiceId);
+
+            if (!invoiceData) {
+                invoiceData = await fetchInvoiceDataFromSupabase(invoiceId, companyId);
+            }
+
+            if (!invoiceData) {
+                return res.status(404).send("Invoice record not found.");
+            }
+
+            // Generate fresh official PDF & store
+            pdfBytes = await generateInvoicePdfBuffer(invoiceData);
+            await storeInvoicePdf(invoiceId, companyId, pdfBytes, invoiceData.invoiceNumber);
         }
 
-        if (!invoiceData) {
-            return res.status(404).send("Invoice record not found.");
-        }
-
-        const pdfBytes = await generateInvoicePdfBuffer(invoiceData);
-        const safeInvNum = (invoiceData.invoiceNumber || invoiceId || 'document').replace(/[^a-zA-Z0-9_-]/g, '_');
+        const safeInvNum = invoiceId.replace(/[^a-zA-Z0-9_-]/g, '_');
 
         res.setHeader("Content-Type", "application/pdf");
         res.setHeader("Content-Disposition", `attachment; filename="Invoice-${safeInvNum}.pdf"`);
@@ -3653,30 +3710,5 @@ app.post("/api/subscription/invite", verifyTenant, async (req: any, res) => {
     }
 });
 
-// Vite Dev Server / Static Hosting setup (only when not on Vercel)
-if (!process.env.VERCEL) {
-    if (process.env.NODE_ENV !== "production") {
-        import("vite").then(({ createServer }) => {
-            createServer({
-                server: { middlewareMode: true },
-                appType: "spa",
-            }).then((vite) => {
-                app.use(vite.middlewares);
-                app.listen(PORT, "0.0.0.0", () => {
-                    console.log(`Server starting on port ${PORT} with environment ${process.env.NODE_ENV || 'development'}`);
-                });
-            });
-        });
-    } else {
-        const distPath = path.join(process.cwd(), 'dist');
-        app.use(express.static(distPath));
-        app.get('*', (req, res) => {
-            res.sendFile(path.join(distPath, 'index.html'));
-        });
-        app.listen(PORT, "0.0.0.0", () => {
-            console.log(`Server starting on port ${PORT} with environment production`);
-        });
-    }
-}
-
+export { app };
 export default app;

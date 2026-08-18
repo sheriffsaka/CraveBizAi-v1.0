@@ -107,6 +107,8 @@ export interface Client {
   name: string;
   email: string;
   companyName: string;
+  phone?: string;
+  address?: string;
   status?: 'Active' | 'Archived' | 'Deleted';
   is_archived?: boolean;
   archived_at?: string;
@@ -157,6 +159,7 @@ export interface Invoice {
   items: InvoiceItem[];
   total: number;
   discount?: number;
+  tax?: number;
   amountPaid?: number; // Added for partial payments
   status: InvoiceStatus;
   selectedBankAccountId?: string;

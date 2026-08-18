@@ -59,7 +59,8 @@ const InvoiceDetail: React.FC<InvoiceDetailProps> = ({ invoice, client, services
                 name: getServiceName(item.serviceId),
                 description: item.description,
                 quantity: item.quantity,
-                price: item.price
+                price: item.price,
+                discount: item.discount
             }));
 
             const response = await api.sendInvoiceEmailDirect({
@@ -68,29 +69,43 @@ const InvoiceDetail: React.FC<InvoiceDetailProps> = ({ invoice, client, services
                 recipientEmail: client.email,
                 recipientName: client.name || "Valued Client",
                 recipientCompany: client.companyName,
+                recipientPhone: client.phone,
+                recipientAddress: client.address,
                 invoiceNumber: invoice.invoiceNumber,
                 issueDate: invoice.issueDate,
                 dueDate: invoice.dueDate,
                 totalAmount: invoice.total,
                 amountPaid: invoice.amountPaid || 0,
+                discount: invoice.discount,
+                tax: invoice.tax,
+                status: invoice.status,
                 currencySymbol: "₦",
                 items: itemsPayload,
                 company: {
+                    id: company?.id,
                     name: company?.name || "CraveBiZ Workspace",
                     email: company?.email,
                     phone: company?.phone,
                     address: company?.address,
                     logoUrl: company?.logoUrl,
+                    bankName: selectedBankAccount?.bankName || invoice.manualBankName,
+                    bankAccountName: selectedBankAccount?.accountName || invoice.manualAccountName || company?.name,
+                    bankAccountNumber: selectedBankAccount?.accountNumber || invoice.manualAccountNumber,
                     bankAccounts: company?.bankAccounts
                 },
+                selectedBankAccountId: invoice.selectedBankAccountId,
+                manualBankName: invoice.manualBankName,
+                manualAccountName: invoice.manualAccountName,
+                manualAccountNumber: invoice.manualAccountNumber,
+                paymentTerms: invoice.paymentTerms,
                 notes: (invoice as any).notes || invoice.paymentTerms
             });
 
-            setSendFeedback(response.message || `Invoice #${invoice.invoiceNumber} delivered directly to ${client.email}'s inbox!`);
+            setSendFeedback(response.message || `Invoice #${invoice.invoiceNumber} notification sent to ${client.email} with secure download link!`);
         } catch (e: any) {
             console.error("Failed to send invoice email directly:", e);
-            const subject = `Invoice ${invoice.invoiceNumber} from ${company?.name || 'Us'}`;
-            const body = `Dear ${client.name},\n\nPlease find details for invoice #${invoice.invoiceNumber}.\n\nAmount Due: ₦${balanceDue.toLocaleString()}\nDue Date: ${invoice.dueDate}\n\nThank you for your business.\n\nBest regards,\n${company?.name || 'The Team'}`;
+            const subject = `New Invoice Available - #${invoice.invoiceNumber} from ${company?.name || 'Us'}`;
+            const body = `New Invoice Available\n\nDear ${client.name},\n\nA new invoice (#${invoice.invoiceNumber}) has been issued to you by ${company?.name || 'our company'}.\nTotal Amount: ₦${invoice.total.toLocaleString()}\nDue Date: ${invoice.dueDate}\n\nThank you.\n\n${company?.name || 'The Team'}`;
             const mailtoLink = `mailto:${client.email}?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`;
             setSendFeedback(`Notice: Opening mail client as fallback (${e.message || 'Server error'}).`);
             setTimeout(() => { window.location.href = mailtoLink; }, 800);
