@@ -37,6 +37,11 @@ export default function PublicSigningPortal({ docId, token, prefilledRecipient, 
     const [dbSignatories, setDbSignatories] = useState<DbDocumentSignatory[]>([]);
     const [dbSignatures, setDbSignatures] = useState<DbDocumentSignature[]>([]);
     const [alreadySigned, setAlreadySigned] = useState(false);
+    // Re-sign flow: lets the signatory (e.g. the document owner) replace
+    // their existing signature - e.g. if it went missing from the completed
+    // document, or they simply want to update it.
+    const [isResigning, setIsResigning] = useState(false);
+    const [resignError, setResignError] = useState<string | null>(null);
 
     // Manual Email verification state
     const [userEmailInput, setUserEmailInput] = useState(prefilledRecipient || '');
@@ -434,17 +439,47 @@ export default function PublicSigningPortal({ docId, token, prefilledRecipient, 
         // Handle Modern Database flow
         if (dbSignatory && dbDoc) {
             setLoading(true);
+            setResignError(null);
             try {
                 // Find existing signature template for this signatory
                 let targetSig = dbSignatures.find(s => s.signatory_id === dbSignatory.id);
 
                 // If there's a selected field, retrieve its coordinates and size
                 const clickedField = (dbDoc.content_json?.fields || []).find((f: any) => f.id === selectedFieldId);
-                const pageNum = clickedField ? clickedField.page_number : 1;
-                const xPos = clickedField ? clickedField.x_position : 50;
-                const yPos = clickedField ? clickedField.y_position : 85;
-                const w = clickedField ? clickedField.width : 140;
-                const h = clickedField ? clickedField.height : 60;
+                const pageNum = clickedField ? clickedField.page_number : (targetSig?.page_number || 1);
+                const xPos = clickedField ? clickedField.x_position : (targetSig?.x_position ?? 50);
+                const yPos = clickedField ? clickedField.y_position : (targetSig?.y_position ?? 85);
+                const w = clickedField ? clickedField.width : (targetSig?.width || 140);
+                const h = clickedField ? clickedField.height : (targetSig?.height || 60);
+
+                // Re-sign flow: replace the existing signature via the
+                // dedicated resign endpoint, which also regenerates and
+                // re-uploads the merged PDF using every signer's current
+                // signature (not just this one).
+                if (isResigning) {
+                    const result = await api.resignDocSignifySignature(dbDoc.id, {
+                        signatoryId: dbSignatory.id,
+                        page_number: pageNum,
+                        x_position: xPos,
+                        y_position: yPos,
+                        width: w,
+                        height: h,
+                        signature_type: (sigType === 'type' ? 'type' : sigType === 'upload' ? 'upload' : 'draw'),
+                        signature_image_url: finalSigImage
+                    });
+
+                    if (result && result.document) {
+                        setDbDoc(result.document);
+                        setDbSignatories(prev => prev.map(s => s.id === result.signatory.id ? result.signatory : s));
+                        setDbSignatory(result.signatory);
+                        setDbSignatures(result.signatures || []);
+                        setAlreadySigned(true);
+                        setIsSignModalOpen(false);
+                        setIsResigning(false);
+                    }
+                    setLoading(false);
+                    return;
+                }
 
                 if (!targetSig) {
                     targetSig = {
@@ -509,7 +544,11 @@ export default function PublicSigningPortal({ docId, token, prefilledRecipient, 
                     alert("Could not save the signature details. Please try again.");
                 }
             } catch (err: any) {
-                alert("Error saving signature to DB: " + err.message);
+                if (isResigning) {
+                    setResignError(err.message || "Failed to save your new signature. Please try again.");
+                } else {
+                    alert("Error saving signature to DB: " + err.message);
+                }
             } finally {
                 setLoading(false);
             }
@@ -762,17 +801,41 @@ export default function PublicSigningPortal({ docId, token, prefilledRecipient, 
                                     <p className="text-xs text-emerald-700 font-medium">Your signature has been recorded securely. You can view or download the executed agreement anytime.</p>
                                 </div>
                             </div>
-                            {dbDoc?.signed_file_url && (
-                                <a
-                                    href={dbDoc.signed_file_url}
-                                    download={`${dbDoc.file_name || 'document'}_signed.pdf`}
-                                    target="_blank"
-                                    rel="noreferrer"
-                                    className="px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold rounded-xl shadow transition-all flex items-center gap-2 whitespace-nowrap"
-                                >
-                                    📥 Download Signed PDF
-                                </a>
-                            )}
+                            <div className="flex items-center gap-2 flex-wrap justify-center">
+                                {dbDoc?.signed_file_url && (
+                                    <a
+                                        href={dbDoc.signed_file_url}
+                                        download={`${dbDoc.file_name || 'document'}_signed.pdf`}
+                                        target="_blank"
+                                        rel="noreferrer"
+                                        className="px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold rounded-xl shadow transition-all flex items-center gap-2 whitespace-nowrap"
+                                    >
+                                        📥 Download Signed PDF
+                                    </a>
+                                )}
+                                {dbSignatory && (
+                                    <button
+                                        type="button"
+                                        onClick={() => {
+                                            setResignError(null);
+                                            setIsResigning(true);
+                                            setSelectedFieldId(null);
+                                            setTypedName(dbSignatory.name || '');
+                                            setSigTitle((dbSignatory.role || '').toUpperCase().replace('_', ' '));
+                                            setIsSignModalOpen(true);
+                                        }}
+                                        className="px-4 py-2 bg-white hover:bg-gray-50 text-emerald-700 border border-emerald-300 text-xs font-bold rounded-xl shadow-sm transition-all flex items-center gap-2 whitespace-nowrap"
+                                    >
+                                        ✏️ Re-sign
+                                    </button>
+                                )}
+                            </div>
+                        </div>
+                    )}
+
+                    {resignError && (
+                        <div className="bg-red-50 border border-red-200 rounded-2xl p-4 text-xs font-semibold text-red-700 mb-4">
+                            {resignError}
                         </div>
                     )}
 
@@ -1288,12 +1351,16 @@ export default function PublicSigningPortal({ docId, token, prefilledRecipient, 
                                     <svg className="w-5 h-5 text-indigo-600 animate-pulse" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z" />
                                     </svg>
-                                    Apply Electronic Signature
+                                    {isResigning ? 'Re-sign Document' : 'Apply Electronic Signature'}
                                 </h3>
-                                <p className="text-xs text-gray-400 font-medium">Your signature will be mathematically logged with your name and timestamp.</p>
+                                <p className="text-xs text-gray-400 font-medium">
+                                    {isResigning
+                                        ? 'This replaces your previous signature and regenerates the finalized document for everyone.'
+                                        : 'Your signature will be mathematically logged with your name and timestamp.'}
+                                </p>
                             </div>
                             <button
-                                onClick={() => setIsSignModalOpen(false)}
+                                onClick={() => { setIsSignModalOpen(false); setIsResigning(false); }}
                                 className="p-1 hover:bg-gray-100 rounded-lg text-gray-400 hover:text-gray-800 transition-all"
                             >
                                 <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M6 18L18 6M6 6l12 12" /></svg>
@@ -1402,16 +1469,17 @@ export default function PublicSigningPortal({ docId, token, prefilledRecipient, 
 
                         <div className="grid grid-cols-2 gap-3 pt-3">
                             <button
-                                onClick={() => setIsSignModalOpen(false)}
+                                onClick={() => { setIsSignModalOpen(false); setIsResigning(false); }}
                                 className="py-2.5 border border-gray-200 hover:bg-gray-50 text-gray-700 text-xs font-black uppercase tracking-widest rounded-xl transition-all"
                             >
                                 Cancel
                             </button>
                             <button
                                 onClick={handleApplySignature}
-                                className="py-2.5 bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-black uppercase tracking-widest rounded-xl transition-all shadow-md active:scale-95"
+                                disabled={loading}
+                                className="py-2.5 bg-indigo-600 hover:bg-indigo-700 disabled:opacity-60 text-white text-xs font-black uppercase tracking-widest rounded-xl transition-all shadow-md active:scale-95"
                             >
-                                Execute & Apply
+                                {loading ? 'Saving...' : (isResigning ? 'Save New Signature' : 'Execute & Apply')}
                             </button>
                         </div>
                     </div>
