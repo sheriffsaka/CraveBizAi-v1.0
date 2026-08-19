@@ -2333,6 +2333,53 @@ class CraveBizApi {
     }
   }
 
+  /**
+   * Let a signatory (typically the document owner) replace their own
+   * previously-placed signature. Regenerates and re-uploads the merged PDF
+   * from the complete, current set of signatures so the stored document
+   * reflects everyone's latest signature - not just the one just updated.
+   */
+  async resignDocSignifySignature(
+    documentId: string,
+    payload: {
+      signatoryId: string;
+      page_number: number;
+      x_position: number;
+      y_position: number;
+      width?: number;
+      height?: number;
+      signature_type?: 'draw' | 'type' | 'upload';
+      signature_image_url: string;
+    },
+    companyId?: string
+  ): Promise<{ document: DbDocument; signatory: DbDocumentSignatory; signatures: DbDocumentSignature[] }> {
+    try {
+      const response = await fetch(`/api/signify/documents/${documentId}/resign`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          ...(await this.getAuthHeaders(companyId))
+        },
+        body: JSON.stringify(payload)
+      });
+
+      if (!response.ok) {
+        const errData = await response.json().catch(() => ({}));
+        throw new Error(errData.error || `Server failed to re-sign the document (Status code: ${response.status})`);
+      }
+
+      const data = await response.json();
+      if (data && data.document) {
+        return { document: data.document, signatory: data.signatory, signatures: data.signatures || [] };
+      }
+
+      throw new Error("Invalid response received from signature server");
+    } catch (err: any) {
+      console.error("resignDocSignifySignature error:", err);
+      throw err;
+    }
+  }
+
   // ============================================================================
   // DOCSIGNIFY PREMIUM CLIENT API METHODS
   // ============================================================================
