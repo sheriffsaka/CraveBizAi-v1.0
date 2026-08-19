@@ -473,7 +473,8 @@ export class SignifyService {
             content_json: signedDoc.content_json || {}
           };
 
-          return { document, signatories, signatures: [] };
+          const signatures = await this.getPersistedSignatures(docId);
+          return { document, signatories, signatures };
         }
 
         // Check documents
@@ -505,7 +506,8 @@ export class SignifyService {
             file_name: docData.file_name || `${docData.id}.pdf`
           };
 
-          return { document, signatories, signatures: [] };
+          const signatures = await this.getPersistedSignatures(docId);
+          return { document, signatories, signatures };
         }
       }
     } catch (supaErr) {
@@ -599,16 +601,77 @@ export class SignifyService {
 
     memoryStore.signatures.push(signature);
 
-    // Persist to Supabase
+    // Persist to Supabase. This is the durable home for the signature
+    // placement (page/position/size/image) - see document_signatures
+    // migration for why this can no longer live only in memoryStore.
     try {
       if (supabaseClient && signature.signatory_id && signature.signature_image_url) {
         await supabaseClient.from('document_signers').update({
           signature_value: signature.signature_image_url
         }).eq('id', signature.signatory_id);
+
+        const { error: sigTableErr } = await supabaseClient
+          .from('document_signatures')
+          .upsert([{
+            document_id: signature.document_id,
+            signatory_id: signature.signatory_id,
+            page_number: signature.page_number,
+            x_position: signature.x_position,
+            y_position: signature.y_position,
+            width: signature.width || null,
+            height: signature.height || null,
+            signature_type: signature.signature_type || 'draw',
+            signature_image_url: signature.signature_image_url,
+            updated_at: new Date().toISOString()
+          }], { onConflict: 'document_id,signatory_id,page_number' });
+
+        if (sigTableErr && sigTableErr.code !== '42P01') {
+          console.warn("[SignifyService] Could not persist signature placement to 'document_signatures':", sigTableErr.message);
+        }
       }
     } catch (e) {}
 
     return signature;
+  }
+
+  /**
+   * Fetch every durably-persisted signature placement for a document.
+   * This is the source of truth for the final PDF merge, replacing the old
+   * approach of reading only from the ephemeral in-memory store (which does
+   * not reliably survive across separate serverless invocations).
+   */
+  static async getPersistedSignatures(docId: string): Promise<DbDocumentSignature[]> {
+    try {
+      if (supabaseClient) {
+        const { data, error } = await supabaseClient
+          .from('document_signatures')
+          .select('*')
+          .eq('document_id', docId);
+
+        if (!error && Array.isArray(data)) {
+          return data.map((s: any) => ({
+            id: s.id,
+            document_id: s.document_id,
+            signatory_id: s.signatory_id,
+            page_number: s.page_number,
+            x_position: s.x_position,
+            y_position: s.y_position,
+            width: s.width || undefined,
+            height: s.height || undefined,
+            signature_type: s.signature_type || 'draw',
+            signature_image_url: s.signature_image_url,
+            created_at: s.created_at || new Date().toISOString()
+          }));
+        }
+      }
+    } catch (e) {
+      console.warn("[SignifyService] getPersistedSignatures Supabase error:", e);
+    }
+
+    // Fallback to in-memory store (e.g. local dev without Supabase configured)
+    return Array.isArray(memoryStore.signatures)
+      ? memoryStore.signatures.filter(s => s.document_id === docId)
+      : [];
   }
 
   /**
@@ -663,12 +726,38 @@ export class SignifyService {
       throw new Error(`Document ${docId} not found`);
     }
 
-    // Save signatures
+    // Persist newly submitted signatures durably (page/position/size/image),
+    // so the merge step below - and any future re-sign or reload - always has
+    // access to every signer's placement, not just whatever happens to still
+    // be in this process's memory.
     if (signaturesInput && signaturesInput.length > 0) {
       for (const sig of signaturesInput) {
         if (!Array.isArray(memoryStore.signatures)) memoryStore.signatures = [];
         memoryStore.signatures = memoryStore.signatures.filter(s => s.id !== sig.id);
         memoryStore.signatures.push(sig);
+
+        try {
+          if (supabaseClient && sig.signatory_id && sig.signature_image_url) {
+            const { error: sigTableErr } = await supabaseClient
+              .from('document_signatures')
+              .upsert([{
+                document_id: sig.document_id,
+                signatory_id: sig.signatory_id,
+                page_number: sig.page_number,
+                x_position: sig.x_position,
+                y_position: sig.y_position,
+                width: sig.width || null,
+                height: sig.height || null,
+                signature_type: sig.signature_type || 'draw',
+                signature_image_url: sig.signature_image_url,
+                updated_at: new Date().toISOString()
+              }], { onConflict: 'document_id,signatory_id,page_number' });
+
+            if (sigTableErr && sigTableErr.code !== '42P01') {
+              console.warn("[SignifyService] Could not persist signature placement during status update:", sigTableErr.message);
+            }
+          }
+        } catch (e) {}
       }
     }
 
@@ -678,6 +767,12 @@ export class SignifyService {
     const totalToSign = docSignatories.length;
     const signedCount = docSignatories.filter(s => s.status === 'signed').length;
 
+    // Pull the COMPLETE, durable set of signature placements for this
+    // document (every signer, from every past request/invocation) rather
+    // than relying on this process's in-memory cache. This is what fixes
+    // signatures silently disappearing from the completed PDF.
+    const allSignaturesForDoc = await this.getPersistedSignatures(docId);
+
     let finalSignedUrl: string | null = document.signed_file_url || null;
 
     if (status === 'declined') {
@@ -685,7 +780,7 @@ export class SignifyService {
     } else if (signedCount >= totalToSign && totalToSign > 0) {
       // All parties signed: Merge signatures in memory and upload to Supabase Storage
       try {
-        const mergedBase64 = await this.mergeSignatures(document.id, docSignatories, memoryStore.signatures || []);
+        const mergedBase64 = await this.mergeSignatures(document.id, docSignatories, allSignaturesForDoc);
         const pdfBuffer = Buffer.from(mergedBase64, "base64");
         const storagePath = `signed_docs/${document.id}_signed.pdf`;
 
@@ -736,7 +831,10 @@ export class SignifyService {
           original_file_url: document.original_file_url || null,
           signed_file_url: finalSignedUrl || document.signed_file_url || null,
           storage_path: finalSignedUrl || document.original_file_url || null,
-          signature_data: signaturesInput && signaturesInput.length > 0 ? signaturesInput[0] : (signatory as any).signature_value || {},
+          // Store the FULL set of signature placements (every signer), not
+          // just the one submitted in this request - this is what previously
+          // caused earlier signers' signatures to be overwritten/lost here.
+          signature_data: allSignaturesForDoc,
           signatories: docSignatories,
           content_json: document.content_json || {},
           status: document.status,
@@ -800,6 +898,188 @@ export class SignifyService {
     }
 
     return { document, signatory };
+  }
+
+  /**
+   * Allow a signatory (typically the document owner) to replace their own
+   * previously-placed signature - e.g. when it went missing from the
+   * completed document because of the merge bug described above, or simply
+   * because they want to re-sign. This updates the durable signature
+   * placement, updates the signer's record, and regenerates + re-uploads the
+   * merged PDF using the complete, current set of signatures so the document
+   * in storage/database always reflects the latest signature for everyone.
+   */
+  static async resignSignature(
+    documentId: string,
+    signatoryId: string,
+    newSignature: {
+      page_number: number;
+      x_position: number;
+      y_position: number;
+      width?: number;
+      height?: number;
+      signature_type?: 'draw' | 'type' | 'upload';
+      signature_image_url: string;
+    }
+  ): Promise<{ document: DbDocument; signatory: DbDocumentSignatory; signatures: DbDocumentSignature[] }> {
+    if (!newSignature || !newSignature.signature_image_url) {
+      throw new Error("A signature image is required to re-sign.");
+    }
+
+    const details = await this.getDocumentDetails(documentId);
+    if (!details.document) {
+      throw new Error(`Document ${documentId} not found`);
+    }
+
+    const signatory = details.signatories.find(s => s.id === signatoryId);
+    if (!signatory) {
+      throw new Error(`Signatory ${signatoryId} not found on document ${documentId}`);
+    }
+
+    const document = details.document;
+
+    // 1. Replace the durable signature placement for this signatory (the
+    // unique index on document_id+signatory_id+page_number means this
+    // upsert overwrites the old placement instead of leaving a stale one).
+    try {
+      if (supabaseClient) {
+        const { error: sigTableErr } = await supabaseClient
+          .from('document_signatures')
+          .upsert([{
+            document_id: documentId,
+            signatory_id: signatoryId,
+            page_number: newSignature.page_number,
+            x_position: newSignature.x_position,
+            y_position: newSignature.y_position,
+            width: newSignature.width || null,
+            height: newSignature.height || null,
+            signature_type: newSignature.signature_type || 'draw',
+            signature_image_url: newSignature.signature_image_url,
+            updated_at: new Date().toISOString()
+          }], { onConflict: 'document_id,signatory_id,page_number' });
+
+        if (sigTableErr) {
+          if (sigTableErr.code === '42P01') {
+            throw new Error(`The 'document_signatures' table is missing from your Supabase database. Please run supabase_migration_document_signatures.sql in the Supabase SQL editor.`);
+          }
+          throw new Error(`Failed to save updated signature: ${sigTableErr.message}`);
+        }
+
+        // 2. Reflect the new signature image on the signer's record and make
+        // sure their status is 'signed' (covers the edge case of re-signing
+        // before their original signature ever completed successfully).
+        signatory.signature_value = newSignature.signature_image_url;
+        signatory.status = 'signed';
+        signatory.signed_at = new Date().toISOString();
+
+        await supabaseClient.from('document_signers').upsert([{
+          id: signatory.id,
+          document_id: signatory.document_id,
+          email: signatory.email || '',
+          name: signatory.name || '',
+          role: signatory.role || 'main_signatory',
+          status: 'signed',
+          signed_at: signatory.signed_at,
+          signature_value: newSignature.signature_image_url
+        }]);
+      }
+    } catch (err: any) {
+      console.error("[SignifyService] resignSignature persistence error:", err);
+      throw err;
+    }
+
+    // 3. Rebuild the merged PDF from the complete, current set of signature
+    // placements (this signatory's new one plus every other signer's), so
+    // the regenerated document is fully up to date for everyone, not just
+    // the person who just re-signed.
+    const docSignatories = details.signatories.map(s => s.id === signatoryId ? signatory : s);
+    const allSignaturesForDoc = await this.getPersistedSignatures(documentId);
+
+    let finalSignedUrl: string | null = document.signed_file_url || null;
+
+    try {
+      const mergedBase64 = await this.mergeSignatures(documentId, docSignatories, allSignaturesForDoc);
+      const pdfBuffer = Buffer.from(mergedBase64, "base64");
+      const storagePath = `signed_docs/${documentId}_signed.pdf`;
+
+      if (supabaseClient) {
+        const { data: uploadData, error: uploadErr } = await supabaseClient.storage
+          .from('documents')
+          .upload(storagePath, pdfBuffer, {
+            contentType: 'application/pdf',
+            upsert: true
+          });
+
+        if (!uploadErr && uploadData) {
+          const { data: urlData } = supabaseClient.storage.from('documents').getPublicUrl(storagePath);
+          if (urlData?.publicUrl) {
+            // Cache-bust so viewers/browsers don't keep showing the old
+            // cached PDF at the same public URL after a re-sign.
+            finalSignedUrl = `${urlData.publicUrl}?v=${Date.now()}`;
+          }
+        } else if (uploadErr) {
+          console.warn("[SignifyService] Storage upload error while re-signing:", uploadErr.message);
+        }
+      }
+
+      if (!finalSignedUrl) {
+        finalSignedUrl = `data:application/pdf;base64,${mergedBase64}`;
+      }
+
+      document.signed_file_url = finalSignedUrl;
+      document.status = 'completed';
+    } catch (mergeErr) {
+      console.error("[SignifyService] PDF regeneration failed during re-sign:", mergeErr);
+      throw new Error("Your new signature was saved, but the document could not be regenerated. Please try re-signing again.");
+    }
+
+    // 4. Persist the refreshed document record.
+    try {
+      if (supabaseClient) {
+        const signedDocPayload = {
+          id: document.id,
+          user_id: document.owner_id || 'anonymous',
+          company_id: document.company_id || null,
+          document_name: document.file_name || document.title || 'Document.pdf',
+          document_type: document.file_type || 'Agreement',
+          original_file_url: document.original_file_url || null,
+          signed_file_url: finalSignedUrl,
+          storage_path: finalSignedUrl,
+          signature_data: allSignaturesForDoc,
+          signatories: docSignatories,
+          content_json: document.content_json || {},
+          status: document.status,
+          updated_at: new Date().toISOString()
+        };
+
+        const { error: signedErr } = await supabaseClient.from('signed_documents').upsert([signedDocPayload]);
+        if (signedErr) {
+          console.error(`[SignifyService] Supabase write error on 'signed_documents' during re-sign: ${signedErr.message}`);
+        }
+
+        const { error: docErr } = await supabaseClient.from('documents').upsert([{
+          id: document.id,
+          file_name: document.file_name || document.title || "Document.pdf",
+          document_type: document.file_type || "Agreement",
+          status: document.status,
+          storage_path: finalSignedUrl,
+          company_id: document.company_id || null,
+          creator_id: document.owner_id || null,
+          updated_at: new Date().toISOString()
+        }]);
+        if (docErr) {
+          console.error(`[SignifyService] Supabase write error on 'documents' during re-sign: ${docErr.message}`);
+        }
+      }
+    } catch (persistErr: any) {
+      console.error("[SignifyService] Supabase persistence error in resignSignature:", persistErr);
+      throw new Error(`Your new signature was applied to the document, but saving the updated record failed: ${persistErr.message || persistErr}`);
+    }
+
+    memoryStore.documents[document.id] = document;
+    memoryStore.signatories[signatory.id] = signatory;
+
+    return { document, signatory, signatures: allSignaturesForDoc };
   }
 
   /**
