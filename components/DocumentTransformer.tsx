@@ -1211,7 +1211,19 @@ const DocumentTransformer: React.FC<DocumentTransformerProps> = ({
 
             const mappedSigs = signatories.map(s => {
                 const isOwner = s.id === 'creator' || s.id === 'owner' || s.id === 'myself' || (s as any).role === 'owner' || (user?.email && s.email?.toLowerCase() === user.email.toLowerCase());
-                const dbId = isOwner ? (user?.id || generateUUID()) : generateUUID();
+                // IMPORTANT: always generate a fresh, unique id for this signatory ROW,
+                // even for the owner. The `document_signers` row id is the primary key
+                // used to resolve signing links (?token=...), so reusing the owner's
+                // stable account id (user.id) here caused every document the same
+                // owner created to collide on the same database row - each new
+                // document's signer row silently overwrote the previous one, which is
+                // why an owner's signing link could show an old, already-completed
+                // document instead of the new pending one, and why the owner's
+                // signature could go missing once a later document overwrote their row.
+                // The document's actual owner is still tracked separately via
+                // `owner_id`/`creator_id` on the document record - this id is only for
+                // the per-document signatory row.
+                const dbId = generateUUID();
                 idMapping[s.id] = dbId;
                 return {
                     id: dbId,
