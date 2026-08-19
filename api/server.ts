@@ -1899,6 +1899,61 @@ app.post("/api/signify/signatories/:id/status", async (req, res) => {
     }
 });
 
+// 6.5 Re-sign: let the document owner (or a signatory acting on their own
+// record) replace their previously-placed signature, regenerating the
+// merged PDF from the complete, current set of signatures.
+app.post("/api/signify/documents/:id/resign", verifyTenant, async (req: any, res: any) => {
+    try {
+        const documentId = req.params.id;
+        const { signatoryId, page_number, x_position, y_position, width, height, signature_type, signature_image_url } = req.body;
+
+        if (!signatoryId || page_number === undefined || x_position === undefined || y_position === undefined || !signature_image_url) {
+            return res.status(400).json({ error: "Missing required fields to re-sign: signatoryId, page_number, x_position, y_position, or signature_image_url" });
+        }
+
+        // Authorization: only the document owner/creator, or the signatory
+        // themself (matched by email), may re-sign a signatory's record.
+        const existing = await SignifyService.getDocumentDetails(documentId);
+        if (!existing.document) {
+            return res.status(404).json({ error: "Document not found" });
+        }
+
+        const targetSignatory = existing.signatories.find(s => s.id === signatoryId);
+        if (!targetSignatory) {
+            return res.status(404).json({ error: "Signatory not found on this document" });
+        }
+
+        const requesterId = req.user?.id;
+        const requesterEmail = (req.user?.email || '').toLowerCase();
+        const isDocumentOwner = requesterId && (existing.document.owner_id === requesterId || existing.document.company_id === requesterId);
+        const isTargetSignatory = requesterEmail && targetSignatory.email?.toLowerCase() === requesterEmail;
+
+        if (!isDocumentOwner && !isTargetSignatory) {
+            return res.status(403).json({ error: "You are not authorized to re-sign this document." });
+        }
+
+        const result = await SignifyService.resignSignature(documentId, signatoryId, {
+            page_number,
+            x_position,
+            y_position,
+            width,
+            height,
+            signature_type,
+            signature_image_url
+        });
+
+        res.json({
+            success: true,
+            document: result.document,
+            signatory: result.signatory,
+            signatures: result.signatures
+        });
+    } catch (err: any) {
+        console.error("DocSignify re-sign error:", err);
+        res.status(500).json({ error: err.message || "Internal server error while re-signing document" });
+    }
+});
+
 
 // ============================================================================
 // DOCSIGNIFY PREMIUM SaaS ENDPOINTS
