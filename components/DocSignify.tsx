@@ -352,13 +352,31 @@ export default function DocSignify({ company, user, prefillProject, prefillClien
       const resolvedFileName = fileName || 'secured_agreement.pdf';
       const resolvedFileType = fileType || 'pdf';
 
-      const idMapping: { [key: string]: string } = {
-        'myself': user?.id || 'myself_owner'
+      const generateUUID = () => {
+        if (typeof window !== 'undefined' && window.crypto && window.crypto.randomUUID) {
+          return window.crypto.randomUUID();
+        }
+        return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, function (c) {
+          var r = Math.random() * 16 | 0, v = c === 'x' ? r : (r & 0x3 | 0x8);
+          return v.toString(16);
+        });
       };
+
+      const idMapping: { [key: string]: string } = {};
 
       const mappedSigs = signers.map(s => {
         const isMyself = s.id === 'myself' || (user?.email && s.email?.toLowerCase() === user.email.toLowerCase());
-        const dbId = isMyself ? (user?.id || 'owner_id') : ('signer_' + Math.floor(Math.random() * 899999 + 100000));
+        // IMPORTANT: always generate a fresh, unique id for this signatory ROW,
+        // even for the owner ("myself"). This id is the primary key used to
+        // resolve signing links (?token=...) in document_signers. Reusing the
+        // owner's stable account id (user.id) across every document caused
+        // each new document's owner-signer row to overwrite the previous
+        // document's row - the root cause of the owner's signing link
+        // showing a stale, already-completed document, and of the owner's
+        // signature going missing once a newer document overwrote their row.
+        // The document's actual owner is still tracked separately via
+        // `ownerId` on the document record.
+        const dbId = generateUUID();
         idMapping[s.id] = dbId;
         return {
           id: dbId,
