@@ -962,6 +962,9 @@ export class SignifyService {
           if (sigTableErr.code === '42P01') {
             throw new Error(`The 'document_signatures' table is missing from your Supabase database. Please run supabase_migration_document_signatures.sql in the Supabase SQL editor.`);
           }
+          if (sigTableErr.code === '22P02') {
+            throw new Error(`Database UUID constraint error: "${sigTableErr.message}". Please run the updated supabase_migration_document_signatures.sql script in Supabase SQL editor to convert document ID columns to TEXT.`);
+          }
           throw new Error(`Failed to save updated signature: ${sigTableErr.message}`);
         }
 

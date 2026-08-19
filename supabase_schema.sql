@@ -439,7 +439,7 @@ CREATE INDEX IF NOT EXISTS idx_clients_company_archived ON public.clients(compan
 -- 9. Create documents & document_signers tables for DocSignify Workflow
 -- ==============================================================================
 CREATE TABLE IF NOT EXISTS public.documents (
-    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    id TEXT PRIMARY KEY DEFAULT gen_random_uuid()::text,
     company_id TEXT NULL,
     creator_id TEXT NULL,
     file_name TEXT NOT NULL DEFAULT 'Document.pdf',
@@ -461,8 +461,8 @@ CREATE POLICY "Allow all operations on documents" ON public.documents FOR ALL US
 GRANT ALL ON public.documents TO anon, authenticated, service_role;
 
 CREATE TABLE IF NOT EXISTS public.document_signers (
-    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    document_id UUID NOT NULL,
+    id TEXT PRIMARY KEY DEFAULT gen_random_uuid()::text,
+    document_id TEXT NOT NULL,
     email TEXT NOT NULL,
     name TEXT NOT NULL,
     role TEXT NOT NULL DEFAULT 'main_signatory',
@@ -482,6 +482,58 @@ ALTER TABLE public.document_signers ENABLE ROW LEVEL SECURITY;
 DROP POLICY IF EXISTS "Allow all operations on document_signers" ON public.document_signers;
 CREATE POLICY "Allow all operations on document_signers" ON public.document_signers FOR ALL USING (true) WITH CHECK (true);
 GRANT ALL ON public.document_signers TO anon, authenticated, service_role;
+
+CREATE TABLE IF NOT EXISTS public.signed_documents (
+    id TEXT PRIMARY KEY DEFAULT gen_random_uuid()::text,
+    user_id TEXT NULL,
+    company_id TEXT NULL,
+    document_name TEXT NOT NULL DEFAULT 'Document.pdf',
+    document_type TEXT NOT NULL DEFAULT 'Agreement',
+    original_file_url TEXT NULL,
+    signed_file_url TEXT NULL,
+    storage_path TEXT NULL,
+    signature_data JSONB DEFAULT '[]'::jsonb,
+    signatories JSONB DEFAULT '[]'::jsonb,
+    content_json JSONB DEFAULT '{}'::jsonb,
+    status TEXT NOT NULL DEFAULT 'pending',
+    created_at TIMESTAMPTZ DEFAULT NOW(),
+    updated_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS idx_signed_documents_user_id ON public.signed_documents(user_id);
+CREATE INDEX IF NOT EXISTS idx_signed_documents_company_id ON public.signed_documents(company_id);
+CREATE INDEX IF NOT EXISTS idx_signed_documents_status ON public.signed_documents(status);
+
+ALTER TABLE public.signed_documents ENABLE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS "Allow all operations on signed_documents" ON public.signed_documents;
+CREATE POLICY "Allow all operations on signed_documents" ON public.signed_documents FOR ALL USING (true) WITH CHECK (true);
+GRANT ALL ON public.signed_documents TO anon, authenticated, service_role;
+
+CREATE TABLE IF NOT EXISTS public.document_signatures (
+    id TEXT PRIMARY KEY DEFAULT gen_random_uuid()::text,
+    document_id TEXT NOT NULL,
+    signatory_id TEXT NOT NULL,
+    page_number INTEGER NOT NULL DEFAULT 1,
+    x_position NUMERIC NOT NULL,
+    y_position NUMERIC NOT NULL,
+    width NUMERIC NULL,
+    height NUMERIC NULL,
+    signature_type TEXT NOT NULL DEFAULT 'draw',
+    signature_image_url TEXT NOT NULL,
+    created_at TIMESTAMPTZ DEFAULT NOW(),
+    updated_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS idx_document_signatures_document_id ON public.document_signatures(document_id);
+CREATE INDEX IF NOT EXISTS idx_document_signatures_signatory_id ON public.document_signatures(signatory_id);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_document_signatures_unique_placement
+    ON public.document_signatures(document_id, signatory_id, page_number);
+
+ALTER TABLE public.document_signatures ENABLE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS "Allow all operations on document_signatures" ON public.document_signatures;
+CREATE POLICY "Allow all operations on document_signatures" ON public.document_signatures FOR ALL USING (true) WITH CHECK (true);
+GRANT ALL ON public.document_signatures TO anon, authenticated, service_role;
+
 
 
 
