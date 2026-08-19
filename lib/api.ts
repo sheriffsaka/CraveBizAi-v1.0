@@ -2805,6 +2805,67 @@ class CraveBizApi {
     }
   }
 
+  async checkEmailExists(email: string): Promise<{ exists: boolean; message?: string }> {
+    const cleanEmail = (email || '').trim().toLowerCase();
+    if (!cleanEmail) return { exists: false };
+
+    // 1. Check server-side endpoint (checks auth.users and profiles)
+    try {
+      const response = await fetch('/api/auth/check-email', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email: cleanEmail })
+      });
+      if (response.ok) {
+        const data = await response.json();
+        if (data?.exists) {
+          return {
+            exists: true,
+            message: data.message || "This email address is already registered. Please log in or use a different email address."
+          };
+        }
+      }
+    } catch (fetchErr) {
+      console.warn("[checkEmailExists] Server check failed, trying direct Supabase lookup fallback:", fetchErr);
+    }
+
+    // 2. Client-side Supabase lookup fallback
+    try {
+      const { data: profiles, error: pErr } = await supabase
+        .from('profiles')
+        .select('id, full_name')
+        .ilike('full_name', `%${cleanEmail}%`)
+        .limit(5);
+
+      if (!pErr && profiles && profiles.length > 0) {
+        const hasMatch = profiles.some(p => (p.full_name || '').toLowerCase().includes(cleanEmail));
+        if (hasMatch) {
+          return {
+            exists: true,
+            message: "This email address is already registered. Please log in or use a different email address."
+          };
+        }
+      }
+
+      const { data: users, error: uErr } = await supabase
+        .from('users')
+        .select('id, email')
+        .ilike('email', cleanEmail)
+        .limit(1);
+
+      if (!uErr && users && users.length > 0) {
+        return {
+          exists: true,
+          message: "This email address is already registered. Please log in or use a different email address."
+        };
+      }
+    } catch (clientErr) {
+      console.warn("[checkEmailExists] Client direct lookup notice:", clientErr);
+    }
+
+    return { exists: false };
+  }
+
   async sendUserRegistrationEmail(payload: {
     recipientEmail: string;
     recipientName?: string;

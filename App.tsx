@@ -1147,42 +1147,96 @@ export default function App() {
               return true;
           }}
           onSignup={async (name, email, pass, companyName, phone, subscriptionTier) => {
-              localStorage.setItem('cravebiz_signup_name', name);
-              localStorage.setItem('cravebiz_signup_company_name', companyName);
-              if (phone) localStorage.setItem('cravebiz_signup_phone', phone);
-              if (subscriptionTier) {
-                  localStorage.setItem('cravebiz_signup_tier', subscriptionTier);
+              const cleanEmail = (email || '').trim().toLowerCase();
+              if (!cleanEmail) return "Email address is required.";
+
+              // 1. Proactive pre-flight database & auth duplicate check
+              try {
+                  const checkResult = await api.checkEmailExists(cleanEmail);
+                  if (checkResult.exists) {
+                      console.warn(`[onSignup] Duplicate registration blocked: ${cleanEmail} already exists in database.`);
+                      return 'user_exists';
+                  }
+              } catch (checkErr) {
+                  console.warn("[onSignup] Pre-flight duplicate check notice:", checkErr);
               }
+
+              // 2. Perform Supabase Auth Sign Up
               const { data, error } = await supabase.auth.signUp({ 
-                  email, password: pass, options: { data: { full_name: name, company_name: companyName, phone, subscription_tier: subscriptionTier } }
+                  email: cleanEmail,
+                  password: pass,
+                  options: {
+                      data: {
+                          full_name: name,
+                          company_name: companyName,
+                          phone,
+                          subscription_tier: subscriptionTier
+                      }
+                  }
               });
+
+              // 3. Check for direct Supabase Auth errors
               if (error) {
                   console.error("Supabase sign-up failed:", error);
+                  const errMsg = (error.message || '').toLowerCase();
+                  const errStatus = (error as any).status;
+                  const errCode = (error as any).code;
+
+                  if (
+                      errMsg.includes('already registered') ||
+                      errMsg.includes('already exists') ||
+                      errMsg.includes('user already exists') ||
+                      errMsg.includes('email address already') ||
+                      errCode === 'user_already_exists' ||
+                      errCode === 'email_exists' ||
+                      errStatus === 422
+                  ) {
+                      return 'user_exists';
+                  }
                   return stringifyError(error);
               }
               
+              // 4. CRITICAL: Handle Supabase duplicate email response with email confirmation
+              // When Supabase email confirmations are enabled and a user already exists,
+              // Supabase returns a 200 OK with data.user, but data.user.identities is empty []!
               if (data?.user) {
+                  if (Array.isArray(data.user.identities) && data.user.identities.length === 0) {
+                      console.warn("[onSignup] Supabase returned empty identities array for existing email:", cleanEmail);
+                      return 'user_exists';
+                  }
+
+                  // Store signup metadata in localStorage only on confirmed genuine new registration
+                  localStorage.setItem('cravebiz_signup_name', name);
+                  localStorage.setItem('cravebiz_signup_company_name', companyName);
+                  if (phone) localStorage.setItem('cravebiz_signup_phone', phone);
+                  if (subscriptionTier) {
+                      localStorage.setItem('cravebiz_signup_tier', subscriptionTier);
+                  }
+
                   try {
                       console.log("Pre-creating profile table record during registration for:", data.user.id);
-                      const syncResult = await api.ensureProfile(data.user.id, name, email);
+                      const syncResult = await api.ensureProfile(data.user.id, name, cleanEmail);
                       if (!syncResult.success) {
-                          console.warn("Direct profile creation during registration failed (expected if email verification restricts database access):", syncResult.error);
+                          console.warn("Direct profile creation during registration notice:", syncResult.error);
                       }
                   } catch (pErr) {
                       console.error("Error creating profile record during registration:", pErr);
                   }
 
-                  // Dispatch registration welcome email via AWS SES
+                  // Dispatch registration welcome email via AWS SES only on genuine new registration
                   api.sendUserRegistrationEmail({
-                      recipientEmail: email,
+                      recipientEmail: cleanEmail,
                       recipientName: name,
                       companyName: companyName,
                       loginUrl: window.location.origin
                   }).catch(emailErr => {
                       console.warn("AWS SES welcome email dispatch notice:", emailErr);
                   });
+
+                  return true;
               }
-              return true;
+
+              return "Registration could not be completed. Please try again or log in.";
           }}
           onOpenForgotPassword={() => setIsForgotPasswordOpen(true)} 
           users={[]} 

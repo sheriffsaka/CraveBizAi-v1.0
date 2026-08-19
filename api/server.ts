@@ -1585,6 +1585,86 @@ app.post("/api/invoices/:id/invalidate-pdf", async (req, res) => {
     }
 });
 
+// Check if an email is already registered before attempting registration
+app.post("/api/auth/check-email", async (req, res) => {
+    try {
+        const email = (req.body?.email || "").trim().toLowerCase();
+        if (!email) {
+            return res.status(400).json({ exists: false, error: "Email is required" });
+        }
+
+        // 1. Check Supabase Auth Admin listUsers if service role key is active
+        try {
+            if (supabaseClient?.auth?.admin) {
+                const { data: adminUsersData, error: adminErr } = await supabaseClient.auth.admin.listUsers({
+                    page: 1,
+                    perPage: 1000
+                });
+                if (!adminErr && adminUsersData?.users) {
+                    const match = adminUsersData.users.find(
+                        (u: any) => u.email?.toLowerCase() === email
+                    );
+                    if (match) {
+                        return res.json({
+                            exists: true,
+                            message: "This email address is already registered. Please log in or use a different email address."
+                        });
+                    }
+                }
+            }
+        } catch (adminCheckErr) {
+            console.warn("[check-email] Admin listUsers check notice:", adminCheckErr);
+        }
+
+        // 2. Check profiles table for matching email or composite full_name (Name ||| email)
+        try {
+            const { data: profileMatches, error: profileErr } = await supabaseClient
+                .from('profiles')
+                .select('id, full_name')
+                .or(`full_name.ilike.%${email}%`)
+                .limit(10);
+
+            if (!profileErr && profileMatches && profileMatches.length > 0) {
+                const found = profileMatches.some((p: any) => {
+                    const fn = (p.full_name || '').toLowerCase();
+                    return fn.includes(email);
+                });
+                if (found) {
+                    return res.json({
+                        exists: true,
+                        message: "This email address is already registered. Please log in or use a different email address."
+                    });
+                }
+            }
+        } catch (pCheckErr) {
+            console.warn("[check-email] Profiles check notice:", pCheckErr);
+        }
+
+        // 3. Check users table if present
+        try {
+            const { data: userMatches, error: userErr } = await supabaseClient
+                .from('users')
+                .select('id, email')
+                .ilike('email', email)
+                .limit(1);
+
+            if (!userErr && userMatches && userMatches.length > 0) {
+                return res.json({
+                    exists: true,
+                    message: "This email address is already registered. Please log in or use a different email address."
+                });
+            }
+        } catch (uCheckErr) {
+            // users table might not exist; safe to ignore
+        }
+
+        return res.json({ exists: false });
+    } catch (err: any) {
+        console.error("Error in /api/auth/check-email:", err);
+        return res.json({ exists: false, error: err.message });
+    }
+});
+
 // Dispatch User Registration Welcome Email via AWS SES
 app.post("/api/auth/send-registration-welcome", async (req, res) => {
     try {
