@@ -2307,13 +2307,24 @@ class CraveBizApi {
     }
   }
 
-  async updateDocSignifySignatoryStatus(signatoryId: string, status: 'signed' | 'declined', signatures: DbDocumentSignature[]): Promise<{ document: DbDocument; signatory: DbDocumentSignatory }> {
+  async updateDocSignifySignatoryStatus(
+    signatoryId: string, 
+    status: 'signed' | 'declined', 
+    signatures: DbDocumentSignature[],
+    documentId?: string,
+    signatory?: DbDocumentSignatory
+  ): Promise<{ document: DbDocument; signatory: DbDocumentSignatory }> {
     try {
       // 1. Invoke server endpoint to trigger PDF merging, signature persistence, and Supabase Storage upload
       const response = await fetch(`/api/signify/signatories/${signatoryId}/status`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ status, signatures })
+        body: JSON.stringify({ 
+          status, 
+          signatures,
+          documentId: documentId || signatures?.[0]?.document_id,
+          signatory
+        })
       });
 
       if (!response.ok) {

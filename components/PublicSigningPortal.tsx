@@ -531,7 +531,9 @@ export default function PublicSigningPortal({ docId, token, prefilledRecipient, 
                     const result = await api.updateDocSignifySignatoryStatus(
                         dbSignatory.id,
                         'signed',
-                        updatedSigs
+                        updatedSigs,
+                        dbDoc?.id,
+                        dbSignatory
                     );
                     
                     if (result && result.signatory) {

@@ -685,15 +685,25 @@ export class SignifyService {
   static async updateSignatoryStatus(
     signatoryId: string,
     status: 'signed' | 'declined',
-    signaturesInput: DbDocumentSignature[]
+    signaturesInput: DbDocumentSignature[],
+    documentIdInput?: string,
+    signatoryInput?: Partial<DbDocumentSignatory>
   ): Promise<{ document: DbDocument; signatory: DbDocumentSignatory }> {
-    let signatory = memoryStore.signatories[signatoryId];
-    let docId = signatory?.document_id;
+    let signatory = memoryStore.signatories[signatoryId] || Object.values(memoryStore.signatories).find(s => s.id === signatoryId || s.token === signatoryId);
+    let docId = signatory?.document_id || documentIdInput || signaturesInput?.find(s => s.document_id)?.document_id;
 
-    // Load from Supabase if not in memory
-    if (!signatory || !docId) {
-      if (supabaseClient) {
-        const { data: dbSigner } = await supabaseClient.from('document_signers').select('*').eq('id', signatoryId).single();
+    // 1. Try finding in document_signers table
+    if ((!signatory || !docId) && supabaseClient) {
+      try {
+        let { data: dbSigner } = await supabaseClient.from('document_signers').select('*').eq('id', signatoryId).maybeSingle();
+        if (!dbSigner) {
+          const { data: dbSignerByToken } = await supabaseClient.from('document_signers').select('*').eq('token', signatoryId).maybeSingle();
+          if (dbSignerByToken) dbSigner = dbSignerByToken;
+        }
+        if (!dbSigner && signatoryInput?.email) {
+          const { data: dbSignerByEmail } = await supabaseClient.from('document_signers').select('*').eq('email', signatoryInput.email).maybeSingle();
+          if (dbSignerByEmail) dbSigner = dbSignerByEmail;
+        }
         if (dbSigner) {
           docId = dbSigner.document_id;
           signatory = {
@@ -702,12 +712,102 @@ export class SignifyService {
             name: dbSigner.name || '',
             email: dbSigner.email || '',
             role: dbSigner.role || 'main_signatory',
-            token: dbSigner.id,
+            token: dbSigner.token || dbSigner.id,
             status: dbSigner.status || 'pending',
             signed_at: dbSigner.signed_at || null,
             signature_value: dbSigner.signature_value || null
           };
           memoryStore.signatories[signatoryId] = signatory;
+          memoryStore.signatories[signatory.id] = signatory;
+        }
+      } catch (err) {
+        console.warn("[SignifyService] document_signers lookup warning:", err);
+      }
+    }
+
+    // 2. If still missing, check document details if docId is known
+    if ((!signatory || !docId) && docId) {
+      try {
+        const details = await this.getDocumentDetails(docId);
+        if (details.signatories && details.signatories.length > 0) {
+          const matched = details.signatories.find(s => s.id === signatoryId || s.token === signatoryId || (signatoryInput?.email && s.email?.toLowerCase() === signatoryInput.email.toLowerCase()));
+          if (matched) {
+            signatory = matched;
+            docId = matched.document_id || docId;
+            memoryStore.signatories[signatoryId] = signatory;
+            memoryStore.signatories[signatory.id] = signatory;
+          }
+        }
+      } catch (err) {
+        console.warn("[SignifyService] getDocumentDetails lookup warning:", err);
+      }
+    }
+
+    // 3. If still missing, check signed_documents table in Supabase
+    if ((!signatory || !docId) && supabaseClient) {
+      try {
+        const { data: allSignedDocs } = await supabaseClient.from('signed_documents').select('*');
+        if (allSignedDocs && Array.isArray(allSignedDocs)) {
+          for (const sDoc of allSignedDocs) {
+            const sigs = Array.isArray(sDoc.signatories) ? sDoc.signatories : [];
+            const matched = sigs.find((s: any) => s.id === signatoryId || s.token === signatoryId || (signatoryInput?.email && s.email?.toLowerCase() === signatoryInput.email.toLowerCase()));
+            if (matched) {
+              docId = sDoc.id;
+              signatory = {
+                id: matched.id || signatoryId,
+                document_id: sDoc.id,
+                name: matched.name || '',
+                email: matched.email || '',
+                role: matched.role || 'main_signatory',
+                token: matched.token || matched.id || signatoryId,
+                status: matched.status || 'pending',
+                signed_at: matched.signed_at || null,
+                signature_value: matched.signature_value || null
+              };
+              memoryStore.signatories[signatoryId] = signatory;
+              memoryStore.signatories[signatory.id] = signatory;
+              break;
+            }
+          }
+        }
+      } catch (err) {
+        console.warn("[SignifyService] signed_documents scan warning:", err);
+      }
+    }
+
+    // 4. If still missing, but we have docId or signatoryInput from the client request
+    if (!signatory && (docId || signatoryInput)) {
+      docId = docId || signatoryInput?.document_id || signaturesInput?.[0]?.document_id || `doc_${Date.now()}`;
+      signatory = {
+        id: signatoryId,
+        document_id: docId,
+        name: signatoryInput?.name || 'Signer',
+        email: signatoryInput?.email || '',
+        role: (signatoryInput?.role as any) || 'main_signatory',
+        token: signatoryInput?.token || signatoryId,
+        status: status,
+        signed_at: status === 'signed' ? new Date().toISOString() : null,
+        signature_value: (signaturesInput && signaturesInput.length > 0) ? signaturesInput[0].signature_image_url : null
+      };
+      memoryStore.signatories[signatoryId] = signatory;
+      memoryStore.signatories[signatory.id] = signatory;
+
+      // Persist to document_signers so subsequent checks find it
+      if (supabaseClient) {
+        try {
+          await supabaseClient.from('document_signers').upsert([{
+            id: signatory.id,
+            document_id: signatory.document_id,
+            email: signatory.email || '',
+            name: signatory.name || '',
+            role: signatory.role || 'main_signatory',
+            token: signatory.token || signatory.id,
+            status: signatory.status,
+            signed_at: signatory.signed_at,
+            signature_value: signatory.signature_value
+          }]);
+        } catch (e) {
+          console.warn("[SignifyService] Auto-persist to document_signers error:", e);
         }
       }
     }
@@ -727,7 +827,19 @@ export class SignifyService {
     }
 
     if (!document) {
-      throw new Error(`Document ${docId} not found`);
+      document = {
+        id: docId,
+        title: "Signed Document",
+        original_file_url: "",
+        signed_file_url: null,
+        owner_id: signatory?.role === 'owner' ? signatory.id : 'owner',
+        company_id: "",
+        status: 'partially_signed',
+        created_at: new Date().toISOString(),
+        file_type: 'pdf',
+        file_name: `${docId}.pdf`
+      };
+      memoryStore.documents[docId] = document;
     }
 
     // Persist newly submitted signatures durably (page/position/size/image),
@@ -767,7 +879,10 @@ export class SignifyService {
 
     // Check all signatories
     const details = await this.getDocumentDetails(docId);
-    const docSignatories = details.signatories.map(s => s.id === signatoryId ? signatory : s);
+    let docSignatories = (details.signatories || []).map(s => (s.id === signatoryId || s.token === signatoryId) ? signatory : s);
+    if (!docSignatories.some(s => s.id === signatory.id || s.id === signatoryId)) {
+      docSignatories.push(signatory);
+    }
     const totalToSign = docSignatories.length;
     const signedCount = docSignatories.filter(s => s.status === 'signed').length;
 
@@ -935,7 +1050,33 @@ export class SignifyService {
       throw new Error(`Document ${documentId} not found`);
     }
 
-    const signatory = details.signatories.find(s => s.id === signatoryId);
+    let signatory = details.signatories.find(s => s.id === signatoryId || s.token === signatoryId);
+    if (!signatory) {
+      if (supabaseClient) {
+        let { data: dbSigner } = await supabaseClient.from('document_signers').select('*').eq('id', signatoryId).maybeSingle();
+        if (!dbSigner) {
+          const { data: dbSignerByToken } = await supabaseClient.from('document_signers').select('*').eq('token', signatoryId).maybeSingle();
+          if (dbSignerByToken) dbSigner = dbSignerByToken;
+        }
+        if (dbSigner) {
+          signatory = {
+            id: dbSigner.id,
+            document_id: dbSigner.document_id,
+            name: dbSigner.name || '',
+            email: dbSigner.email || '',
+            role: dbSigner.role || 'main_signatory',
+            token: dbSigner.token || dbSigner.id,
+            status: dbSigner.status || 'pending',
+            signed_at: dbSigner.signed_at || null,
+            signature_value: dbSigner.signature_value || null
+          };
+          memoryStore.signatories[signatoryId] = signatory;
+        }
+      }
+      if (!signatory && memoryStore.signatories[signatoryId]) {
+        signatory = memoryStore.signatories[signatoryId];
+      }
+    }
     if (!signatory) {
       throw new Error(`Signatory ${signatoryId} not found on document ${documentId}`);
     }

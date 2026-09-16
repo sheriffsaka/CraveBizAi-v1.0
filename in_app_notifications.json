@@ -1,0 +1,23 @@
+[
+  {
+    "id": "notif_srv_1789596906281_z8117",
+    "userId": "sheriffdeenalade@gmail.com",
+    "user_id": "sheriffdeenalade@gmail.com",
+    "recipientEmail": "sheriffdeenalade@gmail.com",
+    "recipient_email": "sheriffdeenalade@gmail.com",
+    "title": "Document Request: TO ALL STAFF_SUSPENSION OF STAFF DEPARTURE FOR THE 2026 .pdf",
+    "message": "You have been requested by CraveBiZ Workspace to sign/review 'TO ALL STAFF_SUSPENSION OF STAFF DEPARTURE FOR THE 2026 .pdf'.",
+    "category": "document",
+    "type": "info",
+    "notification_type": "document",
+    "actionUrl": "http://localhost:3000/?token=d9b6f1bf-faa8-49ea-b8ed-5f1ab7c25290",
+    "action_url": "http://localhost:3000/?token=d9b6f1bf-faa8-49ea-b8ed-5f1ab7c25290",
+    "read": false,
+    "is_read": false,
+    "isRead": false,
+    "createdAt": "2026-09-16T22:15:06.281Z",
+    "created_at": "2026-09-16T22:15:06.281Z",
+    "updatedAt": "2026-09-16T22:15:06.281Z",
+    "updated_at": "2026-09-16T22:15:06.281Z"
+  }
+]

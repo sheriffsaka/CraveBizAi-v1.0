@@ -334,10 +334,6 @@ export default function DocSignify({ company, user, prefillProject, prefillClien
     setError(null);
 
     try {
-      const docId = 'doc_' + Math.floor(Math.random() * 899999 + 100000);
-      const resolvedFileName = fileName || 'secured_agreement.pdf';
-      const resolvedFileType = fileType || 'pdf';
-
       const generateUUID = () => {
         if (typeof window !== 'undefined' && window.crypto && window.crypto.randomUUID) {
           return window.crypto.randomUUID();
@@ -347,6 +343,10 @@ export default function DocSignify({ company, user, prefillProject, prefillClien
           return v.toString(16);
         });
       };
+
+      const docId = generateUUID();
+      const resolvedFileName = fileName || 'secured_agreement.pdf';
+      const resolvedFileType = fileType || 'pdf';
 
       const idMapping: { [key: string]: string } = {};
 

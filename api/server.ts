@@ -1897,12 +1897,18 @@ app.post("/api/signify/signatures", async (req, res) => {
 // 6. Finalize signature workflow and update status (and compile signed PDF if completed)
 app.post("/api/signify/signatories/:id/status", async (req, res) => {
     try {
-        const { status, signatures } = req.body;
+        const { status, signatures, documentId, signatory } = req.body;
         if (!status || !['signed', 'declined'].includes(status)) {
             return res.status(400).json({ error: "Invalid status value. Must be 'signed' or 'declined'." });
         }
         
-        const result = await SignifyService.updateSignatoryStatus(req.params.id, status, signatures || []);
+        const result = await SignifyService.updateSignatoryStatus(
+            req.params.id, 
+            status, 
+            signatures || [],
+            documentId,
+            signatory
+        );
         
         // Dispatch notifications on status transition
         try {
