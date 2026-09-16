@@ -30,7 +30,7 @@ export default function DocSignify({ company, user, prefillProject, prefillClien
   // Main view navigation
   const [activeTab, setActiveTab] = useState<'dashboard' | 'wizard' | 'tester'>(initialFile ? 'wizard' : 'dashboard');
   const [wizardStep, setWizardStep] = useState<'upload' | 'prepare' | 'complete'>('upload');
-  const [signingOrder, setSigningOrder] = useState<'owner_first' | 'owner_last'>('owner_first');
+  const [uploadSuccessMessage, setUploadSuccessMessage] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [toastMessage, setToastMessage] = useState<string | null>(null);
@@ -103,24 +103,8 @@ export default function DocSignify({ company, user, prefillProject, prefillClien
     }
   }, [initialFile]);
 
-  // Auto-add current user as default signer
-  useEffect(() => {
-    if (user && signers.length === 0) {
-      const myself: SignatureInfo = {
-        id: 'myself',
-        name: user.name || 'Myself',
-        email: user.email || '',
-        title: 'Authorized Signatory',
-        date: '',
-        signatoryType: 'Main',
-        isSigned: false,
-        type: 'type',
-        value: ''
-      };
-      setSigners([myself]);
-      setActiveSignerId('myself');
-    }
-  }, [user]);
+  // Document owner is not automatically added as a signer.
+  // Signer list starts empty by default; owner can optionally add themselves.
 
   const showToast = (msg: string) => {
     setToastMessage(msg);
@@ -178,6 +162,7 @@ export default function DocSignify({ company, user, prefillProject, prefillClien
           setEmailSubject(`Signature Request: ${file.name.replace(/\.[^/.]+$/, "")}`);
         }
         showToast("📄 Document uploaded & rendered successfully!");
+        setUploadSuccessMessage("Document uploaded successfully. Please proceed to Step 2 to add the signers.");
       } catch (err: any) {
         console.error("DocSignify file upload error:", err);
         setError(err.message || "Failed to parse file.");
@@ -334,6 +319,7 @@ export default function DocSignify({ company, user, prefillProject, prefillClien
       showToast("⚠️ Please configure at least one signer.");
       return;
     }
+    setUploadSuccessMessage(null);
     setWizardStep('prepare');
   };
 
@@ -397,7 +383,7 @@ export default function DocSignify({ company, user, prefillProject, prefillClien
         brandColor: "#4f46e5",
         subject: emailSubject,
         message: emailMessage,
-        signing_order: signingOrder
+        signing_order: 'parallel'
       };
 
       const response = await api.createDocSignifyDocument(
@@ -916,6 +902,33 @@ export default function DocSignify({ company, user, prefillProject, prefillClien
           {/* STEP 1: UPLOAD & SIGNERS */}
           {wizardStep === 'upload' && (
             <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 items-start">
+              {/* Prominent upload confirmation message */}
+              {uploadSuccessMessage && (
+                <div className="lg:col-span-12 bg-emerald-50 border border-emerald-300 rounded-2xl p-4 md:p-5 shadow-sm flex items-start sm:items-center justify-between gap-4 animate-fade-in">
+                  <div className="flex items-center gap-3">
+                    <div className="w-9 h-9 rounded-xl bg-emerald-500 text-white flex items-center justify-center font-bold text-lg shadow-sm shrink-0">
+                      ✓
+                    </div>
+                    <div>
+                      <h4 className="text-sm font-black text-emerald-950">
+                        {uploadSuccessMessage}
+                      </h4>
+                      <p className="text-xs text-emerald-700 font-medium mt-0.5">
+                        {fileName} has been loaded. Add the recipients on the right who will receive and sign this document.
+                      </p>
+                    </div>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => setUploadSuccessMessage(null)}
+                    className="p-1.5 text-emerald-600 hover:text-emerald-900 rounded-lg hover:bg-emerald-100/50 transition-colors"
+                    title="Dismiss message"
+                  >
+                    ✕
+                  </button>
+                </div>
+              )}
+
               {/* File Upload Zone */}
               <div className="lg:col-span-6 bg-white p-6 rounded-2xl border border-slate-200/80 shadow-sm space-y-5">
                 <h2 className="text-xs font-black text-slate-800 uppercase tracking-wider flex items-center gap-2 border-b border-slate-100 pb-3">
@@ -953,17 +966,46 @@ export default function DocSignify({ company, user, prefillProject, prefillClien
                 {documentFile && (
                   <div className="p-3.5 bg-emerald-50 rounded-xl border border-emerald-200/80 flex items-center gap-2.5 text-emerald-800 text-xs font-extrabold">
                     <Check className="w-4 h-4 text-emerald-600 shrink-0" />
-                    <span className="truncate">Ready for field placement: {fileName}</span>
+                    <div className="flex-1 min-w-0">
+                      <p className="truncate font-black text-emerald-950">Document uploaded successfully. Please proceed to Step 2 to add the signers.</p>
+                      <p className="text-[10px] text-emerald-700 font-normal truncate mt-0.5">{fileName}</p>
+                    </div>
                   </div>
                 )}
               </div>
 
               {/* Configure Signers */}
               <div className="lg:col-span-6 bg-white p-6 rounded-2xl border border-slate-200/80 shadow-sm space-y-5">
-                <h2 className="text-xs font-black text-slate-800 uppercase tracking-wider flex items-center gap-2 border-b border-slate-100 pb-3">
-                  <span className="w-2.5 h-2.5 rounded-full bg-indigo-600"></span>
-                  Step 2: Add Document Signers
-                </h2>
+                <div className="flex items-center justify-between border-b border-slate-100 pb-3">
+                  <h2 className="text-xs font-black text-slate-800 uppercase tracking-wider flex items-center gap-2">
+                    <span className="w-2.5 h-2.5 rounded-full bg-indigo-600"></span>
+                    Step 2: Add Document Signers
+                  </h2>
+                  {user?.email && !signers.some(s => s.email?.toLowerCase() === user.email?.toLowerCase()) && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        const myself: SignatureInfo = {
+                          id: 'signer_' + Date.now(),
+                          name: user.name || 'Workspace Owner',
+                          email: user.email || '',
+                          title: 'Authorized Signatory',
+                          date: '',
+                          signatoryType: 'Main',
+                          isSigned: false,
+                          type: 'type',
+                          value: ''
+                        };
+                        setSigners(prev => [...prev, myself]);
+                        if (!activeSignerId) setActiveSignerId(myself.id);
+                        showToast("Added yourself as a signer.");
+                      }}
+                      className="px-2.5 py-1 text-[11px] font-bold text-indigo-600 bg-indigo-50 hover:bg-indigo-100 rounded-lg border border-indigo-200 transition-colors inline-flex items-center gap-1"
+                    >
+                      + Add Myself as Signer
+                    </button>
+                  )}
+                </div>
 
                 {/* New Signer Input */}
                 <div className="p-4 bg-slate-50 rounded-xl border border-slate-200/80 space-y-3">
@@ -1032,91 +1074,51 @@ export default function DocSignify({ company, user, prefillProject, prefillClien
 
                 {/* Active Signers List */}
                 <div className="space-y-2">
-                  <p className="text-[10px] font-black uppercase text-slate-400 tracking-wider">Configured Recipients ({signers.length})</p>
-                  <div className="divide-y divide-slate-100">
-                    {signers.map((s, index) => (
-                      <div key={s.id} className="py-2.5 flex items-center justify-between gap-3">
-                        <div className="flex items-center gap-3">
-                          <div className="w-8 h-8 rounded-full bg-indigo-50 text-indigo-700 font-black flex items-center justify-center text-xs border border-indigo-100">
-                            {index + 1}
+                  <div className="flex items-center justify-between">
+                    <p className="text-[10px] font-black uppercase text-slate-400 tracking-wider">Configured Recipients ({signers.length})</p>
+                    <span className="text-[10px] text-slate-400 font-medium">Automatic signing date/time enabled</span>
+                  </div>
+                  {signers.length === 0 ? (
+                    <div className="p-4 bg-slate-50 border border-dashed border-slate-200 rounded-xl text-center">
+                      <p className="text-xs font-bold text-slate-500">No signers added yet.</p>
+                      <p className="text-[11px] text-slate-400 mt-0.5">Use the form above to add the recipients who need to sign this document.</p>
+                    </div>
+                  ) : (
+                    <div className="divide-y divide-slate-100">
+                      {signers.map((s, index) => (
+                        <div key={s.id} className="py-2.5 flex items-center justify-between gap-3">
+                          <div className="flex items-center gap-3">
+                            <div className="w-8 h-8 rounded-full bg-indigo-50 text-indigo-700 font-black flex items-center justify-center text-xs border border-indigo-100">
+                              {index + 1}
+                            </div>
+                            <div>
+                              <p className="text-xs font-extrabold text-slate-900">
+                                {s.name} {user?.email && s.email?.toLowerCase() === user.email.toLowerCase() && (
+                                  <span className="text-[9px] bg-indigo-100 text-indigo-700 px-1.5 py-0.5 rounded-full font-bold ml-1">Owner</span>
+                                )}
+                              </p>
+                              <p className="text-[10px] text-slate-400 font-semibold">{s.email} • {s.signatoryType}</p>
+                            </div>
                           </div>
-                          <div>
-                            <p className="text-xs font-extrabold text-slate-900">
-                              {s.name} {s.id === 'myself' && <span className="text-[9px] bg-indigo-100 text-indigo-700 px-1.5 py-0.5 rounded-full font-bold ml-1">Myself</span>}
-                            </p>
-                            <p className="text-[10px] text-slate-400 font-semibold">{s.email} • {s.signatoryType}</p>
-                          </div>
-                        </div>
 
-                        {s.id !== 'myself' && (
                           <button
+                            type="button"
                             onClick={() => handleRemoveSigner(s.id)}
                             className="p-1.5 text-slate-400 hover:text-red-500 hover:bg-red-50 rounded-lg transition-colors"
+                            title="Remove signer"
                           >
                             <Trash2 className="w-4 h-4" />
                           </button>
-                        )}
-                      </div>
-                    ))}
-                  </div>
-                </div>
-
-                {/* Signing Order Selection */}
-                <div className="p-4 bg-slate-50 rounded-xl border border-slate-200/80 space-y-3">
-                  <p className="text-[10px] font-black uppercase text-slate-400 tracking-wider">Configurable Signing Order</p>
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-                    <div
-                      onClick={() => setSigningOrder('owner_first')}
-                      className={`p-3 rounded-xl border cursor-pointer transition-all ${
-                        signingOrder === 'owner_first'
-                          ? 'bg-indigo-50/60 border-indigo-500 shadow-sm'
-                          : 'bg-white border-slate-200 hover:border-slate-300'
-                      }`}
-                    >
-                      <div className="flex items-center gap-2">
-                        <input
-                          type="radio"
-                          name="signingOrder"
-                          checked={signingOrder === 'owner_first'}
-                          onChange={() => setSigningOrder('owner_first')}
-                          className="text-indigo-600 focus:ring-indigo-500"
-                        />
-                        <span className="text-xs font-extrabold text-slate-900">Option A: Owner Signs First</span>
-                      </div>
-                      <p className="text-[11px] text-slate-500 mt-1 pl-5 leading-relaxed font-medium">
-                        Workspace Owner signs first, then the document is automatically sent to the invited recipients.
-                      </p>
+                        </div>
+                      ))}
                     </div>
-
-                    <div
-                      onClick={() => setSigningOrder('owner_last')}
-                      className={`p-3 rounded-xl border cursor-pointer transition-all ${
-                        signingOrder === 'owner_last'
-                          ? 'bg-indigo-50/60 border-indigo-500 shadow-sm'
-                          : 'bg-white border-slate-200 hover:border-slate-300'
-                      }`}
-                    >
-                      <div className="flex items-center gap-2">
-                        <input
-                          type="radio"
-                          name="signingOrder"
-                          checked={signingOrder === 'owner_last'}
-                          onChange={() => setSigningOrder('owner_last')}
-                          className="text-indigo-600 focus:ring-indigo-500"
-                        />
-                        <span className="text-xs font-extrabold text-slate-900">Option B: Owner Signs Last</span>
-                      </div>
-                      <p className="text-[11px] text-slate-500 mt-1 pl-5 leading-relaxed font-medium">
-                        Invited recipients receive document first. After all signers complete, Owner is notified to sign last.
-                      </p>
-                    </div>
-                  </div>
+                  )}
                 </div>
 
                 {/* Proceed Button */}
                 <button
                   onClick={handleProceedToPrepare}
-                  className="w-full py-3.5 bg-slate-900 hover:bg-slate-800 text-white text-xs font-black uppercase tracking-widest rounded-2xl transition-all flex items-center justify-center gap-2 shadow-md"
+                  className="w-full py-3.5 bg-slate-900 hover:bg-slate-800 text-white text-xs font-black uppercase tracking-widest rounded-2xl transition-all flex items-center justify-center gap-2 shadow-md cursor-pointer"
                 >
                   <span>Prepare Fields & Sign Document</span>
                   <ArrowRight className="w-4 h-4" />

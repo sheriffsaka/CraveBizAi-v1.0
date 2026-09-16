@@ -632,8 +632,13 @@ export const DocumentSignifyViewer: React.FC<DocumentSignifyViewerProps> = ({
                   const isInteractive = !readOnly && !isDesignerMode && field.assigned_signer_id === activeSignatoryId;
                   const theme = getSignerColorClasses(field.assigned_signer_id);
                   const signatureForField = signatures.find(sig => sig.signatory_id === field.assigned_signer_id);
-                  const isFilled = (field.value !== undefined && field.value !== null && field.value !== '') || (field.type === 'signature' && !!signatureForField?.signature_image_url);
-                  const fieldValue = field.value || (field.type === 'signature' && signatureForField?.signature_image_url) || '';
+                  let isFilled = (field.value !== undefined && field.value !== null && field.value !== '') || (field.type === 'signature' && !!signatureForField?.signature_image_url);
+                  let fieldValue = field.value || (field.type === 'signature' && signatureForField?.signature_image_url) || '';
+                  if (field.type === 'date' && !fieldValue && (signatory?.signed_at || signatureForField || signatory?.status === 'signed')) {
+                    const ts = signatory?.signed_at || signatureForField?.created_at || new Date().toISOString();
+                    fieldValue = new Date(ts).toLocaleDateString();
+                    isFilled = true;
+                  }
                   
                   return (
                     <div
@@ -683,16 +688,27 @@ export const DocumentSignifyViewer: React.FC<DocumentSignifyViewerProps> = ({
                           </div>
                         ) : isFilled ? (
                           field.type === 'signature' || field.type === 'initial' || field.type === 'attachment' ? (
-                            String(fieldValue).startsWith('data:image/') || String(fieldValue).startsWith('http') ? (
-                              <img
-                                src={String(fieldValue)}
-                                alt="Overlay"
-                                className="max-h-full max-w-full object-contain mix-blend-multiply"
-                                referrerPolicy="no-referrer"
-                              />
-                            ) : (
-                              <span className="text-xs font-serif italic text-slate-800">{fieldValue}</span>
-                            )
+                            <div className="flex flex-col items-center justify-center w-full h-full p-0.5">
+                              {String(fieldValue).startsWith('data:image/') || String(fieldValue).startsWith('http') ? (
+                                <img
+                                  src={String(fieldValue)}
+                                  alt="Overlay"
+                                  className="max-h-[72%] max-w-full object-contain mix-blend-multiply"
+                                  referrerPolicy="no-referrer"
+                                />
+                              ) : (
+                                <span className="text-xs font-serif italic text-slate-800">{fieldValue}</span>
+                              )}
+                              <span className="text-[7px] text-slate-500 font-mono tracking-tight whitespace-nowrap overflow-hidden text-ellipsis max-w-full select-none">
+                                {signatory?.signed_at ? (
+                                  `Signed: ${new Date(signatory.signed_at).toLocaleDateString([], { month: 'short', day: 'numeric', year: 'numeric' })} ${new Date(signatory.signed_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}`
+                                ) : signatureForField?.created_at ? (
+                                  `Signed: ${new Date(signatureForField.created_at).toLocaleDateString([], { month: 'short', day: 'numeric', year: 'numeric' })}`
+                                ) : (
+                                  `Signed: ${new Date().toLocaleDateString([], { month: 'short', day: 'numeric', year: 'numeric' })}`
+                                )}
+                              </span>
+                            </div>
                           ) : field.type === 'stamp' ? (
                             <div className="border border-red-500 text-red-500 text-[8px] p-0.5 rounded font-black text-center border-double border-4">
                               {fieldValue}

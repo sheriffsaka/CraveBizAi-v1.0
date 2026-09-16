@@ -44,10 +44,11 @@ export async function overlaySignaturesOnPdf(
   }
 
   const pdfDoc = await PDFDocument.load(fileBytes);
-  const fontRegular = await pdfDoc.embedFont(StandardFonts.HelveticaBold);
+  const fontBold = await pdfDoc.embedFont(StandardFonts.HelveticaBold);
+  const fontRegular = await pdfDoc.embedFont(StandardFonts.Helvetica);
 
   for (const field of fields) {
-    if (!field.value) continue;
+    if (!field.value && field.type !== 'date') continue;
 
     const pageIndex = Math.max(0, (field.page_number || 1) - 1);
     if (pageIndex >= pdfDoc.getPageCount()) continue;
@@ -86,14 +87,30 @@ export async function overlaySignaturesOnPdf(
           width: fWidth,
           height: fHeight,
         });
+
+        // Automatic signing date/time displayed with signature
+        const rawTimestamp = (field as any).signed_at || (field as any).created_at || new Date().toISOString();
+        const signDate = new Date(rawTimestamp);
+        const formattedDate = !isNaN(signDate.getTime())
+          ? signDate.toUTCString().replace("GMT", "UTC")
+          : new Date().toUTCString().replace("GMT", "UTC");
+        const signerLabel = (field as any).signer_name ? `Signed by ${(field as any).signer_name}` : 'Digitally Signed';
+
+        page.drawText(`${signerLabel} • ${formattedDate}`, {
+          x: Math.max(10, x),
+          y: Math.max(10, y - 9),
+          size: 6.5,
+          font: fontRegular,
+          color: rgb(0.25, 0.3, 0.4),
+        });
       }
     } else if (field.type === 'date') {
-      const dateText = String(field.value);
+      const dateText = String(field.value || new Date().toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: 'numeric' }));
       page.drawText(dateText, {
         x: Math.max(10, x + 4),
         y: y + (fHeight / 2) - 4,
         size: Math.min(12, Math.max(9, fHeight * 0.35)),
-        font: fontRegular,
+        font: fontBold,
         color: rgb(0.1, 0.15, 0.3),
       });
     }

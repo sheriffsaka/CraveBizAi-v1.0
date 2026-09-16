@@ -778,7 +778,37 @@ export default function PublicSigningPortal({ docId, token, prefilledRecipient, 
 
     return (
         <div className="min-h-screen bg-gray-50 py-10 px-4 md:px-8 font-sans">
-            <div className="max-w-5xl mx-auto grid lg:grid-cols-12 gap-8">
+            <div className="max-w-5xl mx-auto">
+                {/* Top Done & Close Action Section: Immediately visible after completing signature */}
+                {(isSignedSuccess || alreadySigned) && onBackToLogin && (
+                    <div className="mb-6 bg-emerald-600 text-white p-4 md:p-5 rounded-2xl shadow-xl flex flex-col sm:flex-row items-center justify-between gap-4 sticky top-4 z-40 border border-emerald-500 animate-fade-in">
+                        <div className="flex items-center gap-3 text-center sm:text-left">
+                            <div className="w-10 h-10 rounded-xl bg-white/20 flex items-center justify-center font-black text-xl shadow-inner shrink-0">
+                                ✓
+                            </div>
+                            <div>
+                                <h3 className="text-sm md:text-base font-black uppercase tracking-tight">
+                                    {isSignedSuccess ? 'Signature Recorded Successfully!' : 'Document Signed & Completed'}
+                                </h3>
+                                <p className="text-xs text-emerald-100 font-medium">
+                                    Your signature has been securely recorded and timestamped.
+                                </p>
+                            </div>
+                        </div>
+
+                        <div className="flex items-center gap-2.5 w-full sm:w-auto justify-end">
+                            <button
+                                onClick={onBackToLogin}
+                                className="w-full sm:w-auto px-6 py-3 bg-white hover:bg-emerald-50 text-emerald-950 text-xs font-black uppercase tracking-wider rounded-xl transition-all shadow-lg active:scale-95 flex items-center justify-center gap-2 cursor-pointer whitespace-nowrap"
+                            >
+                                <span>Done & Close</span>
+                                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M13 7l5 5m0 0l-5 5m5-5H6" /></svg>
+                            </button>
+                        </div>
+                    </div>
+                )}
+
+                <div className="grid lg:grid-cols-12 gap-8">
                 {/* Left Side: Document Preview Area (Column span 8) */}
                 <div className="lg:col-span-8 bg-white rounded-3xl border border-gray-200/60 shadow-xl p-8 md:p-12 space-y-6 relative" ref={documentRef}>
                     <div className="border-b border-gray-100 pb-4 mb-6 flex justify-between items-center">
@@ -1004,7 +1034,7 @@ export default function PublicSigningPortal({ docId, token, prefilledRecipient, 
                     )}
 
                     {isSignedSuccess ? (
-                        <div className="bg-emerald-50 border border-emerald-100 p-6 rounded-xl shadow-xl space-y-5 animate-scale-up">
+                        <div className="bg-emerald-50 border border-emerald-100 p-6 rounded-xl shadow-xl space-y-4 animate-scale-up">
                             <div className="flex items-center gap-3">
                                 <div className="w-12 h-12 bg-emerald-500 text-white rounded-2xl flex items-center justify-center text-lg shadow-md">✓</div>
                                 <div>
@@ -1012,26 +1042,17 @@ export default function PublicSigningPortal({ docId, token, prefilledRecipient, 
                                     <p className="text-[10px] text-emerald-700 font-bold uppercase tracking-wider">Secured via CraveBiZ SmartDocs</p>
                                 </div>
                             </div>
-                            
-                            <p className="text-xs text-emerald-900 leading-relaxed font-semibold">
-                                Your secure e-signature has been successfully applied and stored back in the CraveBiZ smart document directory.
-                            </p>
 
-                            <p className="text-[11px] text-gray-500 font-medium">
-                                You can review your signed deed and other active signature fields directly on the document canvas on the left. When you are done, click the button below to return to the homepage.
-                            </p>
-
-                            {/* Promotional Advertisement */}
-                            <div className="p-4 bg-white/70 rounded-2xl border border-emerald-100/50 space-y-2.5 shadow-sm">
-                                <span className="text-[9px] font-black uppercase tracking-widest text-indigo-600 bg-indigo-50 px-2.5 py-0.5 rounded-full">Sponsored Ad</span>
-                                <h4 className="text-xs font-black text-gray-900 leading-tight">Create Beautiful Invoices & Agreements in Seconds with CraveBiZ AI</h4>
-                                <ul className="text-[10px] text-gray-500 space-y-1 font-semibold leading-normal">
-                                    <li className="flex items-start gap-1">✨ <strong>AI Billing:</strong> Generate automated invoicing and billing streams.</li>
-                                    <li className="flex items-start gap-1">📄 <strong>DocSignify:</strong> Drag, drop, and request signatures on legal deeds.</li>
-                                    <li className="flex items-start gap-1">⚡ <strong>Vault Security:</strong> High-grade SME payment protection and analytics.</li>
-                                </ul>
-                                <p className="text-[10px] text-indigo-700 font-extrabold pt-0.5">Explore CraveBiZ today - It's 100% free!</p>
-                            </div>
+                            {/* Done & Close button at the TOP of the card */}
+                            {onBackToLogin && (
+                                <button
+                                    onClick={onBackToLogin}
+                                    className="w-full py-3.5 bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-black uppercase tracking-widest rounded-xl transition-all shadow-md active:scale-95 flex items-center justify-center gap-2 cursor-pointer"
+                                >
+                                    Done & Close
+                                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M13 7l5 5m0 0l-5 5m5-5H6" /></svg>
+                                </button>
+                            )}
 
                             {/* Download Signed PDF Button */}
                             <button
@@ -1072,16 +1093,26 @@ export default function PublicSigningPortal({ docId, token, prefilledRecipient, 
                                 <Download className="w-4 h-4" />
                                 Download Signed PDF
                             </button>
+                            
+                            <p className="text-xs text-emerald-900 leading-relaxed font-semibold">
+                                Your secure e-signature has been successfully applied and stored back in the CraveBiZ smart document directory.
+                            </p>
 
-                            {onBackToLogin && (
-                                <button
-                                    onClick={onBackToLogin}
-                                    className="w-full py-3 bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-black uppercase tracking-widest rounded-xl transition-all shadow-md active:scale-95 flex items-center justify-center gap-2"
-                                >
-                                    Done & Close
-                                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M13 7l5 5m0 0l-5 5m5-5H6" /></svg>
-                                </button>
-                            )}
+                            <p className="text-[11px] text-gray-500 font-medium">
+                                You can review your signed deed and other active signature fields directly on the document canvas on the left.
+                            </p>
+
+                            {/* Promotional Advertisement */}
+                            <div className="p-4 bg-white/70 rounded-2xl border border-emerald-100/50 space-y-2.5 shadow-sm">
+                                <span className="text-[9px] font-black uppercase tracking-widest text-indigo-600 bg-indigo-50 px-2.5 py-0.5 rounded-full">Sponsored Ad</span>
+                                <h4 className="text-xs font-black text-gray-900 leading-tight">Create Beautiful Invoices & Agreements in Seconds with CraveBiZ AI</h4>
+                                <ul className="text-[10px] text-gray-500 space-y-1 font-semibold leading-normal">
+                                    <li className="flex items-start gap-1">✨ <strong>AI Billing:</strong> Generate automated invoicing and billing streams.</li>
+                                    <li className="flex items-start gap-1">📄 <strong>DocSignify:</strong> Drag, drop, and request signatures on legal deeds.</li>
+                                    <li className="flex items-start gap-1">⚡ <strong>Vault Security:</strong> High-grade SME payment protection and analytics.</li>
+                                </ul>
+                                <p className="text-[10px] text-indigo-700 font-extrabold pt-0.5">Explore CraveBiZ today - It's 100% free!</p>
+                            </div>
                         </div>
                     ) : (
                         <div className="space-y-6">
@@ -1339,6 +1370,7 @@ export default function PublicSigningPortal({ docId, token, prefilledRecipient, 
                     )}
                 </div>
             </div>
+        </div>
 
             {/* Interactive Drawing signatures sheet modal */}
             {isSignModalOpen && (

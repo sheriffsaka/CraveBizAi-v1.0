@@ -130,7 +130,8 @@ export class SignifyService {
     contentJson?: any,
     companyId?: string
   ): Promise<{ document: DbDocument; signatories: DbDocumentSignatory[] }> {
-    const signingOrder = contentJson?.signing_order || contentJson?.signingOrder || 'owner_first';
+    const signingOrder = contentJson?.signing_order || contentJson?.signingOrder;
+    // By default, documents are sent directly to the configured signers without a forced owner-first bottleneck.
     const initialStatus = signingOrder === 'owner_first' ? 'awaiting_owner' : 'awaiting_signer';
 
     const document: DbDocument = {
@@ -606,8 +607,10 @@ export class SignifyService {
     // migration for why this can no longer live only in memoryStore.
     try {
       if (supabaseClient && signature.signatory_id && signature.signature_image_url) {
+        const signedAtStr = new Date().toISOString();
         await supabaseClient.from('document_signers').update({
-          signature_value: signature.signature_image_url
+          signature_value: signature.signature_image_url,
+          signed_at: signedAtStr
         }).eq('id', signature.signatory_id);
 
         const { error: sigTableErr } = await supabaseClient
@@ -622,7 +625,8 @@ export class SignifyService {
             height: signature.height || null,
             signature_type: signature.signature_type || 'draw',
             signature_image_url: signature.signature_image_url,
-            updated_at: new Date().toISOString()
+            created_at: signature.created_at || signedAtStr,
+            updated_at: signedAtStr
           }], { onConflict: 'document_id,signatory_id,page_number' });
 
         if (sigTableErr && sigTableErr.code !== '42P01') {
@@ -1202,9 +1206,60 @@ export class SignifyService {
             width: sigWidth,
             height: sigHeight
           });
+
+          // Automatic Signing Date: Automatically record & display the date and time with the signature.
+          // Users do NOT need to add a date placeholder.
+          const sigSigner = signatories.find(s => s.id === sig.signatory_id);
+          const rawTimestamp = sigSigner?.signed_at || sig.created_at || new Date().toISOString();
+          const signDate = new Date(rawTimestamp);
+          const formattedDate = !isNaN(signDate.getTime())
+            ? signDate.toUTCString().replace("GMT", "UTC")
+            : new Date().toUTCString().replace("GMT", "UTC");
+
+          const signerLabel = sigSigner?.name ? `Signed by: ${sigSigner.name}` : 'Digitally Signed';
+          const stampText = `${signerLabel} • ${formattedDate}`;
+
+          page.drawText(stampText, {
+            x: Math.max(10, x),
+            y: Math.max(10, y - 9),
+            size: 6.5,
+            font: fontRegular,
+            color: rgb(0.25, 0.3, 0.4)
+          });
         }
       } catch (embedError) {
         console.error("Failed to embed signature onto page:", pageNum, embedError);
+      }
+    }
+
+    // Auto-populate any date fields associated with signers or the document
+    const contentFields = document.content_json?.fields || [];
+    for (const df of contentFields) {
+      if (df.type === 'date' || df.fieldType === 'date') {
+        const dfSigner = signatories.find(s => s.id === (df.assigned_signer_id || df.assignedTo));
+        const rawDate = dfSigner?.signed_at || new Date().toISOString();
+        const dfDate = new Date(rawDate);
+        const formattedDfDate = !isNaN(dfDate.getTime())
+          ? dfDate.toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: 'numeric' })
+          : new Date().toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: 'numeric' });
+
+        const dfPageNum = Math.max(0, Number(df.page_number) - 1);
+        if (dfPageNum < pdfDoc.getPageCount()) {
+          const dfPage = pdfDoc.getPage(dfPageNum);
+          const { width: pW, height: pH } = dfPage.getSize();
+          const dfW = df.width || 130;
+          const dfH = df.height || 36;
+          const dfX = (Number(df.x_position) / 100) * pW - (dfW / 2);
+          const dfY = pH - ((Number(df.y_position) / 100) * pH) - (dfH / 2);
+
+          dfPage.drawText(formattedDfDate, {
+            x: Math.max(10, dfX + 4),
+            y: Math.max(10, dfY + (dfH / 2) - 4),
+            size: 9,
+            font: fontBold,
+            color: rgb(0.1, 0.15, 0.3)
+          });
+        }
       }
     }
 
