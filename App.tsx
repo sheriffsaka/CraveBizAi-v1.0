@@ -274,122 +274,206 @@ export default function App() {
   };
 
   useEffect(() => {
-    const syncRoleAndLogs = async () => {
-      try {
-        await syncGlobalPlanSettings();
-        await syncGlobalRefillPacks();
-      } catch (ge) {
-        console.warn("Failed to sync global plan limits or refill packs:", ge);
-      }
+    syncGlobalPlanSettings().catch(ge => console.warn("Failed to sync global plan limits:", ge));
+    syncGlobalRefillPacks().catch(ge => console.warn("Failed to sync global refill packs:", ge));
+  }, []);
 
-      if (activeTenantId && currentUser) {
-        try {
-          await syncSubscriptionInfoFromDb(activeTenantId);
-          
-          const role = await api.getUserRole(activeTenantId, currentUser.id);
-          if (isMounted.current) {
-            setUserRole(role);
-          }
-          await loadAuditLogs(activeTenantId);
-        } catch (e) {
-          console.warn("Failed to sync role/logs/subscription:", e);
-        }
-      }
-    };
-    syncRoleAndLogs();
+  useEffect(() => {
+    if (activeTenantId && currentUser) {
+      api.getUserRole(activeTenantId, currentUser.id)
+        .then(role => {
+          if (isMounted.current) setUserRole(role);
+        })
+        .catch(e => console.warn("Failed to sync user role:", e));
+    }
   }, [activeTenantId, currentUser]);
 
-  const forceSyncData = async (tenantId: string) => {
+  // Targeted sync helpers for granular, fast updates
+  const syncInvoices = async (tenantId: string) => {
     if (!tenantId || !isMounted.current) return;
-    setIsDataSyncing(true);
     try {
-      let [inv, cli, srv, docs, projs] = await Promise.all([
-        api.fetchInvoices(tenantId), api.fetchClients(tenantId),
-        api.fetchServices(tenantId), api.fetchGeneratedDocs(tenantId),
-        api.fetchProjects(tenantId)
-      ]);
+      const inv = await api.fetchInvoices(tenantId);
+      if (isMounted.current) {
+        setTenantData(prev => ({ ...prev, invoices: inv }));
+        syncSubscriptionInfoFromDb(tenantId, { invoiceList: inv });
+      }
+    } catch (e) {
+      console.warn("Targeted invoice sync warning:", e);
+    }
+  };
 
-      // Automated recurring invoice processing
-      try {
-        const todayStr = new Date().toISOString().split('T')[0];
-        const templates = inv.filter(i => i.isRecurringTemplate && i.recurringStatus !== 'paused' && i.recurringStatus !== 'archived' && i.autoGenerate !== false && (i.nextRecurrenceDate || i.nextDueDate));
-        let createdAny = false;
+  const syncClients = async (tenantId: string) => {
+    if (!tenantId || !isMounted.current) return;
+    try {
+      const cli = await api.fetchClients(tenantId);
+      if (isMounted.current) {
+        setTenantData(prev => ({ ...prev, clients: cli }));
+      }
+    } catch (e) {
+      console.warn("Targeted client sync warning:", e);
+    }
+  };
 
-        for (const template of templates) {
-          const nextDueDateStr = template.nextRecurrenceDate || template.nextDueDate;
-          if (nextDueDateStr && nextDueDateStr <= todayStr) {
-            if (template.endDate && template.endDate < todayStr) {
-              await api.updateInvoice({ ...template, recurringStatus: 'completed' });
-              continue;
-            }
+  const syncServices = async (tenantId: string) => {
+    if (!tenantId || !isMounted.current) return;
+    try {
+      const srv = await api.fetchServices(tenantId);
+      if (isMounted.current) {
+        setTenantData(prev => ({ ...prev, services: srv }));
+      }
+    } catch (e) {
+      console.warn("Targeted service sync warning:", e);
+    }
+  };
 
-            const alreadyGenerated = inv.some(i => i.parentInvoiceId === template.id && (i.issueDate === todayStr || i.dueDate === nextDueDateStr));
-            if (!alreadyGenerated) {
-              const newNextRecurrenceDate = calculateNextRecurrenceDate(nextDueDateStr, template.frequency || 'monthly');
+  const syncProjects = async (tenantId: string) => {
+    if (!tenantId || !isMounted.current) return;
+    try {
+      const projs = await api.fetchProjects(tenantId);
+      if (isMounted.current) {
+        setTenantData(prev => ({ ...prev, projects: projs }));
+      }
+    } catch (e) {
+      console.warn("Targeted project sync warning:", e);
+    }
+  };
 
-              const newInvoiceData: Omit<Invoice, 'id' | 'invoiceNumber'> = {
-                companyId: tenantId,
-                clientId: template.clientId,
-                projectId: template.projectId,
-                issueDate: todayStr,
-                dueDate: nextDueDateStr,
-                total: template.total,
-                status: InvoiceStatus.Draft,
-                discount: template.discount,
-                amountPaid: 0,
-                paymentTerms: template.paymentTerms,
-                selectedBankAccountId: template.selectedBankAccountId,
-                manualBankName: template.manualBankName,
-                manualAccountName: template.manualAccountName,
-                manualAccountNumber: template.manualAccountNumber,
-                frequency: 'one-time',
-                isRecurringTemplate: false,
-                parentInvoiceId: template.id,
-                items: (template.items || []).map(it => ({
-                  serviceId: it.serviceId || 'custom',
-                  description: it.description || '',
-                  quantity: it.quantity || 1,
-                  price: it.price || 0,
-                  discount: it.discount || 0,
-                  directCost: it.directCost || 0,
-                  indirectCost: it.indirectCost || 0
-                }))
-              };
+  // Background automated recurring invoice runner
+  const checkAndProcessRecurringInvoices = async (tenantId: string, inv: Invoice[]) => {
+    try {
+      const todayStr = new Date().toISOString().split('T')[0];
+      const templates = inv.filter(i => i.isRecurringTemplate && i.recurringStatus !== 'paused' && i.recurringStatus !== 'archived' && i.autoGenerate !== false && (i.nextRecurrenceDate || i.nextDueDate));
+      let createdAny = false;
 
-              const createdChild = await api.createInvoice(tenantId, newInvoiceData);
+      for (const template of templates) {
+        const nextDueDateStr = template.nextRecurrenceDate || template.nextDueDate;
+        if (nextDueDateStr && nextDueDateStr <= todayStr) {
+          if (template.endDate && template.endDate < todayStr) {
+            await api.updateInvoice({ ...template, recurringStatus: 'completed' });
+            continue;
+          }
 
-              await api.updateInvoice({
-                ...template,
-                lastGeneratedDate: todayStr,
-                nextRecurrenceDate: newNextRecurrenceDate,
-                nextDueDate: newNextRecurrenceDate,
-                recurringStatus: 'active'
-              });
+          const alreadyGenerated = inv.some(i => i.parentInvoiceId === template.id && (i.issueDate === todayStr || i.dueDate === nextDueDateStr));
+          if (!alreadyGenerated) {
+            const newNextRecurrenceDate = calculateNextRecurrenceDate(nextDueDateStr, template.frequency || 'monthly');
 
-              await triggerAuditLog('AUTO_GENERATE_INVOICE', createdChild.id, `Auto-generated recurring invoice ${createdChild.invoiceNumber} from template ${template.invoiceNumber}`);
-              createdAny = true;
-            }
+            const newInvoiceData: Omit<Invoice, 'id' | 'invoiceNumber'> = {
+              companyId: tenantId,
+              clientId: template.clientId,
+              projectId: template.projectId,
+              issueDate: todayStr,
+              dueDate: nextDueDateStr,
+              total: template.total,
+              status: InvoiceStatus.Draft,
+              discount: template.discount,
+              amountPaid: 0,
+              paymentTerms: template.paymentTerms,
+              selectedBankAccountId: template.selectedBankAccountId,
+              manualBankName: template.manualBankName,
+              manualAccountName: template.manualAccountName,
+              manualAccountNumber: template.manualAccountNumber,
+              frequency: 'one-time',
+              isRecurringTemplate: false,
+              parentInvoiceId: template.id,
+              items: (template.items || []).map(it => ({
+                serviceId: it.serviceId || 'custom',
+                description: it.description || '',
+                quantity: it.quantity || 1,
+                price: it.price || 0,
+                discount: it.discount || 0,
+                directCost: it.directCost || 0,
+                indirectCost: it.indirectCost || 0
+              }))
+            };
+
+            const createdChild = await api.createInvoice(tenantId, newInvoiceData);
+
+            await api.updateInvoice({
+              ...template,
+              lastGeneratedDate: todayStr,
+              nextRecurrenceDate: newNextRecurrenceDate,
+              nextDueDate: newNextRecurrenceDate,
+              recurringStatus: 'active'
+            });
+
+            await triggerAuditLog('AUTO_GENERATE_INVOICE', createdChild.id, `Auto-generated recurring invoice ${createdChild.invoiceNumber} from template ${template.invoiceNumber}`);
+            createdAny = true;
           }
         }
-
-        if (createdAny) {
-          inv = await api.fetchInvoices(tenantId);
-        }
-      } catch (recErr) {
-        console.warn("Automated recurring invoice processing error:", recErr);
       }
+
+      if (createdAny && isMounted.current) {
+        const freshInvoices = await api.fetchInvoices(tenantId);
+        if (isMounted.current) {
+          setTenantData(prev => ({ ...prev, invoices: freshInvoices }));
+        }
+      }
+    } catch (recErr) {
+      console.warn("Automated recurring invoice processing error:", recErr);
+    }
+  };
+
+  // Background non-critical data loader (runs asynchronously without blocking user UI)
+  const loadNonCriticalData = (tenantId: string, currentInvoices: Invoice[]) => {
+    Promise.allSettled([
+      api.fetchProjects(tenantId).then(projs => {
+        if (isMounted.current) setTenantData(prev => ({ ...prev, projects: projs }));
+      }),
+      loadAuditLogs(tenantId),
+      checkAndProcessRecurringInvoices(tenantId, currentInvoices)
+    ]).catch(err => console.warn("Background non-critical load note:", err));
+  };
+
+  // Primary workspace data loader with prioritized critical-path rendering
+  const loadWorkspaceData = async (tenantId: string, isInitial: boolean = false) => {
+    if (!tenantId || !isMounted.current) return;
+    if (!isInitial) {
+      setIsDataSyncing(true);
+    }
+    try {
+      // Step 1: Concurrently load ONLY critical tables needed to render dashboard & business views
+      const [inv, cli, srv] = await Promise.all([
+        api.fetchInvoices(tenantId),
+        api.fetchClients(tenantId),
+        api.fetchServices(tenantId)
+      ]);
 
       if (isMounted.current) {
-          setTenantData({ invoices: inv, clients: cli, services: srv, generatedDocs: docs, projects: projs });
-          setSyncError(null);
-          await syncSubscriptionInfoFromDb(tenantId);
-          await loadAuditLogs(tenantId);
+        setTenantData(prev => ({
+          ...prev,
+          invoices: inv,
+          clients: cli,
+          services: srv
+        }));
+        setSyncError(null);
+
+        // Immediate in-memory subscription update
+        syncSubscriptionInfoFromDb(tenantId, { invoiceList: inv });
       }
-    } catch (e) { 
-        setSyncError(stringifyError(e)); 
-    } finally { 
-        if (isMounted.current) setIsDataSyncing(false); 
+
+      // Step 2: If this was the initial load, unblock the user immediately
+      if (isInitial && isMounted.current) {
+        setIsLoading(false);
+      }
+
+      // Step 3: Trigger non-critical background data loading (projects, audit logs, recurring checks)
+      loadNonCriticalData(tenantId, inv);
+    } catch (e) {
+      console.error("Critical workspace data fetch error:", e);
+      if (isMounted.current) {
+        setSyncError(stringifyError(e));
+        if (isInitial) setIsLoading(false);
+      }
+    } finally {
+      if (isMounted.current && !isInitial) {
+        setIsDataSyncing(false);
+      }
     }
+  };
+
+  // Backwards compatibility alias
+  const forceSyncData = async (tenantId: string) => {
+    return loadWorkspaceData(tenantId, false);
   };
 
   const handleAuthSync = async (user: any) => {
@@ -465,7 +549,7 @@ export default function App() {
                     const tid = (activeTenantId && allComps.some(c => c.id === activeTenantId)) ? activeTenantId : allComps[0].id;
                     setActiveTenantId(tid);
                     localStorage.setItem('cravebiz_tenant', tid);
-                    forceSyncData(tid);
+                    await loadWorkspaceData(tid, isInitialLoad);
                 }
             } else {
                 const discovered = await api.getMyCompanies();
@@ -474,7 +558,7 @@ export default function App() {
                     const tid = (activeTenantId && discovered.some(c => c.id === activeTenantId)) ? activeTenantId : discovered[0].id;
                     setActiveTenantId(tid);
                     localStorage.setItem('cravebiz_tenant', tid);
-                    forceSyncData(tid);
+                    await loadWorkspaceData(tid, isInitialLoad);
                 }
             }
         }
@@ -673,10 +757,15 @@ export default function App() {
     try {
         await api.deleteInvoice(id);
         await triggerAuditLog('DELETE_INVOICE', id, `Deleted invoice record`);
-        if (activeTenantId) await forceSyncData(activeTenantId);
+        setTenantData(prev => ({
+          ...prev,
+          invoices: prev.invoices.filter(i => i.id !== id)
+        }));
+        if (activeTenantId) await syncInvoices(activeTenantId);
         if (currentUser?.isAdmin) {
-            const allInvs = await api.getAllInvoices();
-            setAllInvoices(allInvs);
+            api.getAllInvoices().then(allInvs => {
+              if (isMounted.current) setAllInvoices(allInvs);
+            }).catch(console.warn);
         }
     } catch (e) { alert(`Delete Error: ${stringifyError(e)}`); } 
     finally { if (isMounted.current) setIsDataSyncing(false); }
@@ -692,10 +781,11 @@ export default function App() {
         ...prev,
         invoices: prev.invoices.filter(inv => !invoiceIds.includes(inv.id))
       }));
-      if (activeTenantId) await forceSyncData(activeTenantId);
+      if (activeTenantId) await syncInvoices(activeTenantId);
       if (currentUser?.isAdmin) {
-        const allInvs = await api.getAllInvoices();
-        setAllInvoices(allInvs);
+        api.getAllInvoices().then(allInvs => {
+          if (isMounted.current) setAllInvoices(allInvs);
+        }).catch(console.warn);
       }
     } catch (e) {
       alert(`Bulk Delete Error: ${stringifyError(e)}`);
@@ -720,7 +810,7 @@ export default function App() {
         ...prev,
         invoices: prev.invoices.map(inv => ids.includes(inv.id) ? { ...inv, recurringStatus: resolvedStatus } : inv)
       }));
-      if (activeTenantId) await forceSyncData(activeTenantId);
+      if (activeTenantId) await syncInvoices(activeTenantId);
     } catch (e) {
       alert(`Bulk Archive Error: ${stringifyError(e)}`);
     } finally {
@@ -774,7 +864,7 @@ export default function App() {
         recurringStatus: 'active'
       });
       await triggerAuditLog('GENERATE_RENEWAL_INVOICE', createdChild.id, `Manually renewed recurring invoice ${createdChild.invoiceNumber} from template ${template.invoiceNumber}. Next due date set to ${newNextRecurrenceDate}`);
-      await forceSyncData(activeTenantId);
+      await syncInvoices(activeTenantId);
       alert(`Renewal invoice ${createdChild.invoiceNumber} generated successfully! Next due date updated to ${newNextRecurrenceDate}.`);
     } catch (e) {
       alert(`Renewal Error: ${stringifyError(e)}`);
@@ -793,7 +883,7 @@ export default function App() {
         recurringStatus: newStatus
       });
       await triggerAuditLog('TOGGLE_RECURRING_STATUS', template.id, `Set recurring schedule for ${template.invoiceNumber} to ${newStatus}`);
-      await forceSyncData(activeTenantId);
+      await syncInvoices(activeTenantId);
     } catch (e) {
       alert(`Update Error: ${stringifyError(e)}`);
     } finally {
@@ -816,7 +906,7 @@ export default function App() {
         template.id,
         `${isCurrentlyArchived ? 'Restored' : 'Archived'} recurring template ${template.invoiceNumber}`
       );
-      await forceSyncData(activeTenantId);
+      await syncInvoices(activeTenantId);
     } catch (e) {
       alert(`Update Error: ${stringifyError(e)}`);
     } finally {
@@ -903,7 +993,7 @@ export default function App() {
         ...prev,
         services: prev.services.filter(s => s.id !== serviceId)
       }));
-      if (activeTenantId) await forceSyncData(activeTenantId);
+      if (activeTenantId) await syncServices(activeTenantId);
     } catch (e) {
       alert("Error deleting service: " + stringifyError(e));
     } finally {
@@ -924,7 +1014,7 @@ export default function App() {
         ...prev,
         clients: prev.clients.filter(c => c.id !== clientId)
       }));
-      if (activeTenantId) await forceSyncData(activeTenantId);
+      if (activeTenantId) await syncClients(activeTenantId);
     } catch (e) {
       alert("Error deleting client: " + stringifyError(e));
     } finally {
@@ -982,7 +1072,7 @@ export default function App() {
         ...prev,
         clients: prev.clients.map(c => c.id === client.id ? { ...c, is_archived: true, status: 'Archived' } : c)
       }));
-      if (activeTenantId) await forceSyncData(activeTenantId);
+      if (activeTenantId) await syncClients(activeTenantId);
     } catch (e) {
       alert("Error archiving client: " + stringifyError(e));
     } finally {
@@ -998,7 +1088,7 @@ export default function App() {
         ...prev,
         clients: prev.clients.map(c => c.id === client.id ? { ...c, is_archived: false, status: 'Active' } : c)
       }));
-      if (activeTenantId) await forceSyncData(activeTenantId);
+      if (activeTenantId) await syncClients(activeTenantId);
     } catch (e) {
       alert("Error restoring client: " + stringifyError(e));
     } finally {
@@ -1017,7 +1107,7 @@ export default function App() {
         clients: prev.clients.map(c => clientIds.includes(c.id) ? { ...c, is_archived: isArch, status: isArch ? 'Archived' : 'Active' } : c)
       }));
       await triggerAuditLog('BULK_ARCHIVE_CLIENTS', clientIds.join(','), `Bulk ${targetStatus} for ${clientIds.length} clients`);
-      if (activeTenantId) await forceSyncData(activeTenantId);
+      if (activeTenantId) await syncClients(activeTenantId);
     } catch (e) {
       alert("Error bulk archiving clients: " + stringifyError(e));
     } finally {
@@ -1039,7 +1129,7 @@ export default function App() {
         clients: prev.clients.filter(c => !clientIds.includes(c.id))
       }));
       await triggerAuditLog('BULK_DELETE_CLIENTS', clientIds.join(','), `Bulk deleted ${clientIds.length} clients`);
-      if (activeTenantId) await forceSyncData(activeTenantId);
+      if (activeTenantId) await syncClients(activeTenantId);
     } catch (e) {
       alert("Error bulk deleting clients: " + stringifyError(e));
     } finally {
@@ -1295,7 +1385,8 @@ export default function App() {
   if (isLoading) return (
     <SyncOverlay 
       isVisible={isLoading} 
-      message="Preparing Workspace..." 
+      isInitialLoading={true}
+      message="Loading your account data. Please wait." 
       onRetry={() => window.location.reload()}
       onDismiss={() => setIsLoading(false)}
     />
@@ -1535,7 +1626,7 @@ export default function App() {
                   await incrementInvoiceCount(activeTenantId!);
                   setDraftRenewal(null);
                   navigateTo('invoices');
-                  await forceSyncData(activeTenantId!);
+                  syncInvoices(activeTenantId!);
                 } catch (err: any) {
                   const msg = stringifyError(err);
                   if (msg.toLowerCase().includes('quota') || msg.toLowerCase().includes('limit') || msg.toLowerCase().includes('exhausted')) {
@@ -1561,7 +1652,11 @@ export default function App() {
                 try {
                     setIsDataSyncing(true);
                     await api.updateInvoice({ ...updatedInv, status });
-                    await forceSyncData(activeTenantId!);
+                    setTenantData(prev => ({
+                      ...prev,
+                      invoices: prev.invoices.map(item => item.id === updatedInv.id ? { ...item, ...updatedInv, status } : item)
+                    }));
+                    syncInvoices(activeTenantId!);
                     navigateTo('invoice-detail');
                 } catch(e) { alert(stringifyError(e)); } 
                 finally { if (isMounted.current) setIsDataSyncing(false); }
@@ -1584,7 +1679,11 @@ export default function App() {
             onViewTemplate={()=>{}} onSendInvoice={async (id) => { 
                 try {
                     await api.updateInvoiceStatus(id, InvoiceStatus.Sent); 
-                    await forceSyncData(activeTenantId!); 
+                    setTenantData(prev => ({
+                      ...prev,
+                      invoices: prev.invoices.map(item => item.id === id ? { ...item, status: InvoiceStatus.Sent } : item)
+                    }));
+                    syncInvoices(activeTenantId!); 
                 } catch (e) {
                     setSyncError(stringifyError(e));
                 }
@@ -1608,7 +1707,7 @@ export default function App() {
                   await api.updateCompany(id, det); 
                   const freshComps = currentUser?.isAdmin ? await api.getAllCompanies() : await api.getMyCompanies();
                   setCompanies(freshComps);
-                  await forceSyncData(id); 
+                  await loadWorkspaceData(id, false); 
               } catch (e) {
                   setSyncError(stringifyError(e));
               }
@@ -1636,30 +1735,34 @@ export default function App() {
         onBulkDeleteClients={handleBulkDeleteClients}
         onAddClient={async (c) => { 
           try {
-              await api.createClient(c); 
-              await forceSyncData(activeTenantId!); 
+              const newClient = await api.createClient(c); 
+              setTenantData(prev => ({ ...prev, clients: [...prev.clients, newClient] }));
+              syncClients(activeTenantId!); 
           } catch (e) {
               setSyncError(stringifyError(e));
           }
       }} onUpdateClient={async (c) => { 
           try {
               await api.updateClient(c); 
-              await forceSyncData(activeTenantId!); 
+              setTenantData(prev => ({ ...prev, clients: prev.clients.map(item => item.id === c.id ? c : item) }));
+              syncClients(activeTenantId!); 
           } catch (e) {
               setSyncError(stringifyError(e));
           }
       }} />;
       case 'services': return <ServiceList companyId={activeTenantId!} services={services} invoices={invoices} userRole={userRole} onDeleteService={handleDeleteService} onAddService={async (s) => { 
           try {
-              await api.createService(s); 
-              await forceSyncData(activeTenantId!); 
+              const newService = await api.createService(s); 
+              setTenantData(prev => ({ ...prev, services: [...prev.services, newService] }));
+              syncServices(activeTenantId!); 
           } catch (e) {
               setSyncError(stringifyError(e));
           }
       }} onUpdateService={async (s) => { 
           try {
               await api.updateService(s); 
-              await forceSyncData(activeTenantId!); 
+              setTenantData(prev => ({ ...prev, services: prev.services.map(item => item.id === s.id ? s : item) }));
+              syncServices(activeTenantId!); 
           } catch (e) {
               setSyncError(stringifyError(e));
           }
@@ -1803,8 +1906,9 @@ export default function App() {
             )}
             <SyncOverlay 
               isVisible={isDataSyncing} 
-              message="Synchronizing Data..." 
-              onRetry={() => { if (activeTenantId) forceSyncData(activeTenantId); }}
+              mode="badge"
+              message="Synchronizing in background..." 
+              onRetry={() => { if (activeTenantId) loadWorkspaceData(activeTenantId, false); }}
               onDismiss={() => setIsDataSyncing(false)}
             />
             {renderContent()}

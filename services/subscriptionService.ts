@@ -263,130 +263,189 @@ export function updateMemoryAiCredits(companyId: string, units: number): void {
   }
 }
 
+// In-flight deduplication and timestamp caching to prevent redundant execution bursts
+const inFlightSubSync = new Map<string, Promise<void>>();
+const lastSubSyncTimestamp = new Map<string, number>();
+
 /**
  * Synchronizes subscription details from Supabase to in-memory state
  */
-export async function syncSubscriptionInfoFromDb(companyId: string): Promise<void> {
+export async function syncSubscriptionInfoFromDb(
+  companyId: string,
+  options?: { force?: boolean; invoiceList?: any[] }
+): Promise<void> {
   if (!companyId) return;
-  const docId = getSettingsDocId(companyId);
-  const state = getOrCreateMemoryState(companyId);
 
-  let creditFetchedFromDb = false;
+  const now = Date.now();
+  const lastSync = lastSubSyncTimestamp.get(companyId) || 0;
 
-  // 1A. Fetch canonical AI Credits balance from Supabase database via backend API
-  try {
-    const headers = await api.getAuthHeaders(companyId);
-    const creditsRes = await fetch('/api/ai/credits', { headers });
-    if (creditsRes.ok) {
-      const creditsData = await creditsRes.json();
-      if (typeof creditsData.remainingCredits === 'number') {
-        state.aiUnits = creditsData.remainingCredits;
-        creditFetchedFromDb = true;
-        if (creditsData.subscriptionPlan) {
-          state.tier = creditsData.subscriptionPlan;
-        }
-      }
-    }
-  } catch (creditErr) {
-    console.warn("Could not sync canonical AI credits from backend proxy:", creditErr);
+  // Debounce rapid successive calls within 2.5 seconds unless forced
+  if (!options?.force && now - lastSync < 2500) {
+    return;
   }
 
-  // 1B. Fallback: Query Supabase user_ai_credits table directly if API call failed
-  if (!creditFetchedFromDb) {
-    try {
-      const cleanKey = companyId.replace(/^ws-(personal|legal|sales)-/, '').toLowerCase();
-      const { data: dbAiCredit } = await supabase
-        .from('user_ai_credits')
-        .select('remaining_credits, subscription_plan, total_credits')
-        .or(`user_id.eq.${cleanKey},tenant_id.eq.${companyId},tenant_id.eq.${cleanKey}`)
-        .maybeSingle();
-
-      if (dbAiCredit && typeof dbAiCredit.remaining_credits === 'number') {
-        state.aiUnits = dbAiCredit.remaining_credits;
-        if (dbAiCredit.subscription_plan) state.tier = dbAiCredit.subscription_plan;
-        creditFetchedFromDb = true;
-      }
-    } catch (err) {
-      console.warn("Could not query user_ai_credits directly from Supabase:", err);
-    }
+  // Deduplicate concurrent in-flight requests for the same company
+  if (inFlightSubSync.has(companyId)) {
+    return inFlightSubSync.get(companyId)!;
   }
 
-  // 2. Retrieve the latest invoice and receipt counts directly from Supabase
-  try {
-    const { count: dbInvoiceCount, error: invError } = await supabase
-      .from('invoices')
-      .select('*', { count: 'exact', head: true })
-      .eq('company_id', companyId);
-    
-    if (!invError && dbInvoiceCount !== null) {
-      state.invoiceCount = dbInvoiceCount;
-    }
+  const syncPromise = (async () => {
+    lastSubSyncTimestamp.set(companyId, Date.now());
+    const docId = getSettingsDocId(companyId);
+    const state = getOrCreateMemoryState(companyId);
 
-    const { count: dbReceiptCount, error: recError } = await supabase
-      .from('invoices')
-      .select('*', { count: 'exact', head: true })
-      .eq('company_id', companyId)
-      .eq('is_receipt_sent', true);
-    
-    if (!recError && dbReceiptCount !== null) {
-      state.receiptCount = dbReceiptCount;
-    }
-  } catch (err) {
-    console.warn("Could not sync live counts from DB:", err);
-  }
-
-  // 3. Fetch workspace settings from backend proxy
-  try {
-    const headers = await api.getAuthHeaders(companyId);
-    const response = await fetch('/api/subscription/settings', {
-      headers
+    const prevSnapshot = JSON.stringify({
+      tier: state.tier,
+      aiUnits: state.aiUnits,
+      invoiceCount: state.invoiceCount,
+      receiptCount: state.receiptCount
     });
-    if (response.ok) {
-      const resData = await response.json();
-      const content = resData?.content;
 
-      if (content) {
-        if (content.tier) state.tier = content.tier;
-        if (!creditFetchedFromDb && typeof content.aiUnits === 'number') state.aiUnits = content.aiUnits;
-        if (content.aiModeEnabled !== undefined) state.aiModeEnabled = content.aiModeEnabled;
-        if (content.lastFreeUnitsReset) state.lastFreeUnitsReset = content.lastFreeUnitsReset;
-        if (content.purchasedAiUnits !== undefined) state.purchasedAiUnits = content.purchasedAiUnits;
-        if (content.memberPermissions) state.memberPermissions = content.memberPermissions;
-        if (content.invitedMembers) state.invitedMembers = content.invitedMembers;
+    let creditFetchedFromDb = false;
 
-        checkAndEnforceMonthlyCreditReset(companyId, content);
-        window.dispatchEvent(new Event('cravebiz_subscription_change'));
-        return;
-      }
-    }
-  } catch (err) {
-    console.warn("Could not sync subscription from backend proxy, trying direct Supabase fallback:", err);
-  }
+    // Concurrently execute AI credit check, usage counts, and settings
+    await Promise.allSettled([
+      // 1. AI Credits fetch
+      (async () => {
+        try {
+          const headers = await api.getAuthHeaders(companyId);
+          const creditsRes = await fetch('/api/ai/credits', { headers });
+          if (creditsRes.ok) {
+            const creditsData = await creditsRes.json();
+            if (typeof creditsData.remainingCredits === 'number') {
+              state.aiUnits = creditsData.remainingCredits;
+              creditFetchedFromDb = true;
+              if (creditsData.subscriptionPlan) {
+                state.tier = creditsData.subscriptionPlan;
+              }
+            }
+          }
+        } catch (creditErr) {
+          console.warn("Could not sync canonical AI credits from backend proxy:", creditErr);
+        }
 
-  // Direct Supabase query as fallback for settings
-  try {
-    const { data, error } = await supabase
-      .from('generated_documents')
-      .select('content')
-      .eq('id', docId)
-      .maybeSingle();
+        if (!creditFetchedFromDb) {
+          try {
+            const cleanKey = companyId.replace(/^ws-(personal|legal|sales)-/, '').toLowerCase();
+            const { data: dbAiCredit } = await supabase
+              .from('user_ai_credits')
+              .select('remaining_credits, subscription_plan, total_credits')
+              .or(`user_id.eq.${cleanKey},tenant_id.eq.${companyId},tenant_id.eq.${cleanKey}`)
+              .maybeSingle();
 
-    if (!error && data && data.content) {
-      const content = data.content as any;
-      if (content.tier) state.tier = content.tier;
-      if (!creditFetchedFromDb && typeof content.aiUnits === 'number') state.aiUnits = content.aiUnits;
-      if (content.aiModeEnabled !== undefined) state.aiModeEnabled = content.aiModeEnabled;
-      if (content.lastFreeUnitsReset) state.lastFreeUnitsReset = content.lastFreeUnitsReset;
-      if (content.purchasedAiUnits !== undefined) state.purchasedAiUnits = content.purchasedAiUnits;
-      if (content.memberPermissions) state.memberPermissions = content.memberPermissions;
-      if (content.invitedMembers) state.invitedMembers = content.invitedMembers;
+            if (dbAiCredit && typeof dbAiCredit.remaining_credits === 'number') {
+              state.aiUnits = dbAiCredit.remaining_credits;
+              if (dbAiCredit.subscription_plan) state.tier = dbAiCredit.subscription_plan;
+              creditFetchedFromDb = true;
+            }
+          } catch (err) {
+            console.warn("Could not query user_ai_credits directly from Supabase:", err);
+          }
+        }
+      })(),
 
-      checkAndEnforceMonthlyCreditReset(companyId, content);
+      // 2. Invoice & Receipt counts
+      (async () => {
+        if (options?.invoiceList && Array.isArray(options.invoiceList)) {
+          state.invoiceCount = options.invoiceList.length;
+          state.receiptCount = options.invoiceList.filter((i: any) => i.isReceiptSent).length;
+          return;
+        }
+
+        try {
+          const [invRes, recRes] = await Promise.all([
+            supabase
+              .from('invoices')
+              .select('*', { count: 'exact', head: true })
+              .eq('company_id', companyId),
+            supabase
+              .from('invoices')
+              .select('*', { count: 'exact', head: true })
+              .eq('company_id', companyId)
+              .eq('is_receipt_sent', true)
+          ]);
+
+          if (!invRes.error && invRes.count !== null) {
+            state.invoiceCount = invRes.count;
+          }
+          if (!recRes.error && recRes.count !== null) {
+            state.receiptCount = recRes.count;
+          }
+        } catch (err) {
+          console.warn("Could not sync live counts from DB:", err);
+        }
+      })(),
+
+      // 3. Settings fetch
+      (async () => {
+        let settingsLoaded = false;
+        try {
+          const headers = await api.getAuthHeaders(companyId);
+          const response = await fetch('/api/subscription/settings', { headers });
+          if (response.ok) {
+            const resData = await response.json();
+            const content = resData?.content;
+            if (content) {
+              if (content.tier) state.tier = content.tier;
+              if (!creditFetchedFromDb && typeof content.aiUnits === 'number') state.aiUnits = content.aiUnits;
+              if (content.aiModeEnabled !== undefined) state.aiModeEnabled = content.aiModeEnabled;
+              if (content.lastFreeUnitsReset) state.lastFreeUnitsReset = content.lastFreeUnitsReset;
+              if (content.purchasedAiUnits !== undefined) state.purchasedAiUnits = content.purchasedAiUnits;
+              if (content.memberPermissions) state.memberPermissions = content.memberPermissions;
+              if (content.invitedMembers) state.invitedMembers = content.invitedMembers;
+
+              checkAndEnforceMonthlyCreditReset(companyId, content);
+              settingsLoaded = true;
+            }
+          }
+        } catch (err) {
+          console.warn("Backend subscription settings proxy unavailable, checking fallback:", err);
+        }
+
+        if (!settingsLoaded) {
+          try {
+            const { data, error } = await supabase
+              .from('generated_documents')
+              .select('content')
+              .eq('id', docId)
+              .maybeSingle();
+
+            if (!error && data?.content) {
+              const content = data.content as any;
+              if (content.tier) state.tier = content.tier;
+              if (!creditFetchedFromDb && typeof content.aiUnits === 'number') state.aiUnits = content.aiUnits;
+              if (content.aiModeEnabled !== undefined) state.aiModeEnabled = content.aiModeEnabled;
+              if (content.lastFreeUnitsReset) state.lastFreeUnitsReset = content.lastFreeUnitsReset;
+              if (content.purchasedAiUnits !== undefined) state.purchasedAiUnits = content.purchasedAiUnits;
+              if (content.memberPermissions) state.memberPermissions = content.memberPermissions;
+              if (content.invitedMembers) state.invitedMembers = content.invitedMembers;
+
+              checkAndEnforceMonthlyCreditReset(companyId, content);
+            }
+          } catch (err) {
+            console.warn("Direct Supabase query exception:", err);
+          }
+        }
+      })()
+    ]);
+
+    const newSnapshot = JSON.stringify({
+      tier: state.tier,
+      aiUnits: state.aiUnits,
+      invoiceCount: state.invoiceCount,
+      receiptCount: state.receiptCount
+    });
+
+    // Only broadcast change event if values actually changed
+    if (prevSnapshot !== newSnapshot) {
       window.dispatchEvent(new Event('cravebiz_subscription_change'));
     }
-  } catch (err) {
-    console.warn("Direct Supabase query exception:", err);
-  }
+  })().finally(() => {
+    inFlightSubSync.delete(companyId);
+  });
+
+  inFlightSubSync.set(companyId, syncPromise);
+  return syncPromise;
 }
 
 /**

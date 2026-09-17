@@ -256,59 +256,63 @@ class CraveBizApi {
           console.warn("Storage access failed during link check:", storageErr);
         }
 
-        // Cross-device server-authoritative invitation check and auto-join
-        try {
-          const { data: workspaces, error: wsError } = await supabase
-            .from('generated_documents')
-            .select('*')
-            .eq('document_type', 'cravebiz_workspace_settings');
+        // Cross-device server-authoritative invitation check and auto-join (gated so it runs once per user)
+        const hasAlreadyLinkedCloud = localStorage.getItem(`cravebiz_profile_linked_${userId}`) === 'true';
+        if (!hasAlreadyLinkedCloud) {
+          try {
+            const { data: workspaces, error: wsError } = await supabase
+              .from('generated_documents')
+              .select('*')
+              .eq('document_type', 'cravebiz_workspace_settings');
 
-          if (!wsError && workspaces) {
-            for (const ws of workspaces) {
-              const content = ws.content as any;
-              if (content && content.invitedMembers) {
-                const matchingInviteEntry = Object.entries(content.invitedMembers).find(
-                  ([_, member]: [string, any]) => member.email?.toLowerCase() === cleanEmail
-                );
+            if (!wsError && workspaces) {
+              for (const ws of workspaces) {
+                const content = ws.content as any;
+                if (content && content.invitedMembers) {
+                  const matchingInviteEntry = Object.entries(content.invitedMembers).find(
+                    ([_, member]: [string, any]) => member.email?.toLowerCase() === cleanEmail
+                  );
 
-                if (matchingInviteEntry) {
-                  const [tempId, inviteInfo]: [string, any] = matchingInviteEntry;
-                  const companyId = ws.company_id || ws.id;
+                  if (matchingInviteEntry) {
+                    const [tempId, inviteInfo]: [string, any] = matchingInviteEntry;
+                    const companyId = ws.company_id || ws.id;
 
-                  console.log(`[Cloud Invitation Link] Found pending invitation for ${cleanEmail} in workspace ${companyId}`);
+                    console.log(`[Cloud Invitation Link] Found pending invitation for ${cleanEmail} in workspace ${companyId}`);
 
-                  // 1. Insert or update into company_members
-                  const { error: joinErr } = await supabase
-                    .from('company_members')
-                    .upsert({
-                      company_id: companyId,
-                      user_id: userId,
-                      role: (inviteInfo.role || 'member').toLowerCase(),
-                      status: 'Joined'
-                    }, { onConflict: 'company_id,user_id' });
+                    // 1. Insert or update into company_members
+                    const { error: joinErr } = await supabase
+                      .from('company_members')
+                      .upsert({
+                        company_id: companyId,
+                        user_id: userId,
+                        role: (inviteInfo.role || 'member').toLowerCase(),
+                        status: 'Joined'
+                      }, { onConflict: 'company_id,user_id' });
 
-                  if (joinErr) {
-                    console.warn("Failed to join company from cloud invitation:", joinErr);
+                    if (joinErr) {
+                      console.warn("Failed to join company from cloud invitation:", joinErr);
+                    }
+
+                    // 2. Mark as Joined in workspace settings
+                    inviteInfo.status = 'Joined';
+                    content.invitedMembers[tempId] = inviteInfo;
+
+                    await supabase
+                      .from('generated_documents')
+                      .update({ content })
+                      .eq('id', ws.id);
+
+                    // 3. Store locally in local storage
+                    localStorage.setItem(`cravebiz_invited_member_info_${companyId}_${userId}`, JSON.stringify(inviteInfo));
+                    localStorage.setItem(`cravebiz_member_ai_allowed_${companyId}_${cleanEmail}`, 'true');
                   }
-
-                  // 2. Mark as Joined in workspace settings
-                  inviteInfo.status = 'Joined';
-                  content.invitedMembers[tempId] = inviteInfo;
-
-                  await supabase
-                    .from('generated_documents')
-                    .update({ content })
-                    .eq('id', ws.id);
-
-                  // 3. Store locally in local storage
-                  localStorage.setItem(`cravebiz_invited_member_info_${companyId}_${userId}`, JSON.stringify(inviteInfo));
-                  localStorage.setItem(`cravebiz_member_ai_allowed_${companyId}_${cleanEmail}`, 'true');
                 }
               }
             }
+            localStorage.setItem(`cravebiz_profile_linked_${userId}`, 'true');
+          } catch (inviteLinkErr) {
+            console.warn("Cloud invitation checking failed, continuing anyway:", inviteLinkErr);
           }
-        } catch (inviteLinkErr) {
-          console.warn("Cloud invitation checking failed, continuing anyway:", inviteLinkErr);
         }
       }
 
@@ -548,26 +552,36 @@ class CraveBizApi {
     const user = await safeGetUser();
     if (!user) return [];
     
-    try {
-        const { data: members, error: memberError } = await supabase.from('company_members').select('company_id').eq('user_id', user.id);
+    return dedupeRequest(`my_companies:${user.id}`, async () => {
+      try {
+        const { data: members, error: memberError } = await supabase
+          .from('company_members')
+          .select('company_id')
+          .eq('user_id', user.id);
+
         if (memberError) {
-            console.warn("Supabase company_members error:", memberError);
-            return [];
+          console.warn("Supabase company_members error:", memberError);
+          return [];
         }
 
         const companyIds = members?.map(m => m.company_id) || [];
         if (companyIds.length === 0) return [];
         
-        const { data: companies, error: companiesError } = await supabase.from('companies').select('*').in('id', companyIds);
-        if (companiesError) {
-            console.warn("Supabase companies in error:", companiesError);
-            return [];
+        const [companiesRes, bankAccountsRes] = await Promise.all([
+          supabase.from('companies').select('*').in('id', companyIds),
+          supabase.from('bank_accounts').select('*').in('company_id', companyIds)
+        ]);
+
+        if (companiesRes.error) {
+          console.warn("Supabase companies in error:", companiesRes.error);
+          return [];
         }
 
-        const { data: bankAccounts } = await supabase.from('bank_accounts').select('*').in('company_id', companyIds);
+        const companies = companiesRes.data || [];
+        const bankAccounts = bankAccountsRes.data || [];
         
-        return (companies || []).map(c => {
-          const companyAccounts = (bankAccounts || []).filter((b: any) => b.company_id === c.id);
+        return companies.map(c => {
+          const companyAccounts = bankAccounts.filter((b: any) => b.company_id === c.id);
           return {
             id: c.id, name: c.name, address: c.address, email: c.email, phone: c.phone, logoUrl: c.logo_url,
             bankAccounts: companyAccounts.map((b: any) => ({ 
@@ -575,10 +589,11 @@ class CraveBizApi {
             }))
           };
         });
-    } catch (e) {
+      } catch (e) {
         console.error("Company Registry Error caught and recovered:", e);
         return [];
-    }
+      }
+    }, 4000);
   }
 
   async createCompany(details: Partial<Company>): Promise<Company> {
@@ -716,13 +731,6 @@ class CraveBizApi {
     return dedupeRequest(`invoices:${cleanId}`, async () => {
       const { data, error } = await supabase.from('invoices').select('*, invoice_items(*)').eq('company_id', cleanId).order('created_at', { ascending: false });
       if (error) throw error;
-
-      if (data) {
-        import("../services/subscriptionService").then(({ saveSubscriptionInfoToDb }) => {
-          saveSubscriptionInfoToDb(cleanId).catch(err => console.warn("Background count sync failed:", err));
-        }).catch(err => console.warn("Deferred import failed:", err));
-      }
-      
       return (data || []).map(mapDbInvoiceToInvoice);
     });
   }
@@ -2709,28 +2717,32 @@ class CraveBizApi {
   }
 
   async fetchAuditLogs(companyId: string): Promise<AuditLog[]> {
-    try {
-      const { data, error } = await supabase.from('audit_logs')
-        .select('*')
-        .eq('company_id', cleanCompanyId(companyId))
-        .order('created_at', { ascending: false });
-      if (!error && data) {
-        return data.map((d: any) => ({
-          id: d.id,
-          companyId: d.company_id,
-          userId: d.user_id,
-          userName: d.user_name,
-          action: d.action,
-          resource: d.resource,
-          details: d.details,
-          createdAt: d.created_at
-        }));
-      }
-    } catch (dbErr) {
-      console.warn("Supabase audit_logs fetch failed:", dbErr);
-    }
+    const cleanId = cleanCompanyId(companyId);
+    return dedupeRequest(`audit_logs:${cleanId}`, async () => {
+      try {
+        const { data, error } = await supabase.from('audit_logs')
+          .select('*')
+          .eq('company_id', cleanId)
+          .order('created_at', { ascending: false })
+          .limit(50);
 
-    return [];
+        if (!error && data) {
+          return data.map((d: any) => ({
+            id: d.id,
+            companyId: d.company_id,
+            userId: d.user_id,
+            userName: d.user_name,
+            action: d.action,
+            resource: d.resource,
+            details: d.details,
+            createdAt: d.created_at
+          }));
+        }
+      } catch (dbErr) {
+        console.warn("Supabase audit_logs fetch failed:", dbErr);
+      }
+      return [];
+    }, 5000);
   }
 
   async safeGetUser() {

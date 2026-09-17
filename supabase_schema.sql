@@ -534,6 +534,35 @@ DROP POLICY IF EXISTS "Allow all operations on document_signatures" ON public.do
 CREATE POLICY "Allow all operations on document_signatures" ON public.document_signatures FOR ALL USING (true) WITH CHECK (true);
 GRANT ALL ON public.document_signatures TO anon, authenticated, service_role;
 
+-- ==============================================================================
+-- Performance Optimization Indexes
+-- ==============================================================================
+CREATE INDEX IF NOT EXISTS idx_invoices_company_id ON public.invoices(company_id);
+CREATE INDEX IF NOT EXISTS idx_invoices_company_created ON public.invoices(company_id, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_invoices_company_receipt ON public.invoices(company_id, is_receipt_sent);
+CREATE INDEX IF NOT EXISTS idx_invoices_client_id ON public.invoices(client_id);
+CREATE INDEX IF NOT EXISTS idx_invoices_status ON public.invoices(status);
+CREATE INDEX IF NOT EXISTS idx_invoices_parent_id ON public.invoices(parent_invoice_id);
+CREATE INDEX IF NOT EXISTS idx_invoice_items_invoice_id ON public.invoice_items(invoice_id);
+CREATE INDEX IF NOT EXISTS idx_clients_company_id ON public.clients(company_id);
+CREATE INDEX IF NOT EXISTS idx_clients_company_archived ON public.clients(company_id, is_archived);
+CREATE INDEX IF NOT EXISTS idx_clients_company_status ON public.clients(company_id, status);
+CREATE INDEX IF NOT EXISTS idx_services_company_id ON public.services(company_id);
+CREATE INDEX IF NOT EXISTS idx_projects_company_id ON public.projects(company_id);
+CREATE INDEX IF NOT EXISTS idx_projects_client_id ON public.projects(client_id);
+CREATE INDEX IF NOT EXISTS idx_projects_company_status ON public.projects(company_id, status);
+CREATE INDEX IF NOT EXISTS idx_company_members_user_id ON public.company_members(user_id);
+CREATE INDEX IF NOT EXISTS idx_company_members_company_id ON public.company_members(company_id);
+CREATE INDEX IF NOT EXISTS idx_company_members_user_company ON public.company_members(user_id, company_id);
+CREATE INDEX IF NOT EXISTS idx_companies_owner_id ON public.companies(owner_id);
+CREATE INDEX IF NOT EXISTS idx_bank_accounts_company_id ON public.bank_accounts(company_id);
+CREATE INDEX IF NOT EXISTS idx_audit_logs_company_created ON public.audit_logs(company_id, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_audit_logs_user_id ON public.audit_logs(user_id);
+CREATE INDEX IF NOT EXISTS idx_gen_docs_company_type ON public.generated_documents(company_id, document_type);
+CREATE INDEX IF NOT EXISTS idx_gen_docs_document_type ON public.generated_documents(document_type);
+CREATE INDEX IF NOT EXISTS idx_in_app_notif_tenant_recipient ON public.in_app_notifications(tenant_id, recipient_email, is_read);
+
+
 
 
 

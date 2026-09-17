@@ -31,7 +31,7 @@ export const NotificationBell: React.FC<NotificationBellProps> = ({ userEmail, t
                 setNotifications(data.map(n => ({ ...n, isRead: n.read || n.isRead })));
             }
         } catch (err) {
-            console.error('Failed to load in-app notifications:', err);
+            console.warn('Non-critical: in-app notifications background sync deferred:', err);
         } finally {
             setLoading(false);
         }
@@ -40,8 +40,12 @@ export const NotificationBell: React.FC<NotificationBellProps> = ({ userEmail, t
     useEffect(() => {
         loadNotifications();
 
-        // 1. Polling fallback every 10 seconds
-        const interval = setInterval(loadNotifications, 10000);
+        // 1. Polling fallback every 45 seconds (when tab is active)
+        const interval = setInterval(() => {
+            if (document.visibilityState === 'visible') {
+                loadNotifications();
+            }
+        }, 45000);
 
         // 2. Cross-tab synchronization via storage event
         const handleStorageChange = (e: StorageEvent) => {
