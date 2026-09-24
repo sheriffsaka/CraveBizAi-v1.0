@@ -116,7 +116,11 @@ interface RecurringMeta {
   lastGeneratedDate?: string;
   startDate?: string;
   endDate?: string;
+  periodStart?: string;
+  periodEnd?: string;
   recurringStatus?: string;
+  generationStatus?: string;
+  draftInvoiceId?: string;
   autoGenerate?: boolean;
   autoSend?: boolean;
   invoiceSchedule?: string;
@@ -161,6 +165,8 @@ const mapDbInvoiceToInvoice = (inv: any): Invoice => {
     projectId: inv.project_id || undefined,
     issueDate: inv.issue_date,
     dueDate: inv.due_date,
+    periodStart: inv.period_start || meta.periodStart || undefined,
+    periodEnd: inv.period_end || meta.periodEnd || undefined,
     total,
     status,
     discount: Number(inv.discount || 0),
@@ -179,6 +185,8 @@ const mapDbInvoiceToInvoice = (inv: any): Invoice => {
     startDate: inv.start_date || meta.startDate || inv.issue_date,
     endDate: inv.end_date || meta.endDate || undefined,
     recurringStatus: (inv.recurring_status || meta.recurringStatus || (inv.is_recurring_template ? 'active' : undefined)) as any,
+    generationStatus: (inv.generation_status || meta.generationStatus || (inv.is_recurring_template ? 'pending' : undefined)) as any,
+    draftInvoiceId: inv.draft_invoice_id || meta.draftInvoiceId || undefined,
     autoGenerate: inv.auto_generate !== undefined ? inv.auto_generate : (meta.autoGenerate !== undefined ? meta.autoGenerate : true),
     autoSend: inv.auto_send !== undefined ? inv.auto_send : (meta.autoSend !== undefined ? meta.autoSend : true),
     invoiceSchedule: inv.invoice_schedule || meta.invoiceSchedule || inv.frequency || undefined,
@@ -748,7 +756,11 @@ class CraveBizApi {
       lastGeneratedDate: invoice.lastGeneratedDate,
       startDate: invoice.startDate || invoice.issueDate,
       endDate: invoice.endDate,
+      periodStart: invoice.periodStart,
+      periodEnd: invoice.periodEnd,
       recurringStatus: invoice.recurringStatus || (invoice.isRecurringTemplate ? 'active' : 'completed'),
+      generationStatus: invoice.generationStatus || (invoice.isRecurringTemplate ? 'pending' : undefined),
+      draftInvoiceId: invoice.draftInvoiceId,
       autoGenerate: invoice.autoGenerate !== undefined ? invoice.autoGenerate : true,
       autoSend: invoice.autoSend,
       invoiceSchedule: invoice.invoiceSchedule || invoice.frequency
@@ -762,6 +774,8 @@ class CraveBizApi {
         project_id: invoice.projectId || null,
         issue_date: invoice.issueDate,
         due_date: invoice.dueDate,
+        period_start: invoice.periodStart || null,
+        period_end: invoice.periodEnd || null,
         total: invoice.total,
         discount: invoice.discount || 0,
         amount_paid: Number(invoice.amountPaid || 0),
@@ -776,6 +790,8 @@ class CraveBizApi {
         start_date: invoice.startDate || invoice.issueDate || null,
         end_date: invoice.endDate || null,
         recurring_status: invoice.recurringStatus || (invoice.isRecurringTemplate ? 'active' : null),
+        generation_status: invoice.generationStatus || (invoice.isRecurringTemplate ? 'pending' : null),
+        draft_invoice_id: invoice.draftInvoiceId || null,
         auto_generate: invoice.autoGenerate !== undefined ? invoice.autoGenerate : true,
         invoice_schedule: invoice.invoiceSchedule || invoice.frequency || null
     };
@@ -856,7 +872,11 @@ class CraveBizApi {
       lastGeneratedDate: invoice.lastGeneratedDate,
       startDate: invoice.startDate || invoice.issueDate,
       endDate: invoice.endDate,
+      periodStart: invoice.periodStart,
+      periodEnd: invoice.periodEnd,
       recurringStatus: invoice.recurringStatus || (invoice.isRecurringTemplate ? 'active' : 'completed'),
+      generationStatus: invoice.generationStatus || (invoice.isRecurringTemplate ? 'pending' : undefined),
+      draftInvoiceId: invoice.draftInvoiceId,
       autoGenerate: invoice.autoGenerate !== undefined ? invoice.autoGenerate : true,
       autoSend: invoice.autoSend,
       invoiceSchedule: invoice.invoiceSchedule || invoice.frequency
@@ -867,6 +887,8 @@ class CraveBizApi {
         project_id: invoice.projectId || null,
         issue_date: invoice.issueDate,
         due_date: invoice.dueDate,
+        period_start: invoice.periodStart || null,
+        period_end: invoice.periodEnd || null,
         total: invoice.total,
         discount: invoice.discount || 0,
         amount_paid: Number(invoice.amountPaid || 0),
@@ -881,6 +903,8 @@ class CraveBizApi {
         start_date: invoice.startDate || invoice.issueDate || null,
         end_date: invoice.endDate || null,
         recurring_status: invoice.recurringStatus || (invoice.isRecurringTemplate ? 'active' : null),
+        generation_status: invoice.generationStatus || (invoice.isRecurringTemplate ? (invoice.generationStatus || 'pending') : null),
+        draft_invoice_id: invoice.draftInvoiceId || null,
         auto_generate: invoice.autoGenerate !== undefined ? invoice.autoGenerate : true,
         invoice_schedule: invoice.invoiceSchedule || invoice.frequency || null,
         selected_bank_account_id: invoice.selectedBankAccountId || null,
@@ -2796,6 +2820,8 @@ class CraveBizApi {
     invoiceNumber: string;
     issueDate?: string;
     dueDate?: string;
+    periodStart?: string;
+    periodEnd?: string;
     totalAmount: number;
     amountPaid?: number;
     discount?: number;

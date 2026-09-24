@@ -3,6 +3,7 @@ import React, { useEffect, useState, useRef } from 'react';
 import { Invoice, Client, Service, Company, BankAccount } from '../types';
 import InvoiceStatusBadge from './InvoiceStatusBadge';
 import Icon from './common/Icon';
+import { formatBillingPeriod } from '../lib/billingPeriod';
 
 interface PlainInvoiceDetailProps {
   invoice: Invoice;
@@ -151,6 +152,11 @@ const PlainInvoiceDetail: React.FC<PlainInvoiceDetailProps> = ({ invoice, client
                                         <td align="right" style="color:#6b7280; font-weight:bold;">Issue Date:</td>
                                         <td align="right" style="font-weight:bold;">${invoice.issueDate}</td>
                                     </tr>
+                                    ${formatBillingPeriod(invoice.periodStart, invoice.periodEnd) ? `
+                                    <tr>
+                                        <td align="right" style="color:#6b7280; font-weight:bold;">Billing Period:</td>
+                                        <td align="right" style="font-weight:bold; color:#1e3a8a;">${formatBillingPeriod(invoice.periodStart, invoice.periodEnd)}</td>
+                                    </tr>` : ''}
                                     <tr>
                                         <td align="right" style="color:#6b7280; font-weight:bold;">Due Date:</td>
                                         <td align="right" style="font-weight:bold; color:#dc2626;">${invoice.dueDate}</td>
@@ -341,6 +347,12 @@ const PlainInvoiceDetail: React.FC<PlainInvoiceDetailProps> = ({ invoice, client
                                 <td className="font-bold text-gray-500 py-1 text-right w-1/2">Issue Date:</td>
                                 <td className="font-bold text-gray-900 py-1 pl-4 text-right">{invoice.issueDate}</td>
                             </tr>
+                            {formatBillingPeriod(invoice.periodStart, invoice.periodEnd) && (
+                                <tr>
+                                    <td className="font-bold text-gray-500 py-1 text-right w-1/2">Billing Period:</td>
+                                    <td className="font-bold text-primary-700 py-1 pl-4 text-right">{formatBillingPeriod(invoice.periodStart, invoice.periodEnd)}</td>
+                                </tr>
+                            )}
                             <tr>
                                 <td className="font-bold text-gray-500 py-1 text-right">Due Date:</td>
                                 <td className="font-bold text-red-600 py-1 pl-4 text-right">{invoice.dueDate}</td>

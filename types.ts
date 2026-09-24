@@ -147,6 +147,7 @@ export interface InvoiceItem {
 }
 
 export type RecurringStatus = 'active' | 'paused' | 'completed' | 'cancelled' | 'archived';
+export type RecurringGenerationStatus = 'pending' | 'draft_ready' | 'sent';
 
 export interface Invoice {
   id: string;
@@ -156,6 +157,8 @@ export interface Invoice {
   projectId?: string; // Links Invoice to Project
   issueDate: string;
   dueDate: string;
+  periodStart?: string; // Billing period start date for this invoice
+  periodEnd?: string;   // Billing period end date for this invoice
   items: InvoiceItem[];
   total: number;
   discount?: number;
@@ -175,6 +178,8 @@ export interface Invoice {
   startDate?: string;
   endDate?: string;
   recurringStatus?: RecurringStatus;
+  generationStatus?: RecurringGenerationStatus; // Status of recurring schedule generation (pending, draft_ready, sent)
+  draftInvoiceId?: string; // Nullable FK pointing to the generated draft invoice awaiting review
   autoGenerate?: boolean;
   autoSend?: boolean;
   invoiceSchedule?: string;

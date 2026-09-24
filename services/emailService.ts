@@ -343,6 +343,8 @@ export interface InvoiceEmailData {
     invoiceNumber: string;
     issueDate: string;
     dueDate: string;
+    periodStart?: string;
+    periodEnd?: string;
     totalAmount: number;
     amountPaid?: number;
     discount?: number;

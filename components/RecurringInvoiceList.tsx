@@ -2,6 +2,7 @@ import React, { useState, useMemo } from 'react';
 import { Invoice, Client, Service } from '../types';
 import InvoiceStatusBadge from './InvoiceStatusBadge';
 import Icon from './common/Icon';
+import { formatBillingPeriod } from '../lib/billingPeriod';
 
 interface RecurringInvoiceListProps {
   invoices: Invoice[];
@@ -860,6 +861,11 @@ const RecurringInvoiceList: React.FC<RecurringInvoiceListProps> = ({
                     <td className="px-6 py-4 whitespace-nowrap">
                       <div className="flex flex-col gap-1">
                         <span className="font-bold text-gray-900">{dueDateStr || 'N/A'}</span>
+                        {formatBillingPeriod(invoice.periodStart, invoice.periodEnd) && (
+                          <span className="text-[10px] text-gray-500 font-medium">
+                            Period: {formatBillingPeriod(invoice.periodStart, invoice.periodEnd)}
+                          </span>
+                        )}
                         {isArchived ? (
                           <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] bg-gray-100 text-gray-500 border border-gray-200 w-fit">
                             Archived
@@ -903,6 +909,22 @@ const RecurringInvoiceList: React.FC<RecurringInvoiceListProps> = ({
                             >
                               {isPaused ? '⏸️ Paused' : '⚡ Schedule Active'}
                             </span>
+                            {/* Generation Status Indicator */}
+                            {invoice.generationStatus === 'draft_ready' && (
+                              <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[9px] font-black uppercase tracking-wider bg-amber-100 text-amber-800 border border-amber-300 w-fit">
+                                📝 Draft Ready
+                              </span>
+                            )}
+                            {invoice.generationStatus === 'sent' && (
+                              <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[9px] font-black uppercase tracking-wider bg-emerald-100 text-emerald-800 border border-emerald-300 w-fit">
+                                ✉️ Sent
+                              </span>
+                            )}
+                            {(!invoice.generationStatus || invoice.generationStatus === 'pending') && (
+                              <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[9px] font-black uppercase tracking-wider bg-blue-50 text-blue-700 border border-blue-200 w-fit">
+                                ⏳ Pending
+                              </span>
+                            )}
                           </>
                         )}
                       </div>
@@ -928,6 +950,17 @@ const RecurringInvoiceList: React.FC<RecurringInvoiceListProps> = ({
                         )
                       ) : (
                         <>
+                          {/* Direct Link to Auto-Generated Draft Invoice */}
+                          {invoice.draftInvoiceId && invoice.generationStatus === 'draft_ready' && (
+                            <button
+                              onClick={() => onViewInvoice(invoice.draftInvoiceId!)}
+                              className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold bg-amber-600 hover:bg-amber-700 text-white shadow-sm transition-all active:scale-95"
+                              title="Review auto-generated draft invoice awaiting review"
+                            >
+                              <span>👁️ Review Draft</span>
+                            </button>
+                          )}
+
                           {/* Renew Now Action Button */}
                           {onRenewInvoice && (
                             <button

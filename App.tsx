@@ -12,6 +12,7 @@ import CreateInvoice from './components/CreateInvoice';
 import EditInvoice from './components/EditInvoice';
 import InvoiceDetail from './components/InvoiceDetail';
 import { calculateNextRecurrenceDate } from './components/InvoiceForm';
+import { calculateBillingPeriod } from './lib/billingPeriod';
 import AuthPage from './components/AuthPage';
 import ForgotPasswordModal from './components/ForgotPasswordModal';
 import ResetPasswordModal from './components/ResetPasswordModal';
@@ -356,6 +357,7 @@ export default function App() {
           const alreadyGenerated = inv.some(i => i.parentInvoiceId === template.id && (i.issueDate === todayStr || i.dueDate === nextDueDateStr));
           if (!alreadyGenerated) {
             const newNextRecurrenceDate = calculateNextRecurrenceDate(nextDueDateStr, template.frequency || 'monthly');
+            const billingPeriod = calculateBillingPeriod(nextDueDateStr, template.frequency || 'monthly');
 
             const newInvoiceData: Omit<Invoice, 'id' | 'invoiceNumber'> = {
               companyId: tenantId,
@@ -363,6 +365,8 @@ export default function App() {
               projectId: template.projectId,
               issueDate: todayStr,
               dueDate: nextDueDateStr,
+              periodStart: billingPeriod.periodStart,
+              periodEnd: billingPeriod.periodEnd,
               total: template.total,
               status: InvoiceStatus.Draft,
               discount: template.discount,
@@ -393,7 +397,9 @@ export default function App() {
               lastGeneratedDate: todayStr,
               nextRecurrenceDate: newNextRecurrenceDate,
               nextDueDate: newNextRecurrenceDate,
-              recurringStatus: 'active'
+              recurringStatus: 'active',
+              generationStatus: 'draft_ready',
+              draftInvoiceId: createdChild.id
             });
 
             await triggerAuditLog('AUTO_GENERATE_INVOICE', createdChild.id, `Auto-generated recurring invoice ${createdChild.invoiceNumber} from template ${template.invoiceNumber}`);
@@ -825,6 +831,7 @@ export default function App() {
       const todayStr = new Date().toISOString().split('T')[0];
       const currentDueDateStr = template.nextRecurrenceDate || template.nextDueDate || template.dueDate || todayStr;
       const newNextRecurrenceDate = calculateNextRecurrenceDate(currentDueDateStr, template.frequency || 'monthly');
+      const billingPeriod = calculateBillingPeriod(currentDueDateStr, template.frequency || 'monthly');
 
       const newInvoiceData: Omit<Invoice, 'id' | 'invoiceNumber'> = {
         companyId: activeTenantId,
@@ -832,6 +839,8 @@ export default function App() {
         projectId: template.projectId,
         issueDate: todayStr,
         dueDate: currentDueDateStr,
+        periodStart: billingPeriod.periodStart,
+        periodEnd: billingPeriod.periodEnd,
         total: template.total,
         status: InvoiceStatus.Sent,
         discount: template.discount,
@@ -861,7 +870,9 @@ export default function App() {
         lastGeneratedDate: todayStr,
         nextRecurrenceDate: newNextRecurrenceDate,
         nextDueDate: newNextRecurrenceDate,
-        recurringStatus: 'active'
+        recurringStatus: 'active',
+        generationStatus: 'sent',
+        draftInvoiceId: createdChild.id
       });
       await triggerAuditLog('GENERATE_RENEWAL_INVOICE', createdChild.id, `Manually renewed recurring invoice ${createdChild.invoiceNumber} from template ${template.invoiceNumber}. Next due date set to ${newNextRecurrenceDate}`);
       await syncInvoices(activeTenantId);

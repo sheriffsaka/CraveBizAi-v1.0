@@ -562,6 +562,18 @@ CREATE INDEX IF NOT EXISTS idx_gen_docs_company_type ON public.generated_documen
 CREATE INDEX IF NOT EXISTS idx_gen_docs_document_type ON public.generated_documents(document_type);
 CREATE INDEX IF NOT EXISTS idx_in_app_notif_tenant_recipient ON public.in_app_notifications(tenant_id, recipient_email, is_read);
 
+-- ==============================================================================
+-- Recurring Invoices & Billing Period Columns & Indexes
+-- ==============================================================================
+ALTER TABLE IF EXISTS public.invoices ADD COLUMN IF NOT EXISTS period_start DATE;
+ALTER TABLE IF EXISTS public.invoices ADD COLUMN IF NOT EXISTS period_end DATE;
+ALTER TABLE IF EXISTS public.invoices ADD COLUMN IF NOT EXISTS generation_status TEXT DEFAULT 'pending';
+ALTER TABLE IF EXISTS public.invoices ADD COLUMN IF NOT EXISTS draft_invoice_id TEXT;
+
+CREATE INDEX IF NOT EXISTS idx_invoices_period ON public.invoices(company_id, period_start, period_end);
+CREATE INDEX IF NOT EXISTS idx_invoices_draft_invoice_id ON public.invoices(draft_invoice_id);
+CREATE INDEX IF NOT EXISTS idx_invoices_generation_status ON public.invoices(company_id, generation_status);
+
 
 
 

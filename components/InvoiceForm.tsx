@@ -39,6 +39,8 @@ const InvoiceForm: React.FC<InvoiceFormProps> = ({ initialInvoice, clients, serv
   const [projectId, setProjectId] = useState<string | undefined>(undefined);
   const [issueDate, setIssueDate] = useState<string>(new Date().toISOString().split('T')[0]);
   const [dueDate, setDueDate] = useState<string>('');
+  const [periodStart, setPeriodStart] = useState<string>('');
+  const [periodEnd, setPeriodEnd] = useState<string>('');
   const [items, setItems] = useState<InvoiceItem[]>([{ 
     serviceId: '', 
     description: '', 
@@ -73,6 +75,8 @@ const InvoiceForm: React.FC<InvoiceFormProps> = ({ initialInvoice, clients, serv
           if (draft.projectId) setProjectId(draft.projectId);
           if (draft.issueDate) setIssueDate(draft.issueDate);
           if (draft.dueDate) setDueDate(draft.dueDate);
+          if (draft.periodStart) setPeriodStart(draft.periodStart);
+          if (draft.periodEnd) setPeriodEnd(draft.periodEnd);
           if (Array.isArray(draft.items) && draft.items.length > 0) setItems(draft.items);
           if (draft.selectedBankAccountId) setSelectedBankAccountId(draft.selectedBankAccountId);
           if (draft.manualBankName) setManualBankName(draft.manualBankName);
@@ -92,13 +96,13 @@ const InvoiceForm: React.FC<InvoiceFormProps> = ({ initialInvoice, clients, serv
   useEffect(() => {
     if (!initialInvoice) {
       const draft = {
-        clientId, projectId, issueDate, dueDate, items, selectedBankAccountId,
+        clientId, projectId, issueDate, dueDate, periodStart, periodEnd, items, selectedBankAccountId,
         manualBankName, manualAccountName, manualAccountNumber,
         paymentTerms, discount, frequency, nextRecurrenceDate
       };
       localStorage.setItem('cravebiz_invoice_draft', JSON.stringify(draft));
     }
-  }, [clientId, projectId, issueDate, dueDate, items, selectedBankAccountId, manualBankName, manualAccountName, manualAccountNumber, paymentTerms, discount, frequency, nextRecurrenceDate, initialInvoice]);
+  }, [clientId, projectId, issueDate, dueDate, periodStart, periodEnd, items, selectedBankAccountId, manualBankName, manualAccountName, manualAccountNumber, paymentTerms, discount, frequency, nextRecurrenceDate, initialInvoice]);
 
   const clearDraft = () => localStorage.removeItem('cravebiz_invoice_draft');
 
@@ -108,6 +112,8 @@ const InvoiceForm: React.FC<InvoiceFormProps> = ({ initialInvoice, clients, serv
       setProjectId(initialInvoice.projectId);
       setIssueDate(initialInvoice.issueDate);
       setDueDate(initialInvoice.dueDate);
+      setPeriodStart(initialInvoice.periodStart || '');
+      setPeriodEnd(initialInvoice.periodEnd || '');
       setItems(initialInvoice.items);
       setSelectedBankAccountId(initialInvoice.selectedBankAccountId || 'manual');
       setManualBankName(initialInvoice.manualBankName || '');
@@ -216,6 +222,8 @@ const InvoiceForm: React.FC<InvoiceFormProps> = ({ initialInvoice, clients, serv
     clientId, 
     projectId,
     issueDate, dueDate, items, total, 
+    periodStart: periodStart || undefined,
+    periodEnd: periodEnd || undefined,
     discount: overallDiscount,
     amountPaid: initialInvoice?.amountPaid || 0, 
     status,
@@ -313,8 +321,8 @@ const InvoiceForm: React.FC<InvoiceFormProps> = ({ initialInvoice, clients, serv
           </div>
         )}
         
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
-            <div>
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-6 mb-8">
+            <div className="lg:col-span-1">
                 <label className="block text-[10px] font-black text-gray-500 uppercase tracking-widest mb-2">Client</label>
                 <select value={clientId} onChange={e => setClientId(e.target.value)} className="w-full p-3.5 border rounded-lg bg-gray-50 text-gray-900 shadow-sm focus:ring-2 focus:ring-primary-500 outline-none font-bold">
                     <option value="" disabled>Select client...</option>
@@ -330,6 +338,14 @@ const InvoiceForm: React.FC<InvoiceFormProps> = ({ initialInvoice, clients, serv
             <div>
                 <label className="block text-[10px] font-black text-gray-500 uppercase tracking-widest mb-2">Due Date</label>
                 <input type="date" value={dueDate} onChange={e => setDueDate(e.target.value)} className="w-full p-3.5 border rounded-lg bg-gray-50 text-gray-900 shadow-sm focus:ring-2 focus:ring-primary-500 outline-none font-bold" />
+            </div>
+            <div>
+                <label className="block text-[10px] font-black text-primary-600 uppercase tracking-widest mb-2">Period Start</label>
+                <input type="date" value={periodStart} onChange={e => setPeriodStart(e.target.value)} className="w-full p-3.5 border border-primary-200 rounded-lg bg-white text-gray-900 shadow-sm focus:ring-2 focus:ring-primary-500 outline-none font-bold" />
+            </div>
+            <div>
+                <label className="block text-[10px] font-black text-primary-600 uppercase tracking-widest mb-2">Period End</label>
+                <input type="date" value={periodEnd} onChange={e => setPeriodEnd(e.target.value)} className="w-full p-3.5 border border-primary-200 rounded-lg bg-white text-gray-900 shadow-sm focus:ring-2 focus:ring-primary-500 outline-none font-bold" />
             </div>
         </div>
 

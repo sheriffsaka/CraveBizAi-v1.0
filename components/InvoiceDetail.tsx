@@ -6,6 +6,7 @@ import Icon from './common/Icon';
 import PaymentModal from './PaymentModal';
 import { api } from '../lib/api';
 import { formatFrequencyLabel } from './RecurringInvoiceList';
+import { formatBillingPeriod } from '../lib/billingPeriod';
 
 interface InvoiceDetailProps {
   invoice: Invoice;
@@ -74,6 +75,8 @@ const InvoiceDetail: React.FC<InvoiceDetailProps> = ({ invoice, client, services
                 invoiceNumber: invoice.invoiceNumber,
                 issueDate: invoice.issueDate,
                 dueDate: invoice.dueDate,
+                periodStart: invoice.periodStart,
+                periodEnd: invoice.periodEnd,
                 totalAmount: invoice.total,
                 amountPaid: invoice.amountPaid || 0,
                 discount: invoice.discount,
@@ -236,6 +239,12 @@ const InvoiceDetail: React.FC<InvoiceDetailProps> = ({ invoice, client, services
                  <h3 className="text-[10px] font-black text-gray-400 uppercase tracking-widest mb-1">Issue Date</h3>
                  <p className="text-gray-800 font-black">{invoice.issueDate}</p>
              </div>
+             {formatBillingPeriod(invoice.periodStart, invoice.periodEnd) && (
+               <div className="mb-4">
+                   <h3 className="text-[10px] font-black text-primary-600 uppercase tracking-widest mb-1">Billing Period</h3>
+                   <p className="text-gray-800 font-black">{formatBillingPeriod(invoice.periodStart, invoice.periodEnd)}</p>
+               </div>
+             )}
              <div className="mb-4">
                  <h3 className="text-[10px] font-black text-gray-400 uppercase tracking-widest mb-1">Due Date</h3>
                  <p className="text-gray-800 font-black">{invoice.dueDate}</p>
