@@ -22,22 +22,8 @@ export type RenewalFilter = 'all' | 'due-soon' | 'overdue' | 'due-30-days' | 'pa
 export type SortKey = 'nextDueDate' | 'clientName' | 'invoiceNumber' | 'service' | 'frequency' | 'total' | 'status';
 export type SortDirection = 'asc' | 'desc';
 
-export function formatFrequencyLabel(freq?: string): string {
-  if (!freq) return 'One-Time';
-  const f = freq.toLowerCase();
-  switch (f) {
-    case 'one-time': return 'One-Time';
-    case 'daily': return 'Daily';
-    case 'weekly': return 'Weekly';
-    case 'monthly': return 'Monthly';
-    case 'quarterly': return 'Quarterly';
-    case 'biannually':
-    case 'bi-annually': return 'Bi-Annually';
-    case 'yearly':
-    case 'annually': return 'Yearly';
-    default: return f.charAt(0).toUpperCase() + f.slice(1);
-  }
-}
+import { formatFrequencyLabel } from '../lib/recurrence';
+export { formatFrequencyLabel };
 
 export function getInvoiceServicesSummary(invoice: Invoice, services: Service[] = []): string {
   if (!invoice.items || invoice.items.length === 0) return 'General Service';

@@ -30,15 +30,6 @@
     <meta property="twitter:image" content="https://cravebiz.ai/twitter-image.jpg" />
 
     <script src="https://cdn.tailwindcss.com"></script>
-    <script src="https://checkout.flutterwave.com/v3.js"></script>
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.4.120/pdf.min.js"></script>
-    <script>
-      window.pdfjsLib = window['pdfjs-dist/build/pdf'];
-      if (window.pdfjsLib) {
-        window.pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.4.120/pdf.worker.min.js';
-      }
-    </script>
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.1/html2pdf.bundle.min.js" integrity="sha512-GsLlZN/3F2ErC5ifS5QtgpiJtWd43JWSuIgh7mbzZ8zBps+dvLusV+eNQATqgA/HdeKFVgA5v3S/cIrLF7QnIg==" crossorigin="anonymous" referrerpolicy="no-referrer"></script>
     <script>
       // Shim process.env safely
       if (typeof window.process === 'undefined') {
@@ -143,19 +134,6 @@
         display: none !important;
       }
     </style>
-    <script type="importmap">
-    {
-      "imports": {
-        "react/": "https://aistudiocdn.com/react@19.2.0/",
-        "react": "https://aistudiocdn.com/react@19.2.0",
-        "react-dom/": "https://aistudiocdn.com/react-dom@19.2.0/",
-        "react-dom/client": "https://aistudiocdn.com/react-dom@19.2.0/client",
-        "recharts": "https://cdn.jsdelivr.net/npm/recharts@2.12.7/+esm",
-        "@google/genai": "https://aistudiocdn.com/@google/genai@1.26.0",
-        "@supabase/supabase-js": "https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.1/+esm"
-      }
-    }
-    </script>
 <link rel="stylesheet" href="/index.css">
 </head>
   <body>

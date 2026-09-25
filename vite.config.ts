@@ -20,6 +20,23 @@ export default defineConfig(({ mode }) => {
         alias: {
           '@': path.resolve(__dirname, '.'),
         }
+      },
+      build: {
+        chunkSizeWarningLimit: 1200,
+        rollupOptions: {
+          output: {
+            manualChunks(id) {
+              if (id.includes('node_modules')) {
+                if (id.includes('pdf-lib')) return 'pdf-lib';
+                if (id.includes('mammoth')) return 'mammoth';
+                if (id.includes('recharts')) return 'recharts';
+                if (id.includes('@supabase')) return 'supabase';
+                if (id.includes('lucide-react')) return 'lucide';
+                if (id.includes('react/') || id.includes('react-dom/') || id.includes('scheduler')) return 'vendor-react';
+              }
+            }
+          }
+        }
       }
     };
 });

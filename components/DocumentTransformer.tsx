@@ -8,6 +8,7 @@ import EditableBlock from './EditableBlock';
 import Icon from './common/Icon';
 import { DocumentSignifyViewer, PreparedField } from './DocumentSignifyViewer';
 import { api, supabase } from '../lib/api';
+import { loadHtml2Pdf } from '../lib/html2pdf';
 
 const utf8ToBase64 = (str: string): string => {
     try {
@@ -2081,9 +2082,9 @@ const DocumentTransformer: React.FC<DocumentTransformerProps> = ({
         window.print();
     };
 
-    const handleDownloadPdf = () => {
+    const handleDownloadPdf = async () => {
         const element = documentRef.current;
-        if (!element || !(window as any).html2pdf) return;
+        if (!element) return;
         const opt = {
             margin: 10,
             filename: `${generatedDoc?.documentType || 'document'}_${Date.now()}.pdf`,
@@ -2091,7 +2092,13 @@ const DocumentTransformer: React.FC<DocumentTransformerProps> = ({
             html2canvas: { scale: 2, useCORS: true },
             jsPDF: { unit: 'mm', format: 'a4', orientation: 'portrait' }
         };
-        (window as any).html2pdf().set(opt).from(element).save();
+        try {
+            const h2p = await loadHtml2Pdf();
+            h2p().set(opt).from(element).save();
+        } catch (err) {
+            console.warn("PDF generation failed, falling back to window.print", err);
+            window.print();
+        }
     };
 
     const handleDownloadDocx = () => {

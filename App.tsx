@@ -1,48 +1,47 @@
 
-import React, { useState, useMemo, useEffect, useRef } from 'react';
+import React, { useState, useMemo, useEffect, useRef, Suspense, lazy } from 'react';
 import Sidebar from './components/Sidebar';
 import Header from './components/Header';
 import Dashboard from './components/Dashboard';
 import InvoiceList from './components/InvoiceList';
-import ClientList from './components/ClientList';
-import ServiceList from './components/ServiceList';
-import Reports from './components/Reports';
-import Settings from './components/Settings';
-import CreateInvoice from './components/CreateInvoice';
-import EditInvoice from './components/EditInvoice';
-import InvoiceDetail from './components/InvoiceDetail';
-import { calculateNextRecurrenceDate } from './components/InvoiceForm';
+import { calculateNextRecurrenceDate } from './lib/recurrence';
 import { calculateBillingPeriod } from './lib/billingPeriod';
 import AuthPage from './components/AuthPage';
-import ForgotPasswordModal from './components/ForgotPasswordModal';
-import ResetPasswordModal from './components/ResetPasswordModal';
-import UserProfileModal from './components/UserProfileModal';
-import PlainInvoiceDetail from './components/PlainInvoiceDetail';
-import RecurringInvoiceList from './components/RecurringInvoiceList';
-import SentReceiptsList from './components/SentReceiptsList';
-import ReceiptDetail from './components/ReceiptDetail';
-import AdminDashboard from './components/AdminDashboard';
-import DocumentTransformer from './components/DocumentTransformer';
-import DocSignify from './components/DocSignify';
-import PublicSigningPortal from './components/PublicSigningPortal';
-import ProjectManagement from './components/ProjectManagement';
-import NotificationsPage from './components/NotificationsPage';
 import SyncOverlay from './components/SyncOverlay';
-import OnboardingSetupPrompt from './components/OnboardingSetupPrompt';
 import { api, supabase } from './lib/api';
 import { generateRenewalInvoiceSuggestion } from './services/aiGenerationService';
 import { getSubscriptionInfo, setSubscriptionInfo, SubscriptionTier, TIER_LIMITS, syncGlobalPlanSettings, syncSubscriptionInfoFromDb, secureRefillCreditsOnDb, safeFlutterwaveCheckout, getFlutterwavePublicKey, saveSubscriptionInfoToDb, fetchAndCacheFlutterwavePublicKey, incrementInvoiceCount, incrementReceiptCount, syncGlobalRefillPacks, REFILL_PACKS } from './services/subscriptionService';
-import { Invoice, Client, Service, Company, User, TenantData, InvoiceStatus, AllTenantsData, GeneratedDocument, DbDocumentSignatory, Project, WorkspaceRole, AuditLog } from './types';
+import { Invoice, Client, Service, Company, User, TenantData, InvoiceStatus, AllTenantsData, GeneratedDocument, Project, WorkspaceRole, AuditLog } from './types';
 import Icon from './components/common/Icon';
-import { ResourceLimitModal } from './components/common/ResourceLimitModal';
-import { ResourceLimitView } from './components/common/ResourceLimitView';
 import { checkResourceAvailability, triggerResourceLimitModal, ResourceLimitDetails } from './services/resourceLimitService';
-import { CreateInvoiceRouteWrapper } from './components/CreateInvoiceRouteWrapper';
 import {
   GlobalFilterState,
   loadGlobalFilterFromSession,
   saveGlobalFilterToSession
 } from './lib/globalFilter';
+
+// Code-split secondary views & modals for near-instant dashboard readiness
+const ClientList = lazy(() => import('./components/ClientList'));
+const ServiceList = lazy(() => import('./components/ServiceList'));
+const Reports = lazy(() => import('./components/Reports'));
+const Settings = lazy(() => import('./components/Settings'));
+const CreateInvoiceRouteWrapper = lazy(() => import('./components/CreateInvoiceRouteWrapper').then(m => ({ default: m.CreateInvoiceRouteWrapper })));
+const EditInvoice = lazy(() => import('./components/EditInvoice'));
+const InvoiceDetail = lazy(() => import('./components/InvoiceDetail'));
+const PlainInvoiceDetail = lazy(() => import('./components/PlainInvoiceDetail'));
+const RecurringInvoiceList = lazy(() => import('./components/RecurringInvoiceList'));
+const SentReceiptsList = lazy(() => import('./components/SentReceiptsList'));
+const ReceiptDetail = lazy(() => import('./components/ReceiptDetail'));
+const AdminDashboard = lazy(() => import('./components/AdminDashboard'));
+const DocSignify = lazy(() => import('./components/DocSignify'));
+const PublicSigningPortal = lazy(() => import('./components/PublicSigningPortal'));
+const ProjectManagement = lazy(() => import('./components/ProjectManagement'));
+const NotificationsPage = lazy(() => import('./components/NotificationsPage'));
+const ForgotPasswordModal = lazy(() => import('./components/ForgotPasswordModal'));
+const ResetPasswordModal = lazy(() => import('./components/ResetPasswordModal'));
+const UserProfileModal = lazy(() => import('./components/UserProfileModal'));
+const OnboardingSetupPrompt = lazy(() => import('./components/OnboardingSetupPrompt'));
+const ResourceLimitModal = lazy(() => import('./components/common/ResourceLimitModal').then(m => ({ default: m.ResourceLimitModal })));
 
 export type Page = 'dashboard' | 'invoices' | 'clients' | 'services' | 'reports' | 'settings' | 'create-invoice' | 'edit-invoice' | 'invoice-detail' | 'receipt-detail' | 'plain-invoice-detail' | 'recurring-invoices' | 'email-verification' | 'sent-receipts' | 'admin-dashboard' | 'document-transformer' | 'projects' | 'doc-signify' | 'notifications';
 
@@ -503,7 +502,7 @@ export default function App() {
             throw new Error(`We authenticated you successfully, but we could not synchronize your profile record. Database Error: ${dbErrorMsg}`);
         }
 
-        let profile = await api.getProfile(user.id);
+        let profile = syncResult.profile || await api.getProfile(user.id);
         if (!profile && (user.email?.toLowerCase() === 'cravebiz@cloudcraves.com' || user.email?.toLowerCase() === 'contact@cloudcraves.com')) {
             profile = { id: user.id, name: 'Super Admin', email: user.email, tenantIds: [], isAdmin: true, status: 'Active' };
         }
@@ -579,9 +578,6 @@ export default function App() {
     isMounted.current = true;
     const initAuth = async () => {
         try {
-            // Fetch and cache the live Flutterwave Public Key dynamically from backend
-            fetchAndCacheFlutterwavePublicKey().catch(e => console.warn(e));
-
             const hash = window.location.hash;
             if (hash && (hash.includes('type=recovery') || hash.includes('access_token='))) {
                 setIsResetPasswordOpen(true);
@@ -1910,10 +1906,12 @@ export default function App() {
                 </div>
             )}
             {activeCompany && (
-                <OnboardingSetupPrompt
-                    company={activeCompany}
-                    onNavigateToSettings={() => navigateTo('settings')}
-                />
+                <Suspense fallback={null}>
+                  <OnboardingSetupPrompt
+                      company={activeCompany}
+                      onNavigateToSettings={() => navigateTo('settings')}
+                  />
+                </Suspense>
             )}
             <SyncOverlay 
               isVisible={isDataSyncing} 
@@ -2073,18 +2071,20 @@ export default function App() {
         </div>
       )}
       {activeResourceLimitModal && (
-        <ResourceLimitModal
-          details={activeResourceLimitModal}
-          onClose={() => setActiveResourceLimitModal(null)}
-          onUpgrade={() => {
-            setActiveResourceLimitModal(null);
-            navigateTo('settings');
-          }}
-          onViewPlan={() => {
-            setActiveResourceLimitModal(null);
-            navigateTo('settings');
-          }}
-        />
+        <Suspense fallback={null}>
+          <ResourceLimitModal
+            details={activeResourceLimitModal}
+            onClose={() => setActiveResourceLimitModal(null)}
+            onUpgrade={() => {
+              setActiveResourceLimitModal(null);
+              navigateTo('settings');
+            }}
+            onViewPlan={() => {
+              setActiveResourceLimitModal(null);
+              navigateTo('settings');
+            }}
+          />
+        </Suspense>
       )}
     </div>
   );

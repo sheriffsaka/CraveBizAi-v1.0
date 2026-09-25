@@ -4,6 +4,7 @@ import { Invoice, Client, Service, Company, BankAccount } from '../types';
 import InvoiceStatusBadge from './InvoiceStatusBadge';
 import Icon from './common/Icon';
 import { formatBillingPeriod } from '../lib/billingPeriod';
+import { loadHtml2Pdf } from '../lib/html2pdf';
 
 interface PlainInvoiceDetailProps {
   invoice: Invoice;
@@ -63,21 +64,24 @@ const PlainInvoiceDetail: React.FC<PlainInvoiceDetailProps> = ({ invoice, client
             pagebreak: { mode: ['avoid-all', 'css', 'legacy'] }
         };
 
-        // @ts-ignore
-        if (window.html2pdf) {
-             // @ts-ignore
-             window.html2pdf().set(opt).from(element).save().then(() => {
-                 document.body.style.backgroundColor = originalBg;
-                 if (onActionComplete) onActionComplete();
-             }).catch((err: any) => {
-                 console.error(err);
-                 document.body.style.backgroundColor = originalBg;
-                 if (onActionComplete) onActionComplete();
-             });
-        } else {
+        const runPdfSave = (h2p: any) => {
+            h2p().set(opt).from(element).save().then(() => {
+                document.body.style.backgroundColor = originalBg;
+                if (onActionComplete) onActionComplete();
+            }).catch((err: any) => {
+                console.error(err);
+                document.body.style.backgroundColor = originalBg;
+                if (onActionComplete) onActionComplete();
+            });
+        };
+
+        loadHtml2Pdf().then(h2p => {
+            runPdfSave(h2p);
+        }).catch(err => {
+            console.warn("loadHtml2Pdf fallback to window.print:", err);
             window.print();
             if (onActionComplete) onActionComplete();
-        }
+        });
     };
 
     const downloadAsWord = () => {

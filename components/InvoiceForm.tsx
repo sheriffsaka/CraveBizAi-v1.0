@@ -1,10 +1,14 @@
 
-import React, { useState, useMemo, useEffect } from 'react';
+import React, { useState, useMemo, useEffect, lazy, Suspense } from 'react';
 import { Client, Service, Invoice, InvoiceStatus, InvoiceItem, Company, InvoiceFrequency, RecurringStatus } from '../types';
 import { getSubscriptionInfo } from '../services/subscriptionService';
 import Icon from './common/Icon';
-import InvoiceDetail from './InvoiceDetail';
 import SearchableServiceSelect from './common/SearchableServiceSelect';
+import { calculateNextRecurrenceDate } from '../lib/recurrence';
+
+export { calculateNextRecurrenceDate };
+
+const InvoiceDetail = lazy(() => import('./InvoiceDetail'));
 
 interface InvoiceFormProps {
   initialInvoice?: Invoice | null;
@@ -14,24 +18,6 @@ interface InvoiceFormProps {
   onSave: (invoice: Invoice | Omit<Invoice, 'id' | 'invoiceNumber'>, status: InvoiceStatus) => void;
   onCancel: () => void;
   onNavigate?: (page: any) => void;
-}
-
-export function calculateNextRecurrenceDate(currentDateStrOrObj: string | Date, frequency: InvoiceFrequency): string {
-  const currentDate = typeof currentDateStrOrObj === 'string' ? new Date(currentDateStrOrObj) : currentDateStrOrObj;
-  const nextDate = new Date(currentDate);
-  if (isNaN(nextDate.getTime())) return '';
-  nextDate.setHours(0, 0, 0, 0);
-  switch (frequency) {
-    case 'daily': nextDate.setDate(currentDate.getDate() + 1); break;
-    case 'weekly': nextDate.setDate(currentDate.getDate() + 7); break;
-    case 'monthly': nextDate.setMonth(currentDate.getMonth() + 1); break;
-    case 'quarterly': nextDate.setMonth(currentDate.getMonth() + 3); break;
-    case 'biannually': nextDate.setMonth(currentDate.getMonth() + 6); break;
-    case 'annually':
-    case 'yearly': nextDate.setFullYear(currentDate.getFullYear() + 1); break;
-    default: return '';
-  }
-  return nextDate.toISOString().split('T')[0];
 }
 
 const InvoiceForm: React.FC<InvoiceFormProps> = ({ initialInvoice, clients, services, onSave, onCancel, company, onNavigate }) => {
@@ -590,24 +576,31 @@ const InvoiceForm: React.FC<InvoiceFormProps> = ({ initialInvoice, clients, serv
                         </button>
                     </div>
                     <div className="p-10 md:p-16">
-                        <InvoiceDetail 
-                            invoice={getPreviewData(initialInvoice?.status || InvoiceStatus.Sent)} 
-                            client={selectedClient} 
-                            services={services} 
-                            company={company} 
-                            onUpdateStatus={() => {}} 
-                            onGenerateReceipt={() => {}} 
-                            allTenantInvoices={[]} 
-                            onEditInvoice={() => setIsPreviewOpen(false)} 
-                            onViewPlainInvoice={(id, action) => { 
-                                if (action === 'print') window.print();
-                                else if (action === 'word') alert("Download available after saving.");
-                            }} 
-                            onViewTemplate={() => {}} 
-                            onSendInvoice={async () => { alert("Please update before sending."); }} 
-                            onSendReceipt={() => {}} 
-                            onRecordPayment={async () => {}}
-                        />
+                        <Suspense fallback={
+                            <div className="flex flex-col items-center justify-center p-12 text-center">
+                                <div className="w-8 h-8 border-4 border-primary-600 border-t-transparent rounded-full animate-spin mb-3" />
+                                <span className="text-xs font-bold text-gray-500 uppercase tracking-wider">Loading Preview...</span>
+                            </div>
+                        }>
+                            <InvoiceDetail 
+                                invoice={getPreviewData(initialInvoice?.status || InvoiceStatus.Sent)} 
+                                client={selectedClient} 
+                                services={services} 
+                                company={company} 
+                                onUpdateStatus={() => {}} 
+                                onGenerateReceipt={() => {}} 
+                                allTenantInvoices={[]} 
+                                onEditInvoice={() => setIsPreviewOpen(false)} 
+                                onViewPlainInvoice={(id, action) => { 
+                                    if (action === 'print') window.print();
+                                    else if (action === 'word') alert("Download available after saving.");
+                                }} 
+                                onViewTemplate={() => {}} 
+                                onSendInvoice={async () => { alert("Please update before sending."); }} 
+                                onSendReceipt={() => {}} 
+                                onRecordPayment={async () => {}}
+                            />
+                        </Suspense>
                     </div>
                 </div>
             </div>

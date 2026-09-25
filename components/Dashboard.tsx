@@ -78,8 +78,10 @@ const Dashboard: React.FC<DashboardProps> = ({
             setIsLoadingUsage(true);
             try {
                 const sub = getSubscriptionInfo(activeTenantId || '');
-                const invData = await api.getInvoiceUsage(activeTenantId, sub.tier);
-                const recData = await api.getReceiptUsage(activeTenantId, sub.tier);
+                const [invData, recData] = await Promise.all([
+                    api.getInvoiceUsage(activeTenantId, sub.tier),
+                    api.getReceiptUsage(activeTenantId, sub.tier)
+                ]);
                 if (isMounted) {
                     if (invData) setInvoiceUsage(invData);
                     if (recData) setReceiptUsage(recData);

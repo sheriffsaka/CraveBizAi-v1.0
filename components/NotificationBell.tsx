@@ -38,7 +38,10 @@ export const NotificationBell: React.FC<NotificationBellProps> = ({ userEmail, t
     };
 
     useEffect(() => {
-        loadNotifications();
+        // Defer initial notification check slightly to give dashboard queries 100% priority
+        const initialTimer = setTimeout(() => {
+            loadNotifications();
+        }, 600);
 
         // 1. Polling fallback every 45 seconds (when tab is active)
         const interval = setInterval(() => {
@@ -83,6 +86,7 @@ export const NotificationBell: React.FC<NotificationBellProps> = ({ userEmail, t
         }
 
         return () => {
+            clearTimeout(initialTimer);
             clearInterval(interval);
             window.removeEventListener('storage', handleStorageChange);
             window.removeEventListener('cravebiz_notification_updated', handleCustomUpdate);

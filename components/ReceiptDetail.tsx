@@ -4,6 +4,7 @@ import { Invoice, Client, Service, Company, BankAccount, WorkspaceRole } from '.
 import DeleteConfirmationModal from './DeleteConfirmationModal';
 import Icon from './common/Icon';
 import { api } from '../lib/api';
+import { loadHtml2Pdf } from '../lib/html2pdf';
 
 interface ReceiptDetailProps {
   invoice: Invoice;
@@ -128,18 +129,21 @@ const ReceiptDetail: React.FC<ReceiptDetailProps> = ({ invoice, client, services
             }
         };
 
-        // @ts-ignore
-        if (window.html2pdf) {
-             // @ts-ignore
-             window.html2pdf().set(opt).from(element).save().then(() => {
-                 document.body.style.backgroundColor = originalBg;
-             }).catch((err: any) => {
-                 console.error(err);
-                 document.body.style.backgroundColor = originalBg;
-             });
-        } else {
+        const runPdfSave = (h2p: any) => {
+            h2p().set(opt).from(element).save().then(() => {
+                document.body.style.backgroundColor = originalBg;
+            }).catch((err: any) => {
+                console.error(err);
+                document.body.style.backgroundColor = originalBg;
+            });
+        };
+
+        loadHtml2Pdf().then(h2p => {
+            runPdfSave(h2p);
+        }).catch(err => {
+            console.warn("loadHtml2Pdf fallback to window.print:", err);
             window.print();
-        }
+        });
     };
 
     const downloadAsWord = () => {

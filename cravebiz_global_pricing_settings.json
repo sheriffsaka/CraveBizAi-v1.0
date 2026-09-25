@@ -1,0 +1,58 @@
+{
+  "Free": {
+    "maxInvoices": 10,
+    "maxReceipts": 10,
+    "maxAiUnits": 5,
+    "maxUsers": 1,
+    "aiAvailable": true,
+    "price": "₦0.00",
+    "monthlyPriceVal": 0,
+    "annualPriceVal": 0,
+    "description": "Instead of disabling AI completely, get 5 free AI Credits every month to experience all automation features."
+  },
+  "Starter": {
+    "maxInvoices": 100,
+    "maxReceipts": 100,
+    "maxAiUnits": 100,
+    "maxUsers": 2,
+    "aiAvailable": true,
+    "price": "₦4,500.00",
+    "monthlyPriceVal": 4500,
+    "annualPriceVal": 45000,
+    "description": "Highly accessible, perfect for small shops, freelancers, POS operators, tailors, salons, and local restaurants."
+  },
+  "Growth": {
+    "maxInvoices": 999999,
+    "maxReceipts": 999999,
+    "maxAiUnits": 300,
+    "maxUsers": 5,
+    "aiAvailable": true,
+    "price": "₦9,500.00",
+    "monthlyPriceVal": 9500,
+    "annualPriceVal": 95000,
+    "description": "Our flagship plan. Best for SMEs looking to optimize operations, automate workflow, and leverage CRM features."
+  },
+  "Business": {
+    "maxInvoices": 999999,
+    "maxReceipts": 999999,
+    "maxAiUnits": 800,
+    "maxUsers": 15,
+    "aiAvailable": true,
+    "price": "₦19,500.00",
+    "monthlyPriceVal": 19500,
+    "annualPriceVal": 195000,
+    "inactive": true,
+    "description": "Designed for established businesses with multiple staff, inventory, accounting, CRM, and regular AI usage."
+  },
+  "Enterprise": {
+    "maxInvoices": 999999,
+    "maxReceipts": 999999,
+    "maxAiUnits": 2500,
+    "maxUsers": 999999,
+    "aiAvailable": true,
+    "price": "₦49,500.00",
+    "monthlyPriceVal": 49500,
+    "annualPriceVal": 495000,
+    "description": "Ideal for schools, hospitals, wholesalers, manufacturing firms, and larger organizations needing custom scale."
+  }
+}

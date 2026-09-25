@@ -1,7 +1,7 @@
 
 import { createClient } from '@supabase/supabase-js';
 import { Invoice, Client, Service, Company, User, InvoiceStatus, BankAccount, InvoiceItem, InvoiceFrequency, GeneratedDocument, StoredGeneratedDoc, DocumentBlock, SignatureInfo, DbDocument, DbDocumentSignatory, DbDocumentSignature, WorkspaceRole, AuditLog, Project, InAppNotification, NotificationCategory } from '../types';
-import { TIER_LIMITS, SubscriptionTier } from '../services/subscriptionService';
+import { TIER_LIMITS, SubscriptionTier, saveSubscriptionInfoToDb } from '../services/subscriptionService';
 import { getLocalNotifications, createInAppNotificationClient, markNotificationReadClient, clearLocalNotificationsClient, removeNotificationByIdClient } from '../services/notificationService';
 
 const SUPABASE_URL = 'https://dfqvgezjhudmnlyeycju.supabase.co';
@@ -9,44 +9,75 @@ const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBh
 
 export const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 
+const inFlightRequests = new Map<string, Promise<any>>();
+
+export function dedupeRequest<T>(key: string, fetcher: () => Promise<T>, ttlMs = 1500): Promise<T> {
+  if (inFlightRequests.has(key)) {
+    return inFlightRequests.get(key) as Promise<T>;
+  }
+  const promise = fetcher().finally(() => {
+    setTimeout(() => {
+      inFlightRequests.delete(key);
+    }, ttlMs);
+  });
+  inFlightRequests.set(key, promise);
+  return promise;
+}
+
+export function invalidateRequestCache(prefix?: string) {
+  if (!prefix) {
+    inFlightRequests.clear();
+    return;
+  }
+  for (const key of inFlightRequests.keys()) {
+    if (key.startsWith(prefix)) {
+      inFlightRequests.delete(key);
+    }
+  }
+}
+
 export const safeGetUser = async () => {
-  try {
-    const { data, error } = await supabase.auth.getUser();
-    if (error) {
-      if (error.message?.includes('Refresh Token') || error.message?.includes('invalid') || error.message?.includes('not found')) {
-        console.warn("[Auth] Invalid refresh token, clearing session state.");
+  return dedupeRequest('auth:user', async () => {
+    try {
+      const { data, error } = await supabase.auth.getUser();
+      if (error) {
+        if (error.message?.includes('Refresh Token') || error.message?.includes('invalid') || error.message?.includes('not found')) {
+          console.warn("[Auth] Invalid refresh token, clearing session state.");
+          await supabase.auth.signOut().catch(() => {});
+        }
+        return null;
+      }
+      return data?.user || null;
+    } catch (e: any) {
+      console.warn("[Auth] Error getting user:", e?.message || e);
+      if (e?.message?.includes('Refresh Token') || String(e).includes('Refresh Token')) {
         await supabase.auth.signOut().catch(() => {});
       }
       return null;
     }
-    return data?.user || null;
-  } catch (e: any) {
-    console.warn("[Auth] Error getting user:", e?.message || e);
-    if (e?.message?.includes('Refresh Token') || String(e).includes('Refresh Token')) {
-      await supabase.auth.signOut().catch(() => {});
-    }
-    return null;
-  }
+  }, 3000);
 };
 
 export const safeGetSession = async () => {
-  try {
-    const { data, error } = await supabase.auth.getSession();
-    if (error) {
-      if (error.message?.includes('Refresh Token') || error.message?.includes('invalid') || error.message?.includes('not found')) {
-        console.warn("[Auth] Invalid refresh token in session, clearing session state.");
+  return dedupeRequest('auth:session', async () => {
+    try {
+      const { data, error } = await supabase.auth.getSession();
+      if (error) {
+        if (error.message?.includes('Refresh Token') || error.message?.includes('invalid') || error.message?.includes('not found')) {
+          console.warn("[Auth] Invalid refresh token in session, clearing session state.");
+          await supabase.auth.signOut().catch(() => {});
+        }
+        return null;
+      }
+      return data?.session || null;
+    } catch (e: any) {
+      console.warn("[Auth] Error getting session:", e?.message || e);
+      if (e?.message?.includes('Refresh Token') || String(e).includes('Refresh Token')) {
         await supabase.auth.signOut().catch(() => {});
       }
       return null;
     }
-    return data?.session || null;
-  } catch (e: any) {
-    console.warn("[Auth] Error getting session:", e?.message || e);
-    if (e?.message?.includes('Refresh Token') || String(e).includes('Refresh Token')) {
-      await supabase.auth.signOut().catch(() => {});
-    }
-    return null;
-  }
+  }, 2000);
 };
 
 const safeRandomUUID = (): string => {
@@ -81,33 +112,6 @@ const extractMissingColumnName = (msg: string): string | null => {
   if (match3 && match3[1]) return match3[1];
   return null;
 };
-
-const inFlightRequests = new Map<string, Promise<any>>();
-
-export function dedupeRequest<T>(key: string, fetcher: () => Promise<T>, ttlMs = 1500): Promise<T> {
-  if (inFlightRequests.has(key)) {
-    return inFlightRequests.get(key) as Promise<T>;
-  }
-  const promise = fetcher().finally(() => {
-    setTimeout(() => {
-      inFlightRequests.delete(key);
-    }, ttlMs);
-  });
-  inFlightRequests.set(key, promise);
-  return promise;
-}
-
-export function invalidateRequestCache(prefix?: string) {
-  if (!prefix) {
-    inFlightRequests.clear();
-    return;
-  }
-  for (const key of inFlightRequests.keys()) {
-    if (key.startsWith(prefix)) {
-      inFlightRequests.delete(key);
-    }
-  }
-}
 
 interface RecurringMeta {
   frequency?: InvoiceFrequency;
@@ -219,7 +223,7 @@ class CraveBizApi {
     return CraveBizApi.instance;
   }
 
-  async ensureProfile(userId: string, name?: string, email?: string): Promise<{ success: boolean; error?: any }> {
+  async ensureProfile(userId: string, name?: string, email?: string): Promise<{ success: boolean; profile?: User; error?: any }> {
     try {
       if (email) {
         const cleanEmail = email.trim().toLowerCase();
@@ -270,7 +274,7 @@ class CraveBizApi {
           try {
             const { data: workspaces, error: wsError } = await supabase
               .from('generated_documents')
-              .select('*')
+              .select('id, company_id, content')
               .eq('document_type', 'cravebiz_workspace_settings');
 
             if (!wsError && workspaces) {
@@ -334,35 +338,90 @@ class CraveBizApi {
 
       const compositeName = resolvedEmail ? `${name || 'User'} ||| ${resolvedEmail}` : (name || 'User');
 
-      // Try to insert a brand new profile first (avoids RLS ON CONFLICT SELECT policy requirements of upsert)
-      const { error: insertErr } = await supabase.from('profiles').insert({
+      // 1. Check existing profile first (avoids guaranteed 23505 conflict roundtrip on every returning login)
+      const { data: existingData } = await supabase
+        .from('profiles')
+        .select('id, full_name, is_admin, status')
+        .eq('id', userId)
+        .maybeSingle();
+
+      if (existingData) {
+        let profileRecord = existingData;
+        if (existingData.full_name !== compositeName) {
+          const { data: updatedData } = await supabase
+            .from('profiles')
+            .update({ full_name: compositeName, status: 'Active' })
+            .eq('id', userId)
+            .select()
+            .maybeSingle();
+          if (updatedData) profileRecord = updatedData;
+        }
+
+        const resolvedName = name || (profileRecord?.full_name ? profileRecord.full_name.split(' ||| ')[0] : 'User');
+        return { 
+          success: true,
+          profile: {
+            id: userId,
+            name: resolvedName,
+            email: resolvedEmail,
+            tenantIds: [],
+            isAdmin: profileRecord?.is_admin || false,
+            status: profileRecord?.status || 'Active'
+          }
+        };
+      }
+
+      // 2. Profile does not exist yet: insert brand new profile
+      const { data: insertedData, error: insertErr } = await supabase.from('profiles').insert({
         id: userId,
         full_name: compositeName,
         status: 'Active',
-      });
+      }).select().maybeSingle();
 
       if (!insertErr) {
-        return { success: true };
+        const resolvedName = name || (insertedData?.full_name ? insertedData.full_name.split(' ||| ')[0] : 'User');
+        return { 
+          success: true,
+          profile: {
+            id: userId,
+            name: resolvedName,
+            email: resolvedEmail,
+            tenantIds: [],
+            isAdmin: insertedData?.is_admin || false,
+            status: insertedData?.status || 'Active'
+          }
+        };
       }
 
-      // If it failed due to duplicate key (already exists), perform an update targeting the userId
+      // If concurrent insert occurred, fallback to update
       const errCode = insertErr.code;
       const errMsg = insertErr.message?.toLowerCase() || '';
       if (errCode === '23505' || errMsg.includes('duplicate') || errMsg.includes('already exists') || errMsg.includes('unique')) {
-        console.log("Profile already exists or conflict detected, performing update fallback instead of insert...");
-        const { error: updateErr } = await supabase
+        const { data: updatedData, error: updateErr } = await supabase
           .from('profiles')
           .update({
             full_name: compositeName,
             status: 'Active',
           })
-          .eq('id', userId);
+          .eq('id', userId)
+          .select().maybeSingle();
 
         if (updateErr) {
           console.error("update fallback failed:", updateErr);
           return { success: false, error: updateErr };
         }
-        return { success: true };
+        const resolvedName = name || (updatedData?.full_name ? updatedData.full_name.split(' ||| ')[0] : 'User');
+        return { 
+          success: true,
+          profile: {
+            id: userId,
+            name: resolvedName,
+            email: resolvedEmail,
+            tenantIds: [],
+            isAdmin: updatedData?.is_admin || false,
+            status: updatedData?.status || 'Active'
+          }
+        };
       } else {
         console.error("insert profiles failed:", insertErr);
         return { success: false, error: insertErr };
@@ -725,7 +784,6 @@ class CraveBizApi {
       if (!cleanCompId) return;
       const { data } = await supabase.from('invoices').select('is_receipt_sent').eq('company_id', cleanCompId);
       if (data) {
-        const { saveSubscriptionInfoToDb } = await import("../services/subscriptionService");
         await saveSubscriptionInfoToDb(cleanCompId);
         window.dispatchEvent(new Event('cravebiz_subscription_change'));
       }

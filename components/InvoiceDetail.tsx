@@ -5,7 +5,7 @@ import InvoiceStatusBadge from './InvoiceStatusBadge';
 import Icon from './common/Icon';
 import PaymentModal from './PaymentModal';
 import { api } from '../lib/api';
-import { formatFrequencyLabel } from './RecurringInvoiceList';
+import { formatFrequencyLabel } from '../lib/recurrence';
 import { formatBillingPeriod } from '../lib/billingPeriod';
 
 interface InvoiceDetailProps {
