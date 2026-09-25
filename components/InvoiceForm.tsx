@@ -222,8 +222,8 @@ const InvoiceForm: React.FC<InvoiceFormProps> = ({ initialInvoice, clients, serv
     clientId, 
     projectId,
     issueDate, dueDate, items, total, 
-    periodStart: periodStart || undefined,
-    periodEnd: periodEnd || undefined,
+    periodStart: frequency === 'one-time' ? (periodStart || undefined) : (startDate || periodStart || issueDate || undefined),
+    periodEnd: frequency === 'one-time' ? (periodEnd || undefined) : (endDate || periodEnd || undefined),
     discount: overallDiscount,
     amountPaid: initialInvoice?.amountPaid || 0, 
     status,
@@ -321,7 +321,7 @@ const InvoiceForm: React.FC<InvoiceFormProps> = ({ initialInvoice, clients, serv
           </div>
         )}
         
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-6 mb-8">
+        <div className={`grid grid-cols-1 sm:grid-cols-2 ${frequency === 'one-time' ? 'lg:grid-cols-5' : 'lg:grid-cols-3'} gap-6 mb-8`}>
             <div className="lg:col-span-1">
                 <label className="block text-[10px] font-black text-gray-500 uppercase tracking-widest mb-2">Client</label>
                 <select value={clientId} onChange={e => setClientId(e.target.value)} className="w-full p-3.5 border rounded-lg bg-gray-50 text-gray-900 shadow-sm focus:ring-2 focus:ring-primary-500 outline-none font-bold">
@@ -336,17 +336,21 @@ const InvoiceForm: React.FC<InvoiceFormProps> = ({ initialInvoice, clients, serv
                 <input type="date" value={issueDate} onChange={e => setIssueDate(e.target.value)} className="w-full p-3.5 border rounded-lg bg-gray-50 text-gray-900 shadow-sm focus:ring-2 focus:ring-primary-500 outline-none font-bold" />
             </div>
             <div>
-                <label className="block text-[10px] font-black text-gray-500 uppercase tracking-widest mb-2">Due Date</label>
+                <label className="block text-[10px] font-black text-gray-500 uppercase tracking-widest mb-2">{frequency === 'one-time' ? 'Due Date' : 'First Due Date'}</label>
                 <input type="date" value={dueDate} onChange={e => setDueDate(e.target.value)} className="w-full p-3.5 border rounded-lg bg-gray-50 text-gray-900 shadow-sm focus:ring-2 focus:ring-primary-500 outline-none font-bold" />
             </div>
-            <div>
-                <label className="block text-[10px] font-black text-primary-600 uppercase tracking-widest mb-2">Period Start</label>
-                <input type="date" value={periodStart} onChange={e => setPeriodStart(e.target.value)} className="w-full p-3.5 border border-primary-200 rounded-lg bg-white text-gray-900 shadow-sm focus:ring-2 focus:ring-primary-500 outline-none font-bold" />
-            </div>
-            <div>
-                <label className="block text-[10px] font-black text-primary-600 uppercase tracking-widest mb-2">Period End</label>
-                <input type="date" value={periodEnd} onChange={e => setPeriodEnd(e.target.value)} className="w-full p-3.5 border border-primary-200 rounded-lg bg-white text-gray-900 shadow-sm focus:ring-2 focus:ring-primary-500 outline-none font-bold" />
-            </div>
+            {frequency === 'one-time' && (
+              <>
+                <div>
+                    <label className="block text-[10px] font-black text-primary-600 uppercase tracking-widest mb-2">Period Start <span className="text-gray-400 font-normal normal-case">(optional)</span></label>
+                    <input type="date" value={periodStart} onChange={e => setPeriodStart(e.target.value)} className="w-full p-3.5 border border-primary-200 rounded-lg bg-white text-gray-900 shadow-sm focus:ring-2 focus:ring-primary-500 outline-none font-bold" />
+                </div>
+                <div>
+                    <label className="block text-[10px] font-black text-primary-600 uppercase tracking-widest mb-2">Period End <span className="text-gray-400 font-normal normal-case">(optional)</span></label>
+                    <input type="date" value={periodEnd} onChange={e => setPeriodEnd(e.target.value)} className="w-full p-3.5 border border-primary-200 rounded-lg bg-white text-gray-900 shadow-sm focus:ring-2 focus:ring-primary-500 outline-none font-bold" />
+                </div>
+              </>
+            )}
         </div>
 
         <div className="p-8 bg-primary-50 rounded-xl border border-primary-100 mb-8 shadow-sm">
@@ -393,7 +397,7 @@ const InvoiceForm: React.FC<InvoiceFormProps> = ({ initialInvoice, clients, serv
                     <div className="flex items-center justify-between border-b pb-3">
                         <div>
                             <p className="text-xs font-black text-primary-900 uppercase tracking-wider">Recurring Invoice Schedule & Automation</p>
-                            <p className="text-[11px] text-gray-500 font-medium mt-0.5">Automated invoice generation will be processed and saved directly to the system.</p>
+                            <p className="text-[11px] text-gray-500 font-medium mt-0.5">Automated invoice generation will be processed and saved directly to the system. Billing periods (e.g. Sep 1 – Sep 30) for each cycle are automatically derived from this schedule.</p>
                         </div>
                         <span className="px-2.5 py-1 text-[10px] font-black uppercase rounded-full bg-primary-100 text-primary-800 border border-primary-200">
                           {frequency} Schedule
@@ -402,11 +406,14 @@ const InvoiceForm: React.FC<InvoiceFormProps> = ({ initialInvoice, clients, serv
 
                     <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-4">
                         <div>
-                            <label className="block text-[10px] font-black text-gray-500 uppercase mb-1">Start Date</label>
+                            <label className="block text-[10px] font-black text-gray-500 uppercase mb-1">Billing Period Start</label>
                             <input
                                 type="date"
                                 value={startDate || issueDate}
-                                onChange={e => setStartDate(e.target.value)}
+                                onChange={e => {
+                                  setStartDate(e.target.value);
+                                  setPeriodStart(e.target.value);
+                                }}
                                 className="w-full p-2.5 border rounded-lg bg-gray-50 text-gray-900 font-bold text-xs outline-none focus:ring-2 focus:ring-primary-500"
                             />
                         </div>
@@ -420,11 +427,14 @@ const InvoiceForm: React.FC<InvoiceFormProps> = ({ initialInvoice, clients, serv
                             />
                         </div>
                         <div>
-                            <label className="block text-[10px] font-black text-gray-500 uppercase mb-1">End Date (Optional)</label>
+                            <label className="block text-[10px] font-black text-gray-500 uppercase mb-1">Schedule End Date (Optional)</label>
                             <input
                                 type="date"
                                 value={endDate}
-                                onChange={e => setEndDate(e.target.value)}
+                                onChange={e => {
+                                  setEndDate(e.target.value);
+                                  setPeriodEnd(e.target.value);
+                                }}
                                 className="w-full p-2.5 border rounded-lg bg-gray-50 text-gray-900 font-bold text-xs outline-none focus:ring-2 focus:ring-primary-500"
                             />
                         </div>
