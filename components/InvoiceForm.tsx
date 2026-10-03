@@ -49,6 +49,7 @@ const InvoiceForm: React.FC<InvoiceFormProps> = ({ initialInvoice, clients, serv
   const [recurringStatus, setRecurringStatus] = useState<RecurringStatus>('active');
   const [autoGenerate, setAutoGenerate] = useState<boolean>(true);
   const [isPreviewOpen, setIsPreviewOpen] = useState(false);
+  const [isSubmitting, setIsSubmitting] = useState(false);
   
   // Persistence logic for drafts
   useEffect(() => {
@@ -229,6 +230,7 @@ const InvoiceForm: React.FC<InvoiceFormProps> = ({ initialInvoice, clients, serv
   });
 
   const handleSaveInternal = (status: InvoiceStatus) => {
+      if (isSubmitting) return;
       if (!clientId) { alert("Client selection required."); return; }
       if (!dueDate) { alert("Due date required."); return; }
       if (items.some(it => !it.serviceId && !it.description.trim())) {
@@ -236,6 +238,7 @@ const InvoiceForm: React.FC<InvoiceFormProps> = ({ initialInvoice, clients, serv
         return;
       }
       
+      setIsSubmitting(true);
       const sanitizedItems = items.map(it => ({
         ...it,
         serviceId: it.serviceId || 'custom'
@@ -245,11 +248,15 @@ const InvoiceForm: React.FC<InvoiceFormProps> = ({ initialInvoice, clients, serv
       const data = { ...previewData, items: sanitizedItems };
 
       clearDraft();
-      if (!initialInvoice) {
-          const { id, invoiceNumber, ...finalData } = data;
-          onSave(finalData as Omit<Invoice, 'id' | 'invoiceNumber'>, status);
-      } else {
-          onSave(data as Invoice, status);
+      try {
+        if (!initialInvoice) {
+            const { id, invoiceNumber, ...finalData } = data;
+            onSave(finalData as Omit<Invoice, 'id' | 'invoiceNumber'>, status);
+        } else {
+            onSave(data as Invoice, status);
+        }
+      } catch (e) {
+        setIsSubmitting(false);
       }
   };
 
@@ -558,11 +565,26 @@ const InvoiceForm: React.FC<InvoiceFormProps> = ({ initialInvoice, clients, serv
         <div className="mt-12 flex flex-wrap justify-end gap-5">
             <button type="button" onClick={handleCancel} className="px-10 py-4 text-gray-400 hover:text-red-500 font-black uppercase tracking-widest text-xs">Cancel</button>
             <button type="button" onClick={() => setIsPreviewOpen(true)} disabled={!clientId} className="px-10 py-4 border-2 border-primary-600 text-primary-600 rounded-lg font-black uppercase tracking-widest text-xs hover:bg-primary-50">Preview</button>
-            <button type="button" onClick={() => handleSaveInternal(initialInvoice?.status || InvoiceStatus.Draft)} className="px-10 py-4 border-2 border-gray-200 text-gray-600 rounded-lg font-black uppercase tracking-widest text-xs hover:bg-gray-50">
+            <button 
+                type="button" 
+                onClick={() => handleSaveInternal(initialInvoice?.status || InvoiceStatus.Draft)} 
+                disabled={isSubmitting}
+                className="px-10 py-4 border-2 border-gray-200 text-gray-600 rounded-lg font-black uppercase tracking-widest text-xs hover:bg-gray-50 disabled:opacity-60 disabled:cursor-not-allowed"
+            >
                 {initialInvoice ? 'Update Record' : 'Save Draft'}
             </button>
-            <button type="button" onClick={() => handleSaveInternal(InvoiceStatus.Sent)} className="px-12 py-5 bg-primary-600 text-white rounded-lg shadow-xl font-black uppercase tracking-widest text-xs hover:bg-primary-700">
-                {initialInvoice ? 'Update & Relay' : 'Save & Relay'}
+            <button 
+                type="button" 
+                onClick={() => handleSaveInternal(InvoiceStatus.Sent)} 
+                disabled={isSubmitting}
+                className="px-12 py-5 bg-primary-600 text-white rounded-lg shadow-xl font-black uppercase tracking-widest text-xs hover:bg-primary-700 disabled:opacity-60 disabled:cursor-not-allowed flex items-center justify-center gap-2"
+            >
+                {isSubmitting && <div className="w-3.5 h-3.5 border-2 border-white border-t-transparent rounded-full animate-spin" />}
+                <span>
+                    {isSubmitting 
+                      ? 'Relaying Invoice...' 
+                      : (initialInvoice ? 'Update & Relay' : 'Save & Relay')}
+                </span>
             </button>
         </div>
 

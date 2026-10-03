@@ -4,6 +4,7 @@ import PriceCalculatorModal from './PriceCalculatorModal';
 import { Service } from '../types';
 import { generateTextResponse } from '../services/aiGenerationService';
 import { Calculator, Sparkles, Loader2 } from 'lucide-react';
+import RichTextEditor from './common/RichTextEditor';
 
 interface ServiceFormModalProps {
   isOpen: boolean;
@@ -282,13 +283,12 @@ Ensure the description clearly outlines the core deliverables, client benefits, 
                 )}
               </button>
             </div>
-            <textarea
-              id="description"
+            <RichTextEditor
               value={description}
-              onChange={e => setDescription(e.target.value)}
+              onChange={val => setDescription(val)}
               placeholder="Detailed description of deliverables, scope, and service terms..."
-              rows={3}
-              className="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-primary-500 focus:border-primary-500 sm:text-sm bg-white text-gray-900"
+              minHeight="140px"
+              className="mt-1"
             />
           </div>
 

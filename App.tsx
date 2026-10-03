@@ -42,6 +42,7 @@ const ResetPasswordModal = lazy(() => import('./components/ResetPasswordModal'))
 const UserProfileModal = lazy(() => import('./components/UserProfileModal'));
 const OnboardingSetupPrompt = lazy(() => import('./components/OnboardingSetupPrompt'));
 const ResourceLimitModal = lazy(() => import('./components/common/ResourceLimitModal').then(m => ({ default: m.ResourceLimitModal })));
+const RelaySuccessModal = lazy(() => import('./components/common/RelaySuccessModal'));
 
 export type Page = 'dashboard' | 'invoices' | 'clients' | 'services' | 'reports' | 'settings' | 'create-invoice' | 'edit-invoice' | 'invoice-detail' | 'receipt-detail' | 'plain-invoice-detail' | 'recurring-invoices' | 'email-verification' | 'sent-receipts' | 'admin-dashboard' | 'document-transformer' | 'projects' | 'doc-signify' | 'notifications';
 
@@ -126,6 +127,13 @@ export default function App() {
   const [subTrigger, setSubTrigger] = useState(0);
   const [subErrorMsg, setSubErrorMsg] = useState<string | null>(null);
   const [activeResourceLimitModal, setActiveResourceLimitModal] = useState<ResourceLimitDetails | null>(null);
+  const [relayNotice, setRelayNotice] = useState<{
+    isOpen: boolean;
+    invoiceId: string;
+    invoiceNumber: string;
+    clientName?: string;
+    isUpdate?: boolean;
+  } | null>(null);
 
   // Global Filter State across Dashboard, Invoices and Reports
   const [globalFilter, setGlobalFilterState] = useState<GlobalFilterState>(() => loadGlobalFilterFromSession());
@@ -1632,6 +1640,16 @@ export default function App() {
                   setTenantData(prev => ({ ...prev, invoices: [newInvoice, ...prev.invoices] }));
                   await incrementInvoiceCount(activeTenantId!);
                   setDraftRenewal(null);
+                  if (i.status === InvoiceStatus.Sent) {
+                    const clientObj = clients.find(c => c.id === newInvoice.clientId);
+                    setRelayNotice({
+                      isOpen: true,
+                      invoiceId: newInvoice.id,
+                      invoiceNumber: newInvoice.invoiceNumber,
+                      clientName: clientObj?.companyName || clientObj?.name,
+                      isUpdate: false
+                    });
+                  }
                   navigateTo('invoices');
                   syncInvoices(activeTenantId!);
                 } catch (err: any) {
@@ -1663,6 +1681,16 @@ export default function App() {
                       ...prev,
                       invoices: prev.invoices.map(item => item.id === updatedInv.id ? { ...item, ...updatedInv, status } : item)
                     }));
+                    if (status === InvoiceStatus.Sent) {
+                      const clientObj = clients.find(c => c.id === updatedInv.clientId);
+                      setRelayNotice({
+                        isOpen: true,
+                        invoiceId: updatedInv.id,
+                        invoiceNumber: updatedInv.invoiceNumber,
+                        clientName: clientObj?.companyName || clientObj?.name,
+                        isUpdate: true
+                      });
+                    }
                     syncInvoices(activeTenantId!);
                     navigateTo('invoice-detail');
                 } catch(e) { alert(stringifyError(e)); } 
@@ -2082,6 +2110,22 @@ export default function App() {
             onViewPlan={() => {
               setActiveResourceLimitModal(null);
               navigateTo('settings');
+            }}
+          />
+        </Suspense>
+      )}
+      {relayNotice && (
+        <Suspense fallback={null}>
+          <RelaySuccessModal
+            isOpen={relayNotice.isOpen}
+            invoiceNumber={relayNotice.invoiceNumber}
+            clientName={relayNotice.clientName}
+            isUpdate={relayNotice.isUpdate}
+            onClose={() => setRelayNotice(null)}
+            onViewInvoice={() => {
+              setSelectedInvoiceId(relayNotice.invoiceId);
+              setRelayNotice(null);
+              navigateTo('invoice-detail');
             }}
           />
         </Suspense>

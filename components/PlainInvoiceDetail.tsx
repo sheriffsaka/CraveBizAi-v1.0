@@ -5,6 +5,7 @@ import InvoiceStatusBadge from './InvoiceStatusBadge';
 import Icon from './common/Icon';
 import { formatBillingPeriod } from '../lib/billingPeriod';
 import { loadHtml2Pdf } from '../lib/html2pdf';
+import FormattedDescription from './common/FormattedDescription';
 
 interface PlainInvoiceDetailProps {
   invoice: Invoice;
@@ -153,18 +154,22 @@ const PlainInvoiceDetail: React.FC<PlainInvoiceDetailProps> = ({ invoice, client
                             <td width="45%" valign="top" align="right">
                                 <table>
                                     <tr>
-                                        <td align="right" style="color:#6b7280; font-weight:bold;">Issue Date:</td>
-                                        <td align="right" style="font-weight:bold;">${invoice.issueDate}</td>
+                                        <td align="right" style="color:#6b7280; font-weight:bold; padding-bottom:3px;">Issued Date:</td>
+                                        <td align="right" style="font-weight:bold; padding-bottom:3px;">${invoice.issueDate}</td>
+                                    </tr>
+                                    <tr>
+                                        <td align="right" style="color:#6b7280; font-weight:bold; padding-bottom:5px;">Due Date:</td>
+                                        <td align="right" style="font-weight:bold; color:#dc2626; padding-bottom:5px;">${invoice.dueDate}</td>
                                     </tr>
                                     ${formatBillingPeriod(invoice.periodStart, invoice.periodEnd) ? `
                                     <tr>
-                                        <td align="right" style="color:#6b7280; font-weight:bold;">Billing Period:</td>
-                                        <td align="right" style="font-weight:bold; color:#1e3a8a;">${formatBillingPeriod(invoice.periodStart, invoice.periodEnd)}</td>
+                                        <td colspan="2" align="right" style="padding-top:4px;">
+                                            <div style="display:inline-block; border:1.5px solid #2563eb; background:#eff6ff; padding:3px 8px; border-radius:4px;">
+                                                <span style="color:#1d4ed8; font-size:8pt; font-weight:bold; text-transform:uppercase;">Billing Period: </span>
+                                                <span style="font-weight:bold; color:#1e3a8a; font-size:9pt;">${formatBillingPeriod(invoice.periodStart, invoice.periodEnd)}</span>
+                                            </div>
+                                        </td>
                                     </tr>` : ''}
-                                    <tr>
-                                        <td align="right" style="color:#6b7280; font-weight:bold;">Due Date:</td>
-                                        <td align="right" style="font-weight:bold; color:#dc2626;">${invoice.dueDate}</td>
-                                    </tr>
                                 </table>
                             </td>
                         </tr>
@@ -348,19 +353,23 @@ const PlainInvoiceDetail: React.FC<PlainInvoiceDetailProps> = ({ invoice, client
                     <table className="w-full text-sm">
                         <tbody>
                             <tr>
-                                <td className="font-bold text-gray-500 py-1 text-right w-1/2">Issue Date:</td>
+                                <td className="font-bold text-gray-500 py-1 text-right w-1/2">Issued Date:</td>
                                 <td className="font-bold text-gray-900 py-1 pl-4 text-right">{invoice.issueDate}</td>
                             </tr>
-                            {formatBillingPeriod(invoice.periodStart, invoice.periodEnd) && (
-                                <tr>
-                                    <td className="font-bold text-gray-500 py-1 text-right w-1/2">Billing Period:</td>
-                                    <td className="font-bold text-primary-700 py-1 pl-4 text-right">{formatBillingPeriod(invoice.periodStart, invoice.periodEnd)}</td>
-                                </tr>
-                            )}
                             <tr>
                                 <td className="font-bold text-gray-500 py-1 text-right">Due Date:</td>
                                 <td className="font-bold text-red-600 py-1 pl-4 text-right">{invoice.dueDate}</td>
                             </tr>
+                            {formatBillingPeriod(invoice.periodStart, invoice.periodEnd) && (
+                                <tr>
+                                    <td colSpan={2} className="pt-2 text-right">
+                                        <div className="inline-block border-2 border-primary-500 bg-primary-50 px-3 py-1.5 rounded-lg text-right">
+                                            <span className="text-[10px] font-black uppercase text-primary-700 tracking-wider mr-2">Billing Period:</span>
+                                            <span className="font-black text-primary-950 text-xs">{formatBillingPeriod(invoice.periodStart, invoice.periodEnd)}</span>
+                                        </div>
+                                    </td>
+                                </tr>
+                            )}
                         </tbody>
                     </table>
                 </div>
@@ -381,7 +390,9 @@ const PlainInvoiceDetail: React.FC<PlainInvoiceDetailProps> = ({ invoice, client
                         <tr key={index} className="border-b border-gray-200">
                             <td className="py-3 px-3 align-top">
                                 <p className="font-bold text-gray-800">{getServiceName(item.serviceId)}</p>
-                                <p className="text-xs text-gray-500 mt-1">{item.description}</p>
+                                {item.description && (
+                                    <FormattedDescription content={item.description} className="text-xs text-gray-500 mt-1" />
+                                )}
                             </td>
                             <td className="py-3 px-3 align-top text-center text-gray-600">{item.quantity}</td>
                             <td className="py-3 px-3 align-top text-right text-gray-600">₦{item.price.toLocaleString()}</td>

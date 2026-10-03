@@ -193,6 +193,11 @@ export const SearchableServiceSelect: React.FC<SearchableServiceSelectProps> = (
     }
   };
 
+  const stripHtml = (html?: string) => {
+    if (!html) return '';
+    return html.replace(/<[^>]*>/g, ' ').replace(/\s+/g, ' ').trim();
+  };
+
   // Helper function to highlight search term matches in text
   const renderHighlightedText = (text: string, query: string) => {
     if (!query.trim() || !text) return <span>{text}</span>;
@@ -254,7 +259,7 @@ export const SearchableServiceSelect: React.FC<SearchableServiceSelectProps> = (
                 )}
               </div>
               <p className="text-xs text-gray-500 font-medium break-words leading-relaxed">
-                ₦{(selectedService.price || 0).toLocaleString()} {selectedService.description ? `• ${selectedService.description}` : ''}
+                ₦{(selectedService.price || 0).toLocaleString()} {selectedService.description ? `• ${stripHtml(selectedService.description)}` : ''}
               </p>
             </div>
           </div>
@@ -368,7 +373,7 @@ export const SearchableServiceSelect: React.FC<SearchableServiceSelectProps> = (
 
                     {service.description && (
                       <p className="text-xs text-gray-500 font-normal leading-relaxed break-words whitespace-normal mt-1">
-                        {renderHighlightedText(service.description, searchTerm)}
+                        {renderHighlightedText(stripHtml(service.description), searchTerm)}
                       </p>
                     )}
                   </div>

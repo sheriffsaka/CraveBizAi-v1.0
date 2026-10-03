@@ -7,6 +7,7 @@ import PaymentModal from './PaymentModal';
 import { api } from '../lib/api';
 import { formatFrequencyLabel } from '../lib/recurrence';
 import { formatBillingPeriod } from '../lib/billingPeriod';
+import FormattedDescription from './common/FormattedDescription';
 
 interface InvoiceDetailProps {
   invoice: Invoice;
@@ -234,25 +235,19 @@ const InvoiceDetail: React.FC<InvoiceDetailProps> = ({ invoice, client, services
             <p className="text-gray-500 text-sm font-medium">{client.name}</p>
             <p className="text-gray-500 text-sm">{client.email}</p>
           </div>
-          <div className="text-right flex flex-col justify-end">
-             <div className="mb-4">
-                 <h3 className="text-[10px] font-black text-gray-400 uppercase tracking-widest mb-1">Issue Date</h3>
+          <div className="text-right flex flex-col justify-end items-end space-y-3">
+             <div>
+                 <h3 className="text-[10px] font-black text-gray-400 uppercase tracking-widest mb-0.5">Issued Date</h3>
                  <p className="text-gray-800 font-black">{invoice.issueDate}</p>
              </div>
-             {formatBillingPeriod(invoice.periodStart, invoice.periodEnd) && (
-               <div className="mb-4">
-                   <h3 className="text-[10px] font-black text-primary-600 uppercase tracking-widest mb-1">Billing Period</h3>
-                   <p className="text-gray-800 font-black">{formatBillingPeriod(invoice.periodStart, invoice.periodEnd)}</p>
-               </div>
-             )}
-             <div className="mb-4">
-                 <h3 className="text-[10px] font-black text-gray-400 uppercase tracking-widest mb-1">Due Date</h3>
+             <div>
+                 <h3 className="text-[10px] font-black text-gray-400 uppercase tracking-widest mb-0.5">Due Date</h3>
                  <p className="text-gray-800 font-black">{invoice.dueDate}</p>
              </div>
-             {invoice.nextRecurrenceDate && invoice.frequency !== 'one-time' && (
-               <div>
-                   <h3 className="text-[10px] font-black text-primary-500 uppercase tracking-widest mb-1">Next Recurrence</h3>
-                   <p className="text-primary-700 font-black">{invoice.nextRecurrenceDate}</p>
+             {formatBillingPeriod(invoice.periodStart, invoice.periodEnd) && (
+               <div className="mt-1 px-3.5 py-2 bg-blue-50/80 border-2 border-blue-200 rounded-lg text-right">
+                   <h3 className="text-[10px] font-black text-blue-700 uppercase tracking-widest mb-0.5">Billing Period</h3>
+                   <p className="text-blue-950 font-black text-xs">{formatBillingPeriod(invoice.periodStart, invoice.periodEnd)}</p>
                </div>
              )}
           </div>
@@ -272,7 +267,9 @@ const InvoiceDetail: React.FC<InvoiceDetailProps> = ({ invoice, client, services
                 <tr key={idx}>
                   <td className="py-5">
                     <p className="font-black text-gray-800">{getServiceName(item.serviceId)}</p>
-                    <p className="text-xs text-gray-500 whitespace-pre-wrap mt-1 leading-relaxed">{item.description}</p>
+                    {item.description && (
+                      <FormattedDescription content={item.description} className="text-xs text-gray-500 mt-1 leading-relaxed" />
+                    )}
                   </td>
                   <td className="py-5 text-center font-bold text-gray-700">{item.quantity}</td>
                   <td className="py-5 text-right font-medium text-gray-600">₦{item.price.toLocaleString()}</td>

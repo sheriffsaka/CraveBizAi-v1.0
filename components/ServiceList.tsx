@@ -3,6 +3,7 @@ import { Service, Invoice, WorkspaceRole } from '../types';
 import ServiceFormModal from './ServiceFormModal';
 import DeleteConfirmationModal from './DeleteConfirmationModal';
 import Icon from './common/Icon';
+import FormattedDescription from './common/FormattedDescription';
 import { checkResourceAvailability, triggerResourceLimitModal } from '../services/resourceLimitService';
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, Cell } from 'recharts';
 import { calculateServiceMarginPct, calculateServiceTotalCost } from '../lib/margin';
@@ -70,6 +71,12 @@ const ServicesTable: React.FC<{
                       <span>📦</span>
                       <span>{service.packageName}</span>
                     </div>
+                  )}
+                  {service.description && (
+                    <FormattedDescription 
+                      content={service.description} 
+                      className="text-xs text-gray-500 font-normal mt-1 max-w-sm line-clamp-2" 
+                    />
                   )}
                 </th>
                 <td className="px-6 py-4">
