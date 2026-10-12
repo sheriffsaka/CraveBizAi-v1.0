@@ -6,6 +6,7 @@ import Dashboard from './components/Dashboard';
 import InvoiceList from './components/InvoiceList';
 import { calculateNextRecurrenceDate } from './lib/recurrence';
 import { calculateBillingPeriod } from './lib/billingPeriod';
+import { calculateInvoiceTotals } from './lib/invoiceMath';
 import AuthPage from './components/AuthPage';
 import SyncOverlay from './components/SyncOverlay';
 import { api, supabase } from './lib/api';
@@ -837,6 +838,18 @@ export default function App() {
       const newNextRecurrenceDate = calculateNextRecurrenceDate(currentDueDateStr, template.frequency || 'monthly');
       const billingPeriod = calculateBillingPeriod(currentDueDateStr, template.frequency || 'monthly');
 
+      const sanitizedItems = (template.items || []).map(it => ({
+        serviceId: it.serviceId || 'custom',
+        description: it.description || '',
+        quantity: Math.max(0, Number(it.quantity) || 1),
+        price: Math.max(0, Number(it.price) || 0),
+        discount: Math.max(0, Number(it.discount) || 0),
+        directCost: Math.max(0, Number(it.directCost) || 0),
+        indirectCost: Math.max(0, Number(it.indirectCost) || 0)
+      }));
+      const templateDiscount = Math.max(0, Number(template.discount) || 0);
+      const childTotals = calculateInvoiceTotals(sanitizedItems, templateDiscount);
+
       const newInvoiceData: Omit<Invoice, 'id' | 'invoiceNumber'> = {
         companyId: activeTenantId,
         clientId: template.clientId,
@@ -845,9 +858,9 @@ export default function App() {
         dueDate: currentDueDateStr,
         periodStart: billingPeriod.periodStart,
         periodEnd: billingPeriod.periodEnd,
-        total: template.total,
+        total: childTotals.total > 0 ? childTotals.total : template.total,
         status: InvoiceStatus.Sent,
-        discount: template.discount,
+        discount: templateDiscount,
         amountPaid: 0,
         paymentTerms: template.paymentTerms,
         selectedBankAccountId: template.selectedBankAccountId,
@@ -857,15 +870,7 @@ export default function App() {
         frequency: 'one-time',
         isRecurringTemplate: false,
         parentInvoiceId: template.id,
-        items: (template.items || []).map(it => ({
-          serviceId: it.serviceId || 'custom',
-          description: it.description || '',
-          quantity: it.quantity || 1,
-          price: it.price || 0,
-          discount: it.discount || 0,
-          directCost: it.directCost || 0,
-          indirectCost: it.indirectCost || 0
-        }))
+        items: sanitizedItems
       };
 
       const createdChild = await api.createInvoice(activeTenantId, newInvoiceData);

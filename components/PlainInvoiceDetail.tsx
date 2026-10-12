@@ -6,6 +6,7 @@ import Icon from './common/Icon';
 import { formatBillingPeriod } from '../lib/billingPeriod';
 import { loadHtml2Pdf } from '../lib/html2pdf';
 import FormattedDescription from './common/FormattedDescription';
+import { calculateInvoiceTotals } from '../lib/invoiceMath';
 
 interface PlainInvoiceDetailProps {
   invoice: Invoice;
@@ -25,12 +26,14 @@ const PlainInvoiceDetail: React.FC<PlainInvoiceDetailProps> = ({ invoice, client
         return services.find(s => s.id === serviceId)?.name || 'Service Item';
     };
 
-    const subtotal = invoice.items.reduce((sum, item) => sum + item.price * item.quantity, 0);
-    const discount = invoice.discount || 0;
-    const tax = (subtotal - discount) * 0.075; 
-    const isFullyPaid = invoice.status === 'Paid' || (invoice.amountPaid || 0) >= invoice.total - 0.001;
-    const amountPaid = isFullyPaid ? invoice.total : (invoice.amountPaid || 0);
-    const balanceDue = isFullyPaid ? 0 : Math.max(0, invoice.total - amountPaid);
+    const totals = calculateInvoiceTotals(invoice.items, invoice.discount);
+    const { grossSubtotal, totalDiscount, netSubtotal, tax } = totals;
+    const subtotal = grossSubtotal;
+    const discount = totalDiscount; 
+    const effectiveTotal = totals.total > 0 ? totals.total : (invoice.total || 0);
+    const isFullyPaid = invoice.status === 'Paid' || (invoice.amountPaid || 0) >= effectiveTotal - 0.001;
+    const amountPaid = isFullyPaid ? effectiveTotal : (invoice.amountPaid || 0);
+    const balanceDue = isFullyPaid ? 0 : Math.max(0, effectiveTotal - amountPaid);
     const isReceipt = isFullyPaid;
     
     const selectedBankAccount: BankAccount | undefined = company?.bankAccounts?.find(
@@ -96,17 +99,23 @@ const PlainInvoiceDetail: React.FC<PlainInvoiceDetailProps> = ({ invoice, client
             ? `<b>${invoice.manualBankName}</b><br/>Acct: ${invoice.manualAccountNumber}<br/>Name: ${invoice.manualAccountName}`
             : `Contact finance for details.`;
 
-        const itemsRows = invoice.items.map(item => `
+        const itemsRows = invoice.items.map(item => {
+            const itemGross = (Number(item.price) || 0) * (Number(item.quantity) || 0);
+            const itemDiscount = Number(item.discount) || 0;
+            const itemNet = Math.max(0, itemGross - itemDiscount);
+            return `
             <tr>
                 <td style="padding:8px; border-bottom:1px solid #e5e7eb; vertical-align:top;">
                     <strong style="font-size:11pt; color:#111827;">${getServiceName(item.serviceId)}</strong>
                     <div style="font-size:9pt; color:#6b7280;">${item.description || ''}</div>
+                    ${itemDiscount > 0 ? `<div style="font-size:8.5pt; color:#dc2626; font-weight:bold; margin-top:2px;">(Discount: -₦${itemDiscount.toLocaleString()})</div>` : ''}
                 </td>
                 <td style="padding:8px; border-bottom:1px solid #e5e7eb; text-align:center; vertical-align:top;">${item.quantity}</td>
                 <td style="padding:8px; border-bottom:1px solid #e5e7eb; text-align:right; vertical-align:top;">₦${item.price.toLocaleString()}</td>
-                <td style="padding:8px; border-bottom:1px solid #e5e7eb; text-align:right; font-weight:bold; vertical-align:top;">₦${(item.price * item.quantity).toLocaleString()}</td>
+                <td style="padding:8px; border-bottom:1px solid #e5e7eb; text-align:right; font-weight:bold; vertical-align:top;">₦${itemNet.toLocaleString()}</td>
             </tr>
-        `).join('');
+        `;
+        }).join('');
 
         const wordTemplate = `
             <html xmlns:o='urn:schemas-microsoft-com:office:office' xmlns:w='urn:schemas-microsoft-com:office:word' xmlns='http://www.w3.org/TR/REC-html40'>
@@ -214,7 +223,7 @@ const PlainInvoiceDetail: React.FC<PlainInvoiceDetailProps> = ({ invoice, client
                                     </tr>
                                      <tr>
                                         <td align="right" style="padding:8px; font-weight:bold; color:#374151; border-top: 1px solid #e5e7eb;">Total Amount</td>
-                                        <td align="right" style="padding:8px; font-weight:bold; color:#374151; border-top: 1px solid #e5e7eb;">₦${invoice.total.toLocaleString()}</td>
+                                        <td align="right" style="padding:8px; font-weight:bold; color:#374151; border-top: 1px solid #e5e7eb;">₦${effectiveTotal.toLocaleString()}</td>
                                     </tr>
                                     <tr>
                                         <td align="right" style="padding:8px; font-weight:bold; color:#166534;">Amount Paid</td>
@@ -386,19 +395,29 @@ const PlainInvoiceDetail: React.FC<PlainInvoiceDetailProps> = ({ invoice, client
                     </tr>
                 </thead>
                 <tbody className="text-sm">
-                    {invoice.items.map((item, index) => (
-                        <tr key={index} className="border-b border-gray-200">
-                            <td className="py-3 px-3 align-top">
-                                <p className="font-bold text-gray-800">{getServiceName(item.serviceId)}</p>
-                                {item.description && (
-                                    <FormattedDescription content={item.description} className="text-xs text-gray-500 mt-1" />
-                                )}
-                            </td>
-                            <td className="py-3 px-3 align-top text-center text-gray-600">{item.quantity}</td>
-                            <td className="py-3 px-3 align-top text-right text-gray-600">₦{item.price.toLocaleString()}</td>
-                            <td className="py-3 px-3 align-top text-right font-bold text-gray-900">₦{(item.price * item.quantity).toLocaleString()}</td>
-                        </tr>
-                    ))}
+                    {invoice.items.map((item, index) => {
+                        const itemGross = (Number(item.price) || 0) * (Number(item.quantity) || 0);
+                        const itemDiscount = Number(item.discount) || 0;
+                        const itemNet = Math.max(0, itemGross - itemDiscount);
+                        return (
+                            <tr key={index} className="border-b border-gray-200">
+                                <td className="py-3 px-3 align-top">
+                                    <p className="font-bold text-gray-800">{getServiceName(item.serviceId)}</p>
+                                    {item.description && (
+                                        <FormattedDescription content={item.description} className="text-xs text-gray-500 mt-1" />
+                                    )}
+                                    {itemDiscount > 0 && (
+                                        <span className="block text-[10px] text-red-500 font-bold mt-0.5">
+                                            (Disc: -₦{itemDiscount.toLocaleString()})
+                                        </span>
+                                    )}
+                                </td>
+                                <td className="py-3 px-3 align-top text-center text-gray-600">{item.quantity}</td>
+                                <td className="py-3 px-3 align-top text-right text-gray-600">₦{item.price.toLocaleString()}</td>
+                                <td className="py-3 px-3 align-top text-right font-bold text-gray-900">₦{itemNet.toLocaleString()}</td>
+                            </tr>
+                        );
+                    })}
                 </tbody>
             </table>
 
@@ -408,8 +427,8 @@ const PlainInvoiceDetail: React.FC<PlainInvoiceDetailProps> = ({ invoice, client
                     <table className="w-full text-sm border-collapse">
                         <tbody>
                             <tr>
-                                <td className="py-2 text-right font-bold text-gray-500">Subtotal</td>
-                                <td className="py-2 text-right font-bold text-gray-900 w-32">₦{subtotal.toLocaleString()}</td>
+                                <td className="py-2 text-right font-bold text-gray-500">Gross Subtotal</td>
+                                <td className="py-2 text-right font-bold text-gray-900 w-32">₦{grossSubtotal.toLocaleString()}</td>
                             </tr>
                             {discount > 0 && (
                                 <tr>
@@ -419,11 +438,11 @@ const PlainInvoiceDetail: React.FC<PlainInvoiceDetailProps> = ({ invoice, client
                             )}
                             <tr>
                                 <td className="py-2 text-right font-bold text-gray-500">VAT (7.5%)</td>
-                                <td className="py-2 text-right font-bold text-gray-900">₦{tax.toLocaleString()}</td>
+                                <td className="py-2 text-right font-bold text-gray-900">₦{tax.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
                             </tr>
                              <tr>
                                 <td className="py-2 text-right font-bold text-gray-800 border-t border-gray-200">Total Amount</td>
-                                <td className="py-2 text-right font-bold text-gray-800 border-t border-gray-200">₦{invoice.total.toLocaleString()}</td>
+                                <td className="py-2 text-right font-bold text-gray-900 border-t border-gray-200">₦{effectiveTotal.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
                             </tr>
                             <tr>
                                 <td className="py-2 text-right font-bold text-green-600">Amount Paid</td>

@@ -875,7 +875,12 @@ const RecurringInvoiceList: React.FC<RecurringInvoiceListProps> = ({
 
                     {/* Total Amount */}
                     <td className="px-6 py-4 font-bold text-gray-900 whitespace-nowrap">
-                      ₦{invoice.total.toLocaleString()}
+                      <div>₦{invoice.total.toLocaleString()}</div>
+                      {((invoice.discount && invoice.discount > 0) || (invoice.items && invoice.items.some(it => (it.discount || 0) > 0))) ? (
+                        <span className="text-[10px] text-red-500 font-bold block">
+                          (Disc. included)
+                        </span>
+                      ) : null}
                     </td>
 
                     {/* Status */}

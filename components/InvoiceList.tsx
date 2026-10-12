@@ -135,8 +135,14 @@ const InvoicesTable: React.FC<{
                   )}
                 </th>
                 <td className="px-6 py-4">{getClientName(invoice.clientId)}</td>
-                <td className="px-6 py-4">{invoice.dueDate}</td>
-                <td className="px-6 py-4 font-medium">₦{invoice.total.toLocaleString()}</td>
+                <td className="px-6 py-4 font-medium">
+                  <div>₦{invoice.total.toLocaleString()}</div>
+                  {((invoice.discount && invoice.discount > 0) || (invoice.items && invoice.items.some(it => (it.discount || 0) > 0))) ? (
+                    <span className="text-[10px] text-red-500 font-bold block">
+                      (Disc. applied)
+                    </span>
+                  ) : null}
+                </td>
                 <td className={`px-6 py-4 font-bold ${balance > 0 ? 'text-red-600' : 'text-green-600'}`}>
                   ₦{balance.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 2 })}
                 </td>

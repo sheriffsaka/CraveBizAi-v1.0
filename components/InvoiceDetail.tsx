@@ -8,6 +8,7 @@ import { api } from '../lib/api';
 import { formatFrequencyLabel } from '../lib/recurrence';
 import { formatBillingPeriod } from '../lib/billingPeriod';
 import FormattedDescription from './common/FormattedDescription';
+import { calculateInvoiceTotals } from '../lib/invoiceMath';
 
 interface InvoiceDetailProps {
   invoice: Invoice;
@@ -31,18 +32,15 @@ const InvoiceDetail: React.FC<InvoiceDetailProps> = ({ invoice, client, services
     const [isPaymentModalOpen, setIsPaymentModalOpen] = useState(false);
 
     const getServiceName = (serviceId: string) => services.find(s => s.id === serviceId)?.name || 'Service Item';
-    const grossSubtotal = (invoice.items || []).reduce((sum, item) => sum + ((item.price || 0) * (item.quantity || 0)), 0);
-    const lineItemDiscounts = (invoice.items || []).reduce((sum, item) => sum + (item.discount || 0), 0);
-    const overallDiscount = invoice.discount || 0;
-    const totalDiscount = lineItemDiscounts + overallDiscount;
-    const netSubtotal = Math.max(0, grossSubtotal - totalDiscount);
-    const tax = Math.round(netSubtotal * 0.075 * 100) / 100;
+    const totals = calculateInvoiceTotals(invoice.items, invoice.discount);
+    const { grossSubtotal, lineItemDiscounts, invoiceDiscount: overallDiscount, totalDiscount, netSubtotal, tax } = totals;
     
     // Payment breakdown logic
-    const isPaid = invoice.status === InvoiceStatus.Paid || (invoice.amountPaid || 0) >= invoice.total - 0.001;
-    const amountPaid = isPaid ? invoice.total : (invoice.amountPaid || 0);
+    const effectiveTotal = totals.total > 0 ? totals.total : (invoice.total || 0);
+    const isPaid = invoice.status === InvoiceStatus.Paid || (invoice.amountPaid || 0) >= effectiveTotal - 0.001;
+    const amountPaid = isPaid ? effectiveTotal : (invoice.amountPaid || 0);
     const hasPayment = amountPaid > 0 || isPaid;
-    const balanceDue = isPaid ? 0 : Math.max(0, invoice.total - amountPaid);
+    const balanceDue = isPaid ? 0 : Math.max(0, effectiveTotal - amountPaid);
 
     const handleSend = async () => {
         if (isSending || invoice.id === 'preview') return;
@@ -274,7 +272,7 @@ const InvoiceDetail: React.FC<InvoiceDetailProps> = ({ invoice, client, services
                   <td className="py-5 text-center font-bold text-gray-700">{item.quantity}</td>
                   <td className="py-5 text-right font-medium text-gray-600">₦{item.price.toLocaleString()}</td>
                   <td className="py-5 text-right font-black text-gray-900">
-                    ₦{((item.price * item.quantity) - (item.discount || 0)).toLocaleString()}
+                    ₦{Math.max(0, (item.price * item.quantity) - (item.discount || 0)).toLocaleString()}
                     {item.discount && item.discount > 0 ? (
                       <span className="block text-[10px] text-red-500 font-bold">(Disc: -₦{item.discount.toLocaleString()})</span>
                     ) : null}
@@ -294,7 +292,7 @@ const InvoiceDetail: React.FC<InvoiceDetailProps> = ({ invoice, client, services
             
             <div className="flex justify-between font-bold text-lg text-gray-800 border-t border-gray-200 pt-3 mt-2">
                 <span>Total Amount</span>
-                <span>₦{invoice.total.toLocaleString()}</span>
+                <span>₦{effectiveTotal.toLocaleString()}</span>
             </div>
 
             {hasPayment && (

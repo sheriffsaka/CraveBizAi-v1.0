@@ -5,6 +5,7 @@ import { getSubscriptionInfo } from '../services/subscriptionService';
 import Icon from './common/Icon';
 import SearchableServiceSelect from './common/SearchableServiceSelect';
 import { calculateNextRecurrenceDate } from '../lib/recurrence';
+import { calculateInvoiceTotals } from '../lib/invoiceMath';
 
 export { calculateNextRecurrenceDate };
 
@@ -101,13 +102,18 @@ const InvoiceForm: React.FC<InvoiceFormProps> = ({ initialInvoice, clients, serv
       setDueDate(initialInvoice.dueDate);
       setPeriodStart(initialInvoice.periodStart || '');
       setPeriodEnd(initialInvoice.periodEnd || '');
-      setItems(initialInvoice.items);
+      setItems((initialInvoice.items || []).map(it => ({
+        ...it,
+        quantity: Math.max(0, Number(it.quantity) || 1),
+        price: Math.max(0, Number(it.price) || 0),
+        discount: Math.max(0, Number(it.discount) || 0)
+      })));
       setSelectedBankAccountId(initialInvoice.selectedBankAccountId || 'manual');
       setManualBankName(initialInvoice.manualBankName || '');
       setManualAccountName(initialInvoice.manualAccountName || '');
       setManualAccountNumber(initialInvoice.manualAccountNumber || '');
       setPaymentTerms(initialInvoice.paymentTerms || '');
-      setDiscount(initialInvoice.discount || 0);
+      setDiscount(Math.max(0, Number(initialInvoice.discount) || 0));
       setFrequency(initialInvoice.frequency || 'one-time');
       setNextRecurrenceDate(initialInvoice.nextRecurrenceDate || initialInvoice.nextDueDate || '');
       setStartDate(initialInvoice.startDate || initialInvoice.issueDate || '');
@@ -187,20 +193,12 @@ const InvoiceForm: React.FC<InvoiceFormProps> = ({ initialInvoice, clients, serv
       onCancel();
   };
 
-  const subtotal = useMemo(() => {
-    return (items || []).reduce((s, i) => {
-      if (!i) return s;
-      const q = Math.max(0, Number(i.quantity) || 0);
-      const p = Math.max(0, Number(i.price) || 0);
-      const d = Math.max(0, Number(i.discount) || 0);
-      return s + Math.max(0, (q * p) - d);
-    }, 0);
-  }, [items]);
+  const invoiceTotals = useMemo(() => {
+    return calculateInvoiceTotals(items, discount);
+  }, [items, discount]);
 
-  const overallDiscount = Math.max(0, Number(discount) || 0);
-  const netAmount = Math.max(0, subtotal - overallDiscount);
-  const tax = Math.round(netAmount * 0.075 * 100) / 100;
-  const total = netAmount + tax;
+  const { grossSubtotal, lineItemDiscounts, invoiceDiscount: overallDiscount, totalDiscount, netSubtotal: netAmount, tax, total } = invoiceTotals;
+  const subtotal = grossSubtotal;
 
   const getPreviewData = (status: InvoiceStatus): Invoice => ({
     id: initialInvoice?.id || 'preview',
@@ -208,7 +206,14 @@ const InvoiceForm: React.FC<InvoiceFormProps> = ({ initialInvoice, clients, serv
     invoiceNumber: initialInvoice?.invoiceNumber || `PREVIEW`,
     clientId, 
     projectId,
-    issueDate, dueDate, items, total, 
+    issueDate, dueDate, 
+    items: items.map(it => ({
+      ...it,
+      quantity: Math.max(0, Number(it.quantity) || 1),
+      price: Math.max(0, Number(it.price) || 0),
+      discount: Math.max(0, Number(it.discount) || 0)
+    })), 
+    total, 
     periodStart: frequency === 'one-time' ? (periodStart || undefined) : (startDate || periodStart || issueDate || undefined),
     periodEnd: frequency === 'one-time' ? (periodEnd || undefined) : (endDate || periodEnd || undefined),
     discount: overallDiscount,
@@ -241,7 +246,10 @@ const InvoiceForm: React.FC<InvoiceFormProps> = ({ initialInvoice, clients, serv
       setIsSubmitting(true);
       const sanitizedItems = items.map(it => ({
         ...it,
-        serviceId: it.serviceId || 'custom'
+        serviceId: it.serviceId || 'custom',
+        quantity: Math.max(0, Number(it.quantity) || 1),
+        price: Math.max(0, Number(it.price) || 0),
+        discount: Math.max(0, Number(it.discount) || 0)
       }));
 
       const previewData = getPreviewData(status);
@@ -527,11 +535,18 @@ const InvoiceForm: React.FC<InvoiceFormProps> = ({ initialInvoice, clients, serv
                         </div>
                         <div>
                             <label className="block text-[10px] font-black text-gray-400 uppercase mb-1">Discount (₦)</label>
-                            <input type="number" value={item.discount || 0} onChange={e => handleItemChange(index, 'discount', Number(e.target.value))} className="w-full p-3 border rounded-lg bg-gray-50 text-gray-900 font-black text-sm" />
+                            <input 
+                              type="number" 
+                              min="0"
+                              value={item.discount === undefined || item.discount === 0 ? '' : item.discount} 
+                              onChange={e => handleItemChange(index, 'discount', Math.max(0, Number(e.target.value) || 0))} 
+                              placeholder="0"
+                              className="w-full p-3 border rounded-lg bg-gray-50 text-gray-900 font-black text-sm" 
+                            />
                         </div>
                         <div>
                             <label className="block text-[10px] font-black text-gray-400 uppercase mb-1">Amount</label>
-                            <div className="w-full p-3 bg-gray-100 rounded-lg font-black text-gray-800 text-sm">₦{((item.price * item.quantity) - (item.discount || 0)).toLocaleString()}</div>
+                            <div className="w-full p-3 bg-gray-100 rounded-lg font-black text-gray-800 text-sm">₦{Math.max(0, (item.price * item.quantity) - (item.discount || 0)).toLocaleString()}</div>
                         </div>
                     </div>
 
@@ -544,21 +559,54 @@ const InvoiceForm: React.FC<InvoiceFormProps> = ({ initialInvoice, clients, serv
         </div>
 
         <div className="mt-12 flex justify-end">
-            <div className="w-80 space-y-4 p-8 bg-gray-50 rounded-xl border border-gray-100">
-                <div className="flex justify-between text-[10px] text-gray-400 font-black uppercase tracking-widest"><span>Subtotal</span><span className="text-gray-900">₦{subtotal.toLocaleString()}</span></div>
-                <div className="flex flex-col gap-2">
-                    <label className="text-[10px] font-black text-gray-400 uppercase tracking-widest">Discount (₦)</label>
+            <div className="w-80 space-y-3.5 p-6 bg-gray-50 rounded-xl border border-gray-100 shadow-sm">
+                <div className="flex justify-between text-[10px] text-gray-400 font-black uppercase tracking-widest">
+                    <span>Gross Subtotal</span>
+                    <span className="text-gray-900 font-bold">₦{grossSubtotal.toLocaleString()}</span>
+                </div>
+                {lineItemDiscounts > 0 && (
+                    <div className="flex justify-between text-[10px] text-emerald-600 font-black uppercase tracking-widest">
+                        <span>Line Item Discounts</span>
+                        <span>-₦{lineItemDiscounts.toLocaleString()}</span>
+                    </div>
+                )}
+                <div className="flex flex-col gap-1.5 pt-1">
+                    <div className="flex justify-between items-center">
+                        <label className="text-[10px] font-black text-gray-400 uppercase tracking-widest">
+                            {lineItemDiscounts > 0 ? 'Additional Discount (₦)' : 'Discount (₦)'}
+                        </label>
+                        {overallDiscount > 0 && (
+                            <span className="text-[10px] font-bold text-red-500">-₦{overallDiscount.toLocaleString()}</span>
+                        )}
+                    </div>
                     <input 
                         type="number" 
-                        value={discount} 
-                        onChange={e => setDiscount(Number(e.target.value))} 
+                        min="0"
+                        value={discount === 0 ? '' : discount} 
+                        onChange={e => setDiscount(Math.max(0, Number(e.target.value) || 0))} 
                         className="w-full p-2 border rounded-lg bg-white text-gray-900 font-bold outline-none focus:ring-2 focus:ring-primary-500 text-right"
                         placeholder="0"
                     />
                 </div>
-                <div className="flex justify-between text-[10px] text-gray-400 font-black uppercase tracking-widest"><span>VAT (7.5%)</span><span className="text-gray-900">₦{tax.toLocaleString()}</span></div>
-                <div className="flex justify-between border-t-2 border-gray-200 pt-5 font-black text-3xl text-primary-600 tracking-tighter"><span>Total Amount</span><span>₦{total.toLocaleString()}</span></div>
-                <p className="text-[9px] font-bold text-gray-400 uppercase tracking-widest mt-4 text-center">Settlement handled via Registry Updates</p>
+                {totalDiscount > 0 && (
+                    <div className="flex justify-between text-[10px] text-red-600 font-black uppercase tracking-widest bg-red-50 p-2 rounded-lg border border-red-100">
+                        <span>Total Discount Applied</span>
+                        <span>-₦{totalDiscount.toLocaleString()}</span>
+                    </div>
+                )}
+                <div className="flex justify-between text-[10px] text-gray-500 font-black uppercase tracking-widest pt-1 border-t border-gray-200">
+                    <span>Taxable Net</span>
+                    <span className="text-gray-900 font-bold">₦{netAmount.toLocaleString()}</span>
+                </div>
+                <div className="flex justify-between text-[10px] text-gray-400 font-black uppercase tracking-widest">
+                    <span>VAT (7.5%)</span>
+                    <span className="text-gray-900 font-bold">₦{tax.toLocaleString()}</span>
+                </div>
+                <div className="flex justify-between border-t-2 border-gray-200 pt-4 font-black text-3xl text-primary-600 tracking-tighter">
+                    <span>Total Amount</span>
+                    <span className="text-gray-900">₦{total.toLocaleString()}</span>
+                </div>
+                <p className="text-[9px] font-bold text-gray-400 uppercase tracking-widest mt-2 text-center">Settlement handled via Registry Updates</p>
             </div>
         </div>
 

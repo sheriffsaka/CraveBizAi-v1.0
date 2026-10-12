@@ -128,6 +128,7 @@ interface RecurringMeta {
   autoGenerate?: boolean;
   autoSend?: boolean;
   invoiceSchedule?: string;
+  discount?: number;
 }
 
 const parsePaymentTermsMeta = (termsStr: string | null | undefined): { cleanTerms: string; meta: RecurringMeta } => {
@@ -173,7 +174,7 @@ const mapDbInvoiceToInvoice = (inv: any): Invoice => {
     periodEnd: inv.period_end || meta.periodEnd || undefined,
     total,
     status,
-    discount: Number(inv.discount || 0),
+    discount: Number(inv.discount !== undefined && inv.discount !== null ? inv.discount : (meta.discount || 0)),
     amountPaid,
     paymentTerms: cleanTerms,
     selectedBankAccountId: inv.selected_bank_account_id || undefined,
@@ -821,7 +822,8 @@ class CraveBizApi {
       draftInvoiceId: invoice.draftInvoiceId,
       autoGenerate: invoice.autoGenerate !== undefined ? invoice.autoGenerate : true,
       autoSend: invoice.autoSend,
-      invoiceSchedule: invoice.invoiceSchedule || invoice.frequency
+      invoiceSchedule: invoice.invoiceSchedule || invoice.frequency,
+      discount: Number(invoice.discount || 0)
     };
 
     let payload: any = {
@@ -937,7 +939,8 @@ class CraveBizApi {
       draftInvoiceId: invoice.draftInvoiceId,
       autoGenerate: invoice.autoGenerate !== undefined ? invoice.autoGenerate : true,
       autoSend: invoice.autoSend,
-      invoiceSchedule: invoice.invoiceSchedule || invoice.frequency
+      invoiceSchedule: invoice.invoiceSchedule || invoice.frequency,
+      discount: Number(invoice.discount || 0)
     };
 
     const fullPayload: any = {

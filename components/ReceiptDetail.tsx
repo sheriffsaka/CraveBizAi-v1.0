@@ -5,6 +5,7 @@ import DeleteConfirmationModal from './DeleteConfirmationModal';
 import Icon from './common/Icon';
 import { api } from '../lib/api';
 import { loadHtml2Pdf } from '../lib/html2pdf';
+import { calculateInvoiceTotals } from '../lib/invoiceMath';
 
 interface ReceiptDetailProps {
   invoice: Invoice;
@@ -96,8 +97,11 @@ const ReceiptDetail: React.FC<ReceiptDetailProps> = ({ invoice, client, services
         }
     };
 
-    const subtotal = invoice.items.reduce((sum, item) => sum + item.price * item.quantity, 0);
-    const tax = invoice.total - subtotal; 
+    const totals = calculateInvoiceTotals(invoice.items, invoice.discount);
+    const { grossSubtotal, totalDiscount, netSubtotal, tax } = totals;
+    const subtotal = grossSubtotal;
+    const discount = totalDiscount; 
+    const effectiveTotal = totals.total > 0 ? totals.total : (invoice.total || 0);
     
     const selectedBankAccount: BankAccount | undefined = company.bankAccounts?.find(
         (account) => account.id === invoice.selectedBankAccountId
@@ -151,7 +155,11 @@ const ReceiptDetail: React.FC<ReceiptDetailProps> = ({ invoice, client, services
             ? `<img src="${company.logoUrl}" width="100" height="auto" alt="Logo" style="display:block;" />` 
             : `<div style="width:80px;height:80px;background:#f3f4f6;text-align:center;line-height:80px;font-size:10px;color:#999;border:1px dashed #ccc;">NO LOGO</div>`;
 
-        const itemsRows = invoice.items.map(item => `
+        const itemsRows = invoice.items.map(item => {
+            const itemGross = Number(item.price || 0) * Number(item.quantity || 1);
+            const itemDiscount = Number(item.discount) || 0;
+            const itemNet = Math.max(0, itemGross - itemDiscount);
+            return `
             <tr>
                 <td style="padding: 10px; border-bottom: 1px solid #e5e7eb; vertical-align:top;">
                     <div style="font-weight: bold; color: #111827;">${getServiceName(item.serviceId)}</div>
@@ -159,9 +167,13 @@ const ReceiptDetail: React.FC<ReceiptDetailProps> = ({ invoice, client, services
                 </td>
                 <td style="padding: 10px; text-align: center; border-bottom: 1px solid #e5e7eb; vertical-align:top;">${item.quantity}</td>
                 <td style="padding: 10px; text-align: right; border-bottom: 1px solid #e5e7eb; vertical-align:top;">₦${item.price.toLocaleString()}</td>
-                <td style="padding: 10px; text-align: right; border-bottom: 1px solid #e5e7eb; font-weight: bold; color: #111827; vertical-align:top;">₦${(item.price * item.quantity).toLocaleString()}</td>
+                <td style="padding: 10px; text-align: right; border-bottom: 1px solid #e5e7eb; font-weight: bold; color: #111827; vertical-align:top;">
+                    ₦${itemNet.toLocaleString()}
+                    ${itemDiscount > 0 ? `<div style="font-size:8pt; color:#dc2626; font-weight:bold;">(Disc: -₦${itemDiscount.toLocaleString()})</div>` : ''}
+                </td>
             </tr>
-        `).join('');
+            `;
+        }).join('');
 
         const wordTemplate = `
             <html xmlns:o='urn:schemas-microsoft-com:office:office' xmlns:w='urn:schemas-microsoft-com:office:word' xmlns='http://www.w3.org/TR/REC-html40'>
@@ -237,13 +249,19 @@ const ReceiptDetail: React.FC<ReceiptDetailProps> = ({ invoice, client, services
                                          <td align="right" style="padding: 8px; color: #6b7280; font-weight:bold;">Subtotal</td>
                                          <td align="right" style="padding: 8px; font-weight: bold;">₦${subtotal.toLocaleString()}</td>
                                      </tr>
+                                     ${discount > 0 ? `
+                                     <tr>
+                                         <td align="right" style="padding: 8px; color: #6b7280; font-weight:bold;">Discount</td>
+                                         <td align="right" style="padding: 8px; font-weight: bold; color: #dc2626;">- ₦${discount.toLocaleString()}</td>
+                                     </tr>
+                                     ` : ''}
                                      <tr>
                                          <td align="right" style="padding: 8px; color: #6b7280; font-weight:bold;">VAT (7.5%)</td>
                                          <td align="right" style="padding: 8px; font-weight: bold;">₦${tax.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
                                      </tr>
                                      <tr style="background-color: #f0fdf4;">
                                          <td align="right" style="padding: 10px; color: #111827; font-weight: bold; font-size: 12pt;">Total Paid</td>
-                                         <td align="right" style="padding: 10px; font-weight: bold; font-size: 14pt; color: #166534;">₦${invoice.total.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
+                                         <td align="right" style="padding: 10px; font-weight: bold; font-size: 14pt; color: #166534;">₦${effectiveTotal.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
                                      </tr>
                                  </table>
                             </td>
@@ -420,7 +438,12 @@ const ReceiptDetail: React.FC<ReceiptDetailProps> = ({ invoice, client, services
                             </td>
                             <td className="py-3 px-3 align-top text-center text-sm font-medium text-gray-600">{item.quantity}</td>
                             <td className="py-3 px-3 align-top text-right text-sm font-medium text-gray-600">₦{item.price.toLocaleString()}</td>
-                            <td className="py-3 px-3 align-top text-right text-sm font-bold text-gray-900">₦{(item.price * item.quantity).toLocaleString()}</td>
+                            <td className="py-3 px-3 align-top text-right text-sm font-bold text-gray-900">
+                                ₦{Math.max(0, (item.price * item.quantity) - (item.discount || 0)).toLocaleString()}
+                                {item.discount && item.discount > 0 ? (
+                                    <span className="block text-[10px] text-red-500 font-bold">(Disc: -₦{item.discount.toLocaleString()})</span>
+                                ) : null}
+                            </td>
                         </tr>
                     ))}
                 </tbody>
@@ -435,13 +458,19 @@ const ReceiptDetail: React.FC<ReceiptDetailProps> = ({ invoice, client, services
                                  <td className="py-2 text-right font-bold text-gray-500">Subtotal</td>
                                  <td className="py-2 text-right font-bold text-gray-900 w-32">₦{subtotal.toLocaleString()}</td>
                              </tr>
+                             {discount > 0 && (
+                                 <tr>
+                                     <td className="py-2 text-right font-bold text-gray-500">Discount</td>
+                                     <td className="py-2 text-right font-bold text-red-600 w-32">- ₦{discount.toLocaleString()}</td>
+                                 </tr>
+                             )}
                              <tr>
                                  <td className="py-2 text-right font-bold text-gray-500 border-b border-gray-200">VAT (7.5%)</td>
                                  <td className="py-2 text-right font-bold text-gray-900 border-b border-gray-200">₦{tax.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
                              </tr>
                              <tr className="bg-green-50">
                                  <td className="py-3 text-right font-black text-gray-900 text-lg">Total Paid</td>
-                                 <td className="py-3 text-right font-black text-green-700 text-lg">₦{invoice.total.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
+                                 <td className="py-3 text-right font-black text-green-700 text-lg">₦{effectiveTotal.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
                              </tr>
                          </tbody>
                      </table>
